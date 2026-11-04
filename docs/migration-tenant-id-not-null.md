@@ -308,7 +308,7 @@ After either rollback path, file an issue describing what went wrong; the most-l
 
 ## Future-proofing for SaaS
 
-When the Pratidhvani SaaS deployment ships ([I-5](initiatives.md#i-5--saas-readiness-long-horizon)), the NOT NULL constraint becomes part of the **fresh-install schema**. The runbook then exists only as a historical artifact for self-hosters who started before SaaS launch and never tightened their constraint. SaaS-internal multi-tenant infrastructure runs the same Alembic migration once, in a coordinated maintenance window — operationally it's the same SQL, the audience is just "the SaaS infra team" rather than "self-host operators".
+When the Pratidhvani SaaS deployment ships ([I-5](initiatives.md#i-5--saas-readiness-long-horizon--code-shippable-work-fully-closed-2026-05-05)), the NOT NULL constraint becomes part of the **fresh-install schema**. The runbook then exists only as a historical artifact for self-hosters who started before SaaS launch and never tightened their constraint. SaaS-internal multi-tenant infrastructure runs the same Alembic migration once, in a coordinated maintenance window — operationally it's the same SQL, the audience is just "the SaaS infra team" rather than "self-host operators".
 
 For multi-workspace-per-user (T-5.1.3, deferred to team SaaS tier), the column will be split: `tenant_id` (the workspace) + `owner_id` (the user). Both will be NOT NULL once that work lands. The four-phase pattern from D-038 will be re-used: audit → additive → backfill+writes → reads → NOT NULL.
 

@@ -15,7 +15,7 @@
 | Brand copy in pages, docs, README, CLAUDE.md | `VideoResearchPro` | `Pratidhvani` | ✅ already migrated (PRs #97, brand work) |
 | `APP_NAME` env default | `VideoResearchPro` | `Pratidhvani` | ✅ already migrated |
 | Health endpoint banner / startup log | `VideoResearchPro` | `Pratidhvani` | ✅ already migrated |
-| **`CHROMA_GLOBAL_COLLECTION_NAME`** | `videoresearchpro_global` | `pratidhvani_global` | ⚠️ **operator-coordinated** (this runbook, §A) |
+| **`CHROMA_GLOBAL_COLLECTION_NAME`** | `videoresearchpro_global` | `pratidhvani_global` | ⚠️ **code default already `pratidhvani_global`** (T-2.6.1, PR #106). An install that embedded before then pins the legacy name or runs §A |
 | **`DATABASE_URL`** | `sqlite:///./data/videoresearchpro.db` | `sqlite:///./data/pratidhvani.db` | ⚠️ **operator-coordinated** (this runbook, §B) |
 | GitHub repo URL | `khoks/VideoResearchPro` | `khoks/pratidhvani` (or similar) | 🔵 outside-codebase, optional (§C) |
 
@@ -44,7 +44,7 @@ So the migration is operator-driven, with this runbook as the safe-execution che
 
 ### Scope
 
-`CHROMA_GLOBAL_COLLECTION_NAME` defaults to `videoresearchpro_global`. To rename to `pratidhvani_global`:
+`CHROMA_GLOBAL_COLLECTION_NAME` has defaulted to `pratidhvani_global` since T-2.6.1 (PR #106). This section is for an install whose chunks still sit in the legacy `videoresearchpro_global` collection, which keeps working only while `.env` pins that name. To move them to `pratidhvani_global`:
 
 ### Pre-migration checklist
 

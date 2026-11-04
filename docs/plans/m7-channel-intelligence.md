@@ -13,7 +13,7 @@ The user follows channels but cannot see what a channel *says* over time: its re
 - Stance / sentiment / framing: written to `source_metadata_json.classification` **only by social connectors** (`sources/{reddit,hn,mastodon,bluesky,podcast}` call `social_classify`); YouTube documents carry none. "Evolving stance over time" therefore has no data for the dominant source type.
 - Transcripts: `transcript_cache` holds every document's segments; Chroma holds chunk embeddings retrievable with `collection.get(where={"video_id": {"$in": [...]}}, include=["embeddings"])`.
 - `scikit-learn` is already installed: it is a core requirement of `sentence-transformers` 6.1.0, so TF-IDF and k-means cost no new dependency.
-- Trust weight control: [S-7.1.1](../initiatives.md#s-711--make-source_weight-re-rank-retrieval) puts a weight control "on the channel page", which also does not exist yet; E-8.7's page is where it lands.
+- Trust weight control: [S-7.1.1](../initiatives.md#s-711--make-source_weight-re-rank-retrieval--shipped-2026-10-19) puts a weight control "on the channel page", which also does not exist yet; E-8.7's page is where it lands.
 
 ## Chosen approach
 

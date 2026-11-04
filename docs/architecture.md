@@ -1,6 +1,6 @@
 # Pratidhvani — System Architecture
 
-**Status:** current as of 2026-04-24; sections amended through 2026-10-25 (latest: the attribution guard stops inferring that a detail went unsaid, S-1.18.9). Brand-name forward; the codebase still ships under `videoresearchpro` package paths and Chroma collection names — see [feature-roadmap.md](feature-roadmap.md) §Rebrand-asset-rollout for the rename plan.
+**Status:** current as of 2026-04-24; sections amended through 2026-11-04 (latest: the whole page re-read against the code after batch 4 of 2026-11-03). Brand-name forward; the one default that keeps the legacy name is the SQLite file `data/videoresearchpro.db` — see [migration-code-identifiers.md](migration-code-identifiers.md).
 
 This document is the single source of truth for **how the running system is wired**. The vision (why it exists) lives in [vision.md](vision.md). The future shape (multi-source ingest, Author Studio, Personal Brain, SaaS) lives in [feature-roadmap.md](feature-roadmap.md), [source-types.md](source-types.md), [personal-brain.md](personal-brain.md), and [saas-roadmap.md](saas-roadmap.md). API endpoints live in [api-reference.md](api-reference.md). Page-level UI lives in [ui-pages.md](ui-pages.md). This file owns: process topology, data model, request lifecycles, agent pipelines, and the cross-cutting concerns that bind them.
 
@@ -24,12 +24,14 @@ This document is the single source of truth for **how the running system is wire
                                               │ ┌───────────────┐ │  └──────────────────┘
                                               │ │ YouTube svc   │ │
                                               │ │ ChromaDB svc  │ │  ┌──────────────────┐
-                                              │ │ LangGraph     │ │  │ ChromaDB         │
+                                              │ │ Agents        │ │  │ ChromaDB         │
                                               │ │  ▸ Search     │◀┼─▶│  ▸ transcripts   │
                                               │ │  ▸ Report     │ │  │  ▸ qa_library    │
-                                              │ │  ▸ Q&A        │ │  └──────────────────┘
-                                              │ │  ▸ Knowledge  │ │
-                                              │ │  ▸ Q&A History│ │  ┌──────────────────┐
+                                              │ │  ▸ Q&A        │ │  │  ▸ notes         │
+                                              │ │  ▸ Knowledge  │ │  │  ▸ shares        │
+                                              │ │  ▸ Q&A History│ │  │  ▸ personal ctx  │
+                                              │ │  ▸ Visual     │ │  └──────────────────┘
+                                              │ │  ▸ Echo       │ │  ┌──────────────────┐
                                               │ └───────────────┘ │  │ Redis            │
                                               │      │ publish     │  │  ▸ db0 pub/sub   │
                                               │      ▼             │  │  ▸ db1 broker   │
@@ -52,7 +54,7 @@ Production targets the same shape, with SQLite swapped for Postgres and ChromaDB
 - Holds the only SQLAlchemy engine that handles request-time queries.
 - On startup (FastAPI lifespan):
   - Creates `data/` directories (DB, ChromaDB, reports).
-  - Creates SQLAlchemy tables (idempotent; Alembic migrations are the source of truth, but `Base.metadata.create_all` is the dev fallback).
+  - Brings the schema to Alembic head (`schema_init_service.ensure_schema_at_head`, E-4.10): an empty database is migrated, one at head is left alone, and a pre-E-4.10 database whose tables match the ORM is stamped.
   - Runs `services/llm_smoke.run_startup_probes` — see "LLM smoke + fail-soft" below.
   - Runs the idempotent Chroma backfills, each fail-soft (a failure is logged and startup continues): `chroma_service.backfill_qa_library` (every Q&A exchange into `qa_library_global`), `chroma_service.backfill_chunk_document_ids` (stamps `document_id` on chunks embedded before 2026-10-19, [D-070](decisions.md#d-070--document-visibility-keyed-on-document_id-not-the-legacy-video_id-2026-10-19)), `note_index.backfill` (S-8.5.2) and `echo_personal_vectors.backfill` (S-3.3.3). The first two also run when a Celery worker starts (below), the Q&A one as a queued task.
   - Ensures the search index (S-8.2.1, [D-078](decisions.md#d-078--search-index-one-trigram-fts5-table-per-entity-copies-not-external-content-like-fallback-2026-10-19)): `services/search_service.ensure_index_for_url` probes SQLite for FTS5 with the trigram tokenizer, creates any missing `fts_*` virtual tables and their `AFTER INSERT / UPDATE / DELETE` triggers, rebuilds the ones just created from their base tables, and records the backend (`fts5` or `like`) that `GET /health` reports as `search_backend`. Migration `a9f3c1e7b5d2` does the same conditionally, so a fresh install is indexed before the first request; the lifespan re-probe is what picks up a Python upgrade that gains FTS5 later. Never blocks startup. The worker needs nothing: the triggers live in the database, so ingest writes from any process are indexed.
@@ -61,7 +63,7 @@ Production targets the same shape, with SQLite swapped for Postgres and ChromaDB
 
 ### Celery worker (`celery -A app.tasks.celery_app worker --pool=solo`)
 
-- Runs all long-running orchestration: search, transcript fetch, embedding, report generation, knowledge extraction, and Author Studio generation (`author.generate_output`, S-6.7.1). A book's EPUB is built in-process; its PDF is printed by WeasyPrint or headless Chromium, both optional installs probed once per process (`AUTHOR_PDF_ENGINE`, S-6.1.5) and both cut off from the network.
+- Runs all long-running orchestration: search, transcript fetch, embedding, report generation, saved-search runs, newsletters, frame capture, Echo's share processing, signal extraction, connector syncs and voice-test writing, and Author Studio generation (`author.generate_output`, S-6.7.1). Task modules: `app/tasks/*_tasks.py`. Knowledge extraction is the exception that runs inside its request. A book's EPUB is built in-process; its PDF is printed by WeasyPrint or headless Chromium, both optional installs probed once per process (`AUTHOR_PDF_ENGINE`, S-6.1.5) and both cut off from the network.
 - Has its own SQLAlchemy session factory (created per task) so request-side and worker-side don't share connections.
 - Publishes progress events to Redis pub/sub (`job_progress:{job_id}`) at every phase boundary. Author outputs publish on the same channel under the output's id; `routers/ws.py` lets a socket subscribe to any job or output its user owns. Output cancellation is cooperative: `output_service.report_progress` raises once the row is `cancelled`, because `revoke(terminate=True)` cannot stop a task on the solo pool.
 - On Windows, **must use `--pool=solo`** because the multiprocessing prefork pool doesn't work cleanly with our embedding model + ChromaDB locks.
@@ -87,7 +89,7 @@ Added 2026-10-19 (S-8.3.1, the scheduler the saved searches, newsletter and Echo
 
 Three logical databases on the same instance:
 
-- **db0** — Pub/sub channel for progress events (`job_progress:{job_id}`).
+- **db0** — Pub/sub channels for progress events (`job_progress:{job_id}`) and the notification doorbell (`notifications:{tenant_id}`).
 - **db1** — Celery broker (queue of pending tasks).
 - **db2** — Celery result backend (task return values).
 
@@ -97,10 +99,14 @@ Three logical databases on the same instance:
 
 ### ChromaDB
 
-`data/chroma/` (env-overridable). Two collections:
+`data/chroma/` (env-overridable). Five collections:
 
-- **`videoresearchpro_global`** — chunked transcripts of every ingested video. Single collection across all jobs. Per-job scoping is a metadata filter at query time.
+- **`pratidhvani_global`** (`CHROMA_GLOBAL_COLLECTION_NAME`) — chunked text of every ingested document. Single collection across all jobs. Per-job scoping is a metadata filter at query time. An install that embedded before T-2.6.1 keeps its chunks under `videoresearchpro_global` by pinning that name, or migrates ([runbook](migration-code-identifiers.md)).
 - **`qa_library_global`** — every Q&A exchange (job-scoped, library-scoped, history-chat) as a single concatenated `question + answer` document — not chunked.
+- **`notes_global`** — the user's own notes, one vector per live note.
+- **`shares_global`** and **`personal_context_global`** — Echo's collections, one vector per share and per live fact or signal.
+
+The last three are private: every query carries a fail-closed tenant filter.
 
 Chunks use the multilingual embedder `paraphrase-multilingual-MiniLM-L12-v2` (SentenceTransformer, CPU). No paid embedding API.
 
@@ -111,70 +117,83 @@ Chunks use the multilingual embedder `paraphrase-multilingual-MiniLM-L12-v2` (Se
 ```
 backend/
 ├── app/
-│   ├── main.py                  # FastAPI app, CORS, lifespan (tables, dirs, LLM smoke)
+│   ├── main.py                  # FastAPI app, CORS, lifespan (schema, dirs, LLM smoke, backfills)
 │   ├── config.py                # Pydantic Settings (reads .env)
 │   ├── database.py              # SQLAlchemy engine + SessionLocal
-│   ├── dependencies.py          # DI: get_db, get_redis, get_current_user
-│   ├── routers/
-│   │   ├── auth.py              # /auth: register, login, me
-│   │   ├── jobs.py              # /jobs: CRUD + approve + cancel + delete
-│   │   ├── qa.py                # /jobs/{id}/qa, /jobs/{id}/report, clarify
-│   │   ├── library.py           # /library/qa, /library/videos
-│   │   ├── channels.py          # /channels CRUD + subscribe + sync
-│   │   ├── knowledge.py         # /videos/{id}/extract-knowledge, /knowledge
+│   ├── dependencies.py          # DI: get_db, get_redis, get_current_user, require_operator
+│   ├── middleware/
+│   │   └── rate_limit.py        # per-route + per-tier limits (E-5.5)
+│   ├── routers/                 # one file per API area; every route is in api-reference.md
+│   │   ├── auth.py              # /auth: register, login, password reset + change, me, audit log
+│   │   ├── sessions.py, mfa.py, oauth.py, credentials.py, onboarding.py  # the rest of /auth
+│   │   ├── jobs.py, job_templates.py  # /jobs CRUD + approve + cancel, /job-templates
+│   │   ├── qa.py, reports.py    # /jobs/{id}/qa, /jobs/{id}/report*
+│   │   ├── library.py           # /library: qa, videos, graph, upload-pdf, paste-urls
+│   │   ├── channels.py, shelves.py, tags.py, notes.py, search.py, suggestions.py
+│   │   ├── saved_searches.py, notifications.py
+│   │   ├── knowledge.py, frames.py  # /videos/{id}/...
 │   │   ├── qa_history.py        # /qa-history/chat, /qa-history/exchanges
-│   │   ├── exports.py           # /exports/qa-dataset, /exports/knowledge-dataset
-│   │   ├── admin.py             # /admin/* — power-user endpoints behind auth
-│   │   ├── health.py            # /health (overall + LLM detail)
-│   │   └── ws.py                # /ws/jobs (multiplexed progress)
-│   ├── models/
-│   │   ├── user.py              # User (email, hashed_password, created_at)
-│   │   ├── job.py               # Job (UUID PK, status, type, JSON fields)
-│   │   ├── document.py          # Document (global, deduped — renamed from video.py in L1 PR 4)
-│   │   ├── job_video.py         # job ↔ document join with approval flag
-│   │   ├── channel.py           # Channels (shared facts; per-tenant state in channel_subscription.py)
-│   │   ├── transcript_cache.py  # cached raw transcript, PK = document_id (E-1.10)
-│   │   ├── qa_exchange.py       # job-scoped Q&A
-│   │   ├── library_qa_exchange.py  # library-wide Q&A
-│   │   ├── qa_history_exchange.py  # meta-chat across all Q&A
-│   │   └── api_quota_log.py     # YouTube + LLM call accounting
-│   ├── schemas/                 # Pydantic models for every router
-│   ├── services/
-│   │   ├── auth_service.py      # JWT issue/verify, password hashing (bcrypt)
-│   │   ├── job_service.py       # CRUD + concurrent-job-limit enforcement
+│   │   ├── author.py            # /author: outputs, newsletter
+│   │   ├── echo.py, echo_cards.py, echo_connectors.py, echo_drafts.py,
+│   │   │   echo_signals.py, echo_voice_test.py  # /echo
+│   │   ├── exports.py           # /exports: Q&A + knowledge datasets, notes
+│   │   ├── usage.py, llm_settings.py  # /usage, /settings/llm
+│   │   ├── admin.py             # /admin/restart, operators only
+│   │   ├── health.py            # /health (overall, LLM, scheduler, quota)
+│   │   └── ws.py                # /ws/jobs (multiplexed progress, the bell)
+│   ├── models/                  # one file per table: user, job, document (global, deduped),
+│   │                            #   job_video (job ↔ document), document_visibility, channel,
+│   │                            #   channel_subscription, transcript_cache, the Q&A exchanges,
+│   │                            #   notes, shelves, tags, outputs, saved searches, Echo's stores,
+│   │                            #   sessions, MFA, credentials, usage_record, quota_usage, ...
+│   ├── schemas/                 # Pydantic models for the routers
+│   ├── services/                # the business logic; the ones that recur below:
+│   │   ├── auth_service.py      # JWT issue/verify, sessions, password hashing (bcrypt)
+│   │   ├── job_service.py       # job CRUD + the concurrent-job limit
+│   │   ├── visibility_service.py  # who sees which document (D-063, D-070)
+│   │   ├── usage_service.py     # per-tenant usage metering (E-5.2)
+│   │   ├── document_cap_service.py  # the tier's document cap (D-115)
 │   │   ├── youtube_service.py   # YouTube Data API v3, transcripts, Whisper fallback, rate limiting
-│   │   ├── chroma_service.py    # PersistentClient singleton, collection CRUD
+│   │   ├── chroma_service.py    # PersistentClient singleton, collection CRUD, backfills
+│   │   ├── document_text_service.py  # a document's full text by document_id (D-113)
 │   │   ├── embedding_service.py # paraphrase-multilingual-MiniLM-L12-v2
 │   │   ├── progress_service.py  # Redis pub/sub publisher
 │   │   ├── report_service.py    # HTML report file I/O
 │   │   ├── dataset_service.py   # streaming JSONL exports for fine-tune
-│   │   ├── quota_service.py     # YouTube API quota tracking + soft cap
+│   │   ├── quota_service.py     # YouTube API quota tracking
 │   │   ├── llm_routing.py       # USE_CASE_REGISTRY + resolve_config
-│   │   ├── llm_service.py       # get_llm(use_case) factory
-│   │   └── llm_smoke.py         # startup probes + LLMStatus singleton
+│   │   ├── llm_service.py       # get_llm_for(use_case) factory, byok_context
+│   │   ├── llm_smoke.py         # startup probes + LLMStatus singleton
+│   │   └── outputters/          # one per Author Studio kind
+│   ├── sources/                 # ingest connectors, one package per source type
+│   ├── connectors/              # Echo connectors and export importers
 │   ├── agents/
 │   │   ├── state.py             # TypedDict states per agent
 │   │   ├── search_agent.py      # topic → query plan → searches → ranked list
 │   │   ├── report_agent.py      # transcripts → map-reduce → HTML
 │   │   ├── qa_agent.py          # question → retrieve → refine → answer + citations
 │   │   ├── qa_history_agent.py  # meta-chat across qa_library_global
-│   │   ├── knowledge_agent.py   # transcript → batched extract → synthesized MD
+│   │   ├── knowledge_agent.py   # full text → batched extract → synthesized MD
 │   │   ├── visual_agent.py      # select moments → capture stills → describe → persist
+│   │   ├── echo_agent.py        # "speak as me": classify → retrieve → draft → critique
 │   │   ├── prompts/             # prompt templates per agent
 │   │   └── tools/               # @tool functions (youtube_search, rag_search)
 │   ├── tasks/
-│   │   ├── celery_app.py        # Celery config; autodiscover related_name="job_tasks"
-│   │   └── job_tasks.py         # execute_topic_job, execute_channel_job,
-│   │                            #   execute_subscription_job, resume_after_approval
+│   │   ├── celery_app.py        # Celery config; one autodiscover call per task module
+│   │   ├── job_tasks.py         # execute_topic_job, execute_channel_job,
+│   │   │                        #   execute_subscription_job, resume_job_after_approval
+│   │   └── scheduler_tasks.py, output_tasks.py, saved_search_tasks.py, newsletter_tasks.py,
+│   │       echo_tasks.py, echo_connector_tasks.py, visual_tasks.py
 │   ├── websocket/
 │   │   └── manager.py           # ConnectionManager + Redis listener task
 │   └── utils/
-│       ├── chunking.py          # 512-token chunks with timestamp mapping
+│       ├── chunking.py          # 256-token chunks (32 overlap) with timestamp mapping
 │       ├── html_builder.py      # Jinja2 env + custom number_format filter
 │       └── ...
-├── tests/                       # 168 tests, mostly pytest + httpx test client
+├── tests/                       # 3,700+ tests, mostly pytest + httpx test client
 ├── alembic/                     # Alembic migrations
-└── scripts/
+└── scripts/                     # measurement harnesses, backfills (dry run unless --write), and
+    ├── fix_anchor_links.py      # the Markdown anchor checker CI runs
     ├── stress_test_llm.py       # canonical LLM stress harness
     └── stress_test_local_llm.py # thin shim → stress_test_llm.py
 ```
@@ -186,39 +205,29 @@ backend/
 ```
 frontend/
 ├── src/
-│   ├── main.tsx                 # router root + React Query client + auth guard
-│   ├── routes.tsx               # route table (10 pages)
-│   ├── layouts/
-│   │   └── AppLayout.tsx        # top-tab nav + content slot (today)
-│   ├── pages/
-│   │   ├── LoginPage.tsx
-│   │   ├── RegisterPage.tsx
-│   │   ├── JobsListPage.tsx     # all jobs the user owns
-│   │   ├── SubmitJobPage.tsx    # tabbed form: Topic / Channels / Subscribe
-│   │   ├── JobDetailPage.tsx    # status, approval, report, Q&A panel
-│   │   ├── LibraryPage.tsx      # global video library browse + filters
-│   │   ├── LibraryQAPage.tsx    # ask across the entire library
-│   │   ├── QAHistoryChatPage.tsx# meta-chat across all past Q&A
-│   │   ├── VideoKnowledgePage.tsx # knowledge artifact for one video
-│   │   └── ExportsPage.tsx      # dataset export endpoints + downloads
-│   ├── hooks/
-│   │   ├── useJobProgress.ts    # WS subscribe → React Query cache invalidation
-│   │   ├── useAuth.ts           # JWT in Zustand + axios interceptor
-│   │   └── ...
+│   ├── main.tsx                 # entry point
+│   ├── App.tsx                  # providers + router
+│   ├── routes/index.tsx         # route table, auth guards, lazy pages
+│   ├── layouts/AppLayout.tsx    # the signed-in shell: navigation, the bell, the Echo panel
+│   ├── pages/                   # one file per page, listed in ui-pages.md
+│   ├── components/              # by feature (reader, qa, echo, author, security, ...), plus
+│   │                            #   primitives/ for the shared design-system pieces
+│   ├── hooks/                   # React Query hooks per resource, and:
+│   │   └── useJobProgress.ts    # WS subscribe → React Query cache invalidation
+│   ├── contexts/AuthContext.tsx # the signed-in user + token
 │   ├── services/
-│   │   ├── apiClient.ts         # axios instance, token attach, error normalization
+│   │   ├── api.ts               # axios instance, token attach, error normalization
+│   │   ├── apiFiles.ts          # file downloads with the bearer header, opened from blob: URLs
 │   │   ├── wsClient.ts          # /ws/jobs WS with reconnect + heartbeat
-│   │   └── api/                 # one file per resource (jobs.ts, library.ts, etc.)
-│   ├── stores/
-│   │   ├── authStore.ts         # Zustand: token, user, hydration
-│   │   └── uiStore.ts           # Zustand: sidebar collapse, theme, modals
-│   └── styles/
-│       ├── index.css            # global resets + CSS variables (legacy palette)
-│       └── theme.ts             # design tokens (post-rebrand)  ← per branding.md
-└── vite.config.ts               # dev server, proxy /api to localhost:8000
+│   │   └── *Api.ts              # one file per resource (jobsApi.ts, libraryApi.ts, etc.)
+│   ├── stores/                  # Zustand: UI state only (Echo panel, palette, reader, ...)
+│   ├── config/features.ts       # UI switches decided by the owner (visual analysis is off)
+│   ├── theme.ts                 # design tokens ← per branding.md
+│   └── index.css                # global resets + CSS variables
+└── vite.config.ts               # dev server, proxy /api and /ws to localhost:8000
 ```
 
-State split: **server state in React Query**, **UI state in Zustand**. No Redux. No styled-components — every component uses inline `style={{}}` objects today; the rebrand introduces a primitive set in `components/primitives/` that reads from design tokens.
+State split: **server state in React Query**, **UI state in Zustand**. No Redux. No styled-components — every component uses inline `style={{}}` objects, with tokens from `theme.ts`; `components/primitives/` holds the shared pieces.
 
 ---
 
@@ -241,6 +250,8 @@ User ──┬──< Job ──< JobVideo >── Document ──> Channel
        ├──< Share ──> file under ECHO_SHARES_DIR/<tenant>/  (Echo shares inbox, per tenant)
        ├──< Shelf ──< ShelfJob >── Job                      (M1, per tenant)
        ├──< Tag ──< Tagging ──> Document                    (M1, per tenant)
+       ├──< Session, MfaSecret, UserCredential, OAuthIdentity  (the account)
+       ├──< UsageRecord                                     (E-5.2, per tenant, day and feature)
        └──< JobTemplate ──< JobTemplateVersion              (M6; tenant NULL = built-in)
                  ▲
                  └── Job.template_id + template_version (provenance, no FK)
@@ -250,7 +261,7 @@ Document ──  DiscussedEra (column `discussed_era_json` on Document — R3, s
 Document ──< TranscriptCache (1:1 by document_id; FK ON DELETE CASCADE)
 Document ──< VisualFrame (0:N by (document, timestamp); FK ON DELETE CASCADE)
 
-ApiQuotaLog (append-only ledger of YouTube + LLM calls)
+ApiQuotaLog (append-only ledger of YouTube Data API calls, install-wide)
 ```
 
 > **Schema state (post-E-1.10, 2026-05-02).** The primary key on `documents` is now `document_id` (UUID4, str(36)). The legacy `video_id` column survives as a NULLABLE back-compat reading column populated for `source_type='video'` rows (NULL for Reddit / HN / other source types). The join table is renamed to `job_documents` (Python class still `JobVideo` for import back-compat) with composite PK `(job_id, document_id)`. `transcript_cache` PK is also now `document_id` with FK to `documents.document_id`. See [D-017](decisions.md#d-017--e-110-hard-cutover-single-migration-uuid-pk-promotion-2026-04-26) for the cutover rationale and [PR #112](https://github.com/khoks/VideoResearchPro/pull/112) for the migration.
@@ -259,34 +270,34 @@ ApiQuotaLog (append-only ledger of YouTube + LLM calls)
 
 ### Key invariants
 
-- **Documents are global.** One row per source. Canonical identity is `(source_type, source_id)` (unique-indexed); the PK is the synthetic `document_id` UUID. Today's source types: `video` (YouTube), `reddit_post`, `hn_story`. The library is a single, deduplicated, shared corpus. `JobVideo` rows in `job_documents` tie a job to its documents. Deleting a job drops `JobVideo` rows; documents and chunks survive.
+- **Documents are global.** One row per source. Canonical identity is `(source_type, source_id)` (unique-indexed); the PK is the synthetic `document_id` UUID. Source types: `video` (YouTube), `reddit_post`, `hn_story`, `mastodon_post`, `bluesky_post`, `podcast_episode`, `article`, `tweet`, `pdf`, and the pasted `fb_post`, `ig_post` and `li_post`. The library is a single, deduplicated, shared corpus. `JobVideo` rows in `job_documents` tie a job to its documents. Deleting a job drops `JobVideo` rows; documents and chunks survive.
 - **Channels are first-class.** Subscribing a channel pre-pulls every video on its uploads playlist into the global library via subscription jobs.
 - **Transcripts are cached once.** Re-fetch is suppressed by `transcript_cache.document_id` lookup. Legacy `transcript_cache.video_id` column survives as nullable back-compat for video rows.
-- **Embeddings happen exactly once per document.** `Document.embedded_in_chroma` flips to `true` after chunks land in `videoresearchpro_global`. Subsequent jobs referencing that document skip embedding.
+- **Embeddings happen exactly once per document.** `Document.embedded_in_chroma` flips to `true` after chunks land in the global collection. Subsequent jobs referencing that document skip embedding.
 - **Q&A exchanges have three flavors** that union into one Chroma collection:
   - `qa_exchanges` (job-scoped)
   - `library_qa_exchanges` (library-scoped; `scope_json` narrows a question to a shelf or to one source, documents and the asker's notes alike, or records that a saved search asked it, null = the whole visible library and every note: [D-095](decisions.md#d-095--scoped-library-questions-one-history-table-with-a-scope_json-object-narrowing-and-provenance-keys-unknown-keys-refused-2026-10-19))
   - `qa_history_exchanges` (meta-chat surface)
 
   All three are stored separately for SQL-level filtering but indexed together in `qa_library_global` so meta-chat retrieval crosses surfaces.
-- **Echo's data is a registered set of stores, per tenant** (I-3). `personal_context` (facts), `shares_inbox` (everything the user forwards; files under `ECHO_SHARES_DIR/<tenant>/`), `voice_signals` (style and personality signals with their examples, tombstones included; S-3.3.1), `voice_signal_inputs` (which of the user's texts extraction read, with stylometric profiles; S-3.3.2), `activity_events` (what the user did, from connectors and the `internal` share event; unique per tenant, connector and external id; S-3.2.1), `echo_connector_grants`, `echo_drafts` ("speak as me" drafts with their citations and scores, and the user's saved version, whose typed words alone feed signal extraction as `draft_edit:<id>`; S-3.4.2) and `echo_voice_gates` (each user's voice-test result, the per-user switch; S-3.4.1) are listed in `echo_privacy_service.ECHO_TABLES`, and Echo's Chroma collections (`shares_global`, `personal_context_global`) in `echo_vectors.echo_collection_names()`. `personal_context_global` holds one vector per live fact and signal. It is kept in step by `echo_personal_vectors.sync_tenant`, a content-hash diff that every write path runs after its commit and the startup backfill runs per tenant, so a tombstone's vector is gone as soon as the tombstone exists (S-3.3.3). Connector tokens (`echo_connector_credentials`, Fernet) and in-flight OAuth state (`echo_connector_oauth_states`) are in `ECHO_SECRET_TABLES`: erased with the rest but never exported ([D-098](decisions.md#d-098--echo-connectors-events-unique-per-reader-tokens-in-a-secret-store-that-is-erased-with-the-brain-but-never-exported-2026-10-19)). Connectors and archive importers implement `app/connectors/base.py` and register in `app/connectors/registry.py`. `GET /echo/export` writes the brain into one lossless archive; `DELETE /echo/brain` removes vectors, then files, then rows, and re-counts every store. A share is context-only unless the user marks it as their own words. See [D-089](decisions.md#d-089--echos-privacy-contract-context-only-by-default-the-brain-is-a-registry-the-archive-is-the-users-whole-copy-delete-in-a-fixed-order-2026-10-19).
-- **Notes are the user's own text, private per tenant** (M5). `notes(id, tenant_id, target_type, target_id, selector_json, body_md, motivation, created_at, updated_at, deleted_at)`. The target set is closed; the target is checked through visibility or ownership on every write; a document note is stored under `document_id`, so one document has one note stream. Delete is soft, and the JSON-LD export carries withdrawals losslessly. Notes are not in Chroma until S-8.5.2. See [D-074](decisions.md#d-074--notes-one-stream-per-document-soft-delete-only-lossless-w3c-json-ld-export-echo-feeder-reported-not-gated-2026-10-19).
+- **Echo's data is a registered set of stores, per tenant** (I-3). `personal_context` (facts), `shares_inbox` (everything the user forwards; files under `ECHO_SHARES_DIR/<tenant>/`), `voice_signals` (style and personality signals with their examples, tombstones included; S-3.3.1), `voice_signal_inputs` (which of the user's texts extraction read, with stylometric profiles; S-3.3.2), `activity_events` (what the user did, from connectors and the `internal` share event; unique per tenant, connector and external id; S-3.2.1), `echo_connector_grants`, `echo_drafts` ("speak as me" drafts with their citations and scores, and the user's saved version, whose typed words alone feed signal extraction as `draft_edit:<id>`; S-3.4.2) `echo_voice_gates` (each user's voice-test result, the per-user switch; S-3.4.1), `echo_voice_tests` (each in-app voice test: its pairs, picks and score; T-3.4.1.8) and `echo_fact_tombstones` (derived facts the user deleted, per connector, which syncs and re-imports skip; T-3.2.4.4, [D-122](decisions.md#d-122--a-deleted-derived-fact-stays-deleted-per-connector-only-a-refused-refresh-asks-for-a-reconnect-restore-re-checks-the-evidence-2026-11-04)) are listed in `echo_privacy_service.ECHO_TABLES`, and Echo's Chroma collections (`shares_global`, `personal_context_global`) in `echo_vectors.echo_collection_names()`. `personal_context_global` holds one vector per live fact and signal. It is kept in step by `echo_personal_vectors.sync_tenant`, a content-hash diff that every write path runs after its commit and the startup backfill runs per tenant, so a tombstone's vector is gone as soon as the tombstone exists (S-3.3.3). Connector tokens (`echo_connector_credentials`, Fernet) and in-flight OAuth state (`echo_connector_oauth_states`) are in `ECHO_SECRET_TABLES`: erased with the rest but never exported ([D-098](decisions.md#d-098--echo-connectors-events-unique-per-reader-tokens-in-a-secret-store-that-is-erased-with-the-brain-but-never-exported-2026-10-19)). Connectors and archive importers implement `app/connectors/base.py` and register in `app/connectors/registry.py`. `GET /echo/export` writes the brain into one lossless archive; `DELETE /echo/brain` removes vectors, then files, then rows, and re-counts every store. A share is context-only unless the user marks it as their own words. See [D-089](decisions.md#d-089--echos-privacy-contract-context-only-by-default-the-brain-is-a-registry-the-archive-is-the-users-whole-copy-delete-in-a-fixed-order-2026-10-19).
+- **Notes are the user's own text, private per tenant** (M5). `notes(id, tenant_id, target_type, target_id, selector_json, body_md, motivation, created_at, updated_at, deleted_at)`. The target set is closed; the target is checked through visibility or ownership on every write; a document note is stored under `document_id`, so one document has one note stream. Delete is soft, and the JSON-LD export carries withdrawals losslessly. Each live note has one vector in `notes_global` (S-8.5.2). See [D-074](decisions.md#d-074--notes-one-stream-per-document-soft-delete-only-lossless-w3c-json-ld-export-echo-feeder-reported-not-gated-2026-10-19).
 - **Shelves, tags and templates are per tenant** (M1, M6). `shelves` + `shelf_jobs` group runs (a run on many shelves; deleting either side removes only memberships, through ORM cascades because SQLite here never enforces FK cascades). `tags` + `taggings` label documents per reader, even on shared documents; every count and filter re-applies visibility. `job_templates` + immutable `job_template_versions` hold reusable recipes; runs record `(template_id, template_version)` and templates are soft-deleted so that provenance survives. See [D-082](decisions.md#d-082--job-templates-identity-plus-immutable-versions-provenance-without-a-foreign-key-starters-in-a-self-contained-data-migration-2026-10-19) and [D-083](decisions.md#d-083--organisation-features-access-and-scope-defaults-on-the-plans-open-questions-2026-10-19).
 - **Derived views are computed on read, per tenant** (M7, M9). `channel_intelligence_cache(channel_id, tenant_id, fingerprint, computed_at, payload_json)` caches a channel's aggregates for one reader and recomputes when the fingerprint of its inputs (visible document set, knowledge times, transcripts, payload version) changes. The library graph (`services/graph_service.py`) has no table: nodes and edges are built per request from the reader's visible documents, about 0.07 s at 2,000 documents. Both start from `visibility_service.visible_document_ids`, so an empty visible set is an empty result. See [D-091](decisions.md#d-091--channel-intelligence-aggregates-computed-on-read-and-cached-per-reader-behind-an-input-fingerprint-derived-links-resolved-at-read-time-2026-10-19) and [D-092](decisions.md#d-092--library-graph-computed-per-request-sigma-used-directly-as-a-lazy-chunk-three-group-colours-the-accessibility-layer-inside-the-story-2026-10-19).
 - **Knowledge artifacts live on the Document row.** Three nullable columns (`extracted_knowledge_json`, `knowledge_report_md`, `knowledge_extracted_at`). One artifact per document.
 - **Jobs carry a status enum**: `pending → searching → awaiting_approval → extracting → building_rag → generating_report → completed`. Terminal: `completed`, `failed`, `cancelled`. Subscription jobs skip `awaiting_approval` and `generating_report`.
 
-### Forward-compat columns (already present or planned next sprint)
+### Forward-compat columns
 
 Per [saas-roadmap.md](saas-roadmap.md) and [source-types.md](source-types.md):
 
-- Every user-scoped table has — or will have, in the imminent migration — a `tenant_id` column. The single self-host instance has a single tenant.
+- Every user-scoped table has a `tenant_id` column, and every read filters on it. Today a tenant is one user, so `tenant_id` equals `User.id`. The column stays nullable until the operator runs [the NOT NULL migration](migration-tenant-id-not-null.md).
 - The `documents` table carries `source_type`, `source_id`, `source_url`, `source_metadata_json`, `language`, `word_count`, `user_provenance_json` (from L1 PR 1) plus `document_id` UUID PK (from E-1.10, PR #112). The legacy `video_id` column persists as nullable back-compat and is NULL for every non-video source — never key anything on it. The future `creator_id` foreign key for cross-source-type creators is the next planned column (E-1.9).
 - **Document visibility.** `document_visibility(document_id, tenant_id, source)` is the per-tenant grant over the shared cache ([D-063](decisions.md#d-063--per-user-isolation-shared-cache-private-catalogue-2026-07-31)), re-keyed on the primary key by [D-070](decisions.md#d-070--document-visibility-keyed-on-document_id-not-the-legacy-video_id-2026-10-19) after the original `video_id` key silently dropped every PDF and pasted page. Every ingest path calls `visibility_service.grant(db, document_ids, tenant_id, source)`, including on dedup hits; every user-facing read of `documents` filters through `visibility_service.visible_document_ids(db, tenant_id)`; library Q&A hands the same set to Chroma.
-- The `channels` table grows into `creators` with `source_type`, `source_weight` (E-1.9). `source_type`, `creator_external_id`, and `source_weight` are already present from L1 PR 1. Per-user state, including `source_weight`, moved to `channel_subscriptions` in [D-065](decisions.md#d-065--channel-subscriptions-become-per-tenant-transliteration-reversed-2026-07-31). **Nothing reads `source_weight` yet** (verified 2026-10-18), so retrieval is unweighted: every approved source counts equally until [L4](feature-roadmap.md#l4--curated-source-ranking-) lands.
+- The `channels` table grows into `creators` with `source_type`, `source_weight` (E-1.9). `source_type`, `creator_external_id`, and `source_weight` are already present from L1 PR 1. Per-user state, including `source_weight`, moved to `channel_subscriptions` in [D-065](decisions.md#d-065--channel-subscriptions-become-per-tenant-transliteration-reversed-2026-07-31). Q&A retrieval reads it as a re-rank since S-7.1.1 ([D-068](decisions.md#d-068--curated-source-ranking-v1-per-tenant-trust-weight-re-ranks-retrieval-perspective-banding-deferred-2026-10-18)).
 - The classifier output (D-007 / D-014) lands at `documents.source_metadata_json["classification"]` per [D-023](decisions.md#d-023--social_classify_stance-invoked-inline-inside-each-connector-2026-04-28); inserted via the source-type-agnostic `_upsert_candidate_and_link()` helper (PR [#113](https://github.com/khoks/VideoResearchPro/pull/113)).
 
-Today's PRs respect both invariants even though only one tenant and one source type exist.
+New tables and columns keep both invariants.
 
 ---
 
@@ -324,16 +335,16 @@ Today's PRs respect both invariants even though only one tenant and one source t
 
 ### Multi-source dispatch (post-S-1.5.11, 2026-05-02)
 
-Topic jobs carry a `source_types_json` column — a JSON-encoded array of `source_type` discriminators. NULL → `["video"]` for back-compat. `execute_topic_job` reads the column and branches:
+Topic jobs carry a `source_types_json` column — a JSON-encoded array of `source_type` discriminators, set from the optional `source_types` of `POST /api/v1/jobs` (S-1.5.13, [D-114](decisions.md#d-114--which-sources-a-topic-run-searches-settings-decide-one-budget-for-the-run-no-whisper-before-approval-2026-10-29)). NULL → `["video"]`, which is also what a request that names none gets. `app/services/job_source_types.py` decides what a run may search: a source that is unknown, library-only or not set up on this install is refused with a message naming the missing setting. `execute_topic_job` reads the column and branches:
 
 - **`"video"`** → existing LangGraph search agent (richer ranking via `search_plan_queries` + `search_rank_and_curate` use cases).
-- **Everything else (`"reddit_post"`, `"hn_story"`, future `"mastodon"` / `"bluesky"`)** → `app/services/connector_dispatch.py::dispatch_search()`, which iterates each non-video source_type **sequentially** (per [D-026](decisions.md#d-026--sequential-fan-out-for-the-connector-dispatcher-2026-05-02)) through `connector_for(source_type).search(query, instructions, limit)`. For each Candidate, the connector's own `fetch_text(query=...)` is called (which inline-classifies per [D-023](decisions.md#d-023--social_classify_stance-invoked-inline-inside-each-connector-2026-04-28)); persistence is uniform across source types via `_upsert_candidate_and_link()`.
+- **Everything else (`"reddit_post"`, `"hn_story"`, `"mastodon_post"`, `"bluesky_post"`, `"podcast_episode"`, `"article"`, `"tweet"`)** → `app/services/connector_dispatch.py::dispatch_search()`, which iterates each non-video source_type **sequentially** (per [D-026](decisions.md#d-026--sequential-fan-out-for-the-connector-dispatcher-2026-05-02)) through `connector_for(source_type).search(query, instructions, limit)`. For each Candidate, the connector's own `fetch_text(query=...)` is called (which inline-classifies per [D-023](decisions.md#d-023--social_classify_stance-invoked-inline-inside-each-connector-2026-04-28)); persistence is uniform across source types via `_upsert_candidate_and_link()`.
 
 Both paths converge into the same `awaiting_approval` flow. The combined candidate count drives the user-visible "Found N candidates" message; an empty result across all sources fails the job with a clear "No candidates for source_types=[...]" error rather than dropping the user onto an empty approval list.
 
 Per-source-type errors (connector raised, missing connector, NotImplementedError for PDF-style sources) are captured per source in `DispatchResult.errors_by_source_type` and logged; they don't fail the job — other source types' candidates still flow through.
 
-> **Unreachable from the API (found 2026-10-19).** `JobCreate` has no `source_types` field and nothing writes `jobs.source_types_json`, so every topic run created through `POST /jobs` takes the `["video"]` default and the non-video branch above never runs. The worker side is intact; the missing link is the request schema, persistence, response and a submit-form picker. Found while building job templates ([D-082](decisions.md#d-082--job-templates-identity-plus-immutable-versions-provenance-without-a-foreign-key-starters-in-a-self-contained-data-migration-2026-10-19)).
+The number of results is the whole run's budget, shared across its sources, so the tier cap bounds the run. Nothing goes to Whisper before approval: a podcast episode with no transcript in its feed is transcribed only after it is approved, and counts against `WHISPER_MAX_PER_JOB`. Each approved document is fetched once, because the text found during the search is reused at extraction.
 
 ### Approval pause mechanism
 
@@ -344,6 +355,8 @@ Topic jobs pause at `awaiting_approval`. The pause is **passive, not blocking**:
 3. The router updates `JobVideo.approved=True` for the chosen rows, then dispatches a **new** Celery task (`resume_job_after_approval`) which picks up at the extraction phase.
 
 This pattern means a job can sit in `awaiting_approval` for arbitrary time without consuming worker capacity.
+
+**Document caps** (T-5.2.10, [D-115](decisions.md#d-115--the-document-cap-counts-visible-documents-a-request-that-names-its-documents-is-all-or-nothing-and-nothing-is-granted-before-approval-2026-10-29)). `document_cap_service` holds a tenant's library to its tier's cap (Free 500, Pro 5,000, Studio unlimited), counting visible documents: one the tenant already has never counts again, and one only someone else added counts as new. Approval, a PDF upload and pasted URLs are all or nothing. Subscribing to or syncing a channel is refused only when the library is already full; otherwise the sync stops at the cap, newest uploads first, and says how many it left out. Visibility is granted at approval, and only for the approved documents, so a deselected candidate never reaches the library.
 
 #### Polymorphic approval response
 
@@ -386,14 +399,15 @@ The frontend's `useJobProgress` hook drives React Query cache invalidation off W
 
 ### Chunking
 
-`utils/chunking.py` splits a YouTube transcript (a list of segments with `text`, `start`, `duration`) into ~512-token chunks with 50-token overlap. Each chunk preserves a `start_time` and `end_time` derived from the segments it spans. Multilingual scripts are tokenized via the embedder's tokenizer to keep chunk sizes aligned with the embedding context window.
+`utils/chunking.py` splits a transcript (a list of segments with `text`, `start`, `duration`) into 256-token chunks with 32-token overlap (`CHUNK_SIZE`, `CHUNK_OVERLAP`). Each chunk preserves a `start_time` and `end_time` derived from the segments it spans. Multilingual scripts are tokenized via the embedder's tokenizer to keep chunk sizes aligned with the embedding context window.
 
-Since 2026-10-19 each chunk also carries its source's two dates as flat scalars — `published_at` (ISO string, legacy) plus numeric `published_ts` / `published_year`, and `era_start` / `era_end` / `era_confidence` / `is_retrospective` from the document's discussed era. **Unknown values are omitted, never written as sentinels**, so a Chroma range filter such as `{"published_ts": {"$gte": ...}}` excludes undated chunks instead of matching them against 1970. Chunks embedded before that date carry none of these and read as unknown; there is no backfill (D-072).
+Since 2026-10-19 each chunk also carries its source's two dates as flat scalars — `published_at` (ISO string, legacy) plus numeric `published_ts` / `published_year`, and `era_start` / `era_end` / `era_confidence` / `is_retrospective` from the document's discussed era. **Unknown values are omitted, never written as sentinels**, so a Chroma range filter such as `{"published_ts": {"$gte": ...}}` excludes undated chunks instead of matching them against 1970. Chunks embedded before that date read as unknown until the owner runs `scripts/backfill_chunk_temporal_fields.py --write`, a metadata-only pass with no re-embedding (S-1.17.3, [D-120](decisions.md#d-120--older-chunks-gain-their-era-and-publish-fields-by-a-metadata-only-pass-amends-d-072-the-language-profile-is-stored-on-the-document-2026-11-04), amending D-072).
 
 Also since 2026-10-19, a non-English source's chunks carry its measured language mix
 (R5 / [N-002](inventions.md#n-002--proportion-driven-rendering-policy-for-code-mixed-speech-2026-07-31),
-[D-080](decisions.md#d-080--code-mixing-detection-a-lexicon-tagger-not-an-llm-pass-2026-10-19)). `chunk_transcript`
-profiles the whole transcript once (`code_mixing_service.profile_transcript`, a free per-word tagger) and writes
+[D-080](decisions.md#d-080--code-mixing-detection-a-lexicon-tagger-not-an-llm-pass-2026-10-19)). Every chunking path
+profiles the whole transcript once (`language_mix_service.ensure`, a free per-word tagger, T-1.16.1.7), stores the profile on
+`documents.language_mix` and hands it to `chunk_transcript`, which writes
 `code_mix_primary` / `_script` / `_share` / `_matrix_share` / `_quote` on every chunk, plus per-chunk
 `code_mix_chunk_share` / `_chunk_matrix`. Sources under 3% non-English words get none of these fields, so English
 chunks are unchanged. Prompts read the fields through `code_mixing_service.source_note` as a `speech: … — quote in …`
@@ -416,9 +430,9 @@ romanised, 0.805 for the rendering. Fail-soft (a failed batch embeds as written)
 
 ### ChromaDB
 
-`chroma_service.py` is a singleton client (`PersistentClient(path=...)`). Collection access is via `get_or_create_collection`. Two collections in active use:
+`chroma_service.py` is a singleton client (`PersistentClient(path=...)`). Collection access is via `get_or_create_collection`. The two collections every Q&A surface reads (the private ones are described under Retrieval and in the Echo invariant):
 
-- **`videoresearchpro_global`** — chunked transcripts. Metadata per chunk: `{document_id, video_id, source_type, source_id, chunk_index, timestamp_start, timestamp_end, channel_id, language, published_ts, era_*, ...}`. `document_id` ([D-070](decisions.md#d-070--document-visibility-keyed-on-document_id-not-the-legacy-video_id-2026-10-19)) is the field every scoped query filters on; `video_id` is empty for non-video sources. Chunk ids are `{video_id}:{index}` for YouTube documents and `{document_id}:{index}` for every other source — a storage key for in-place upsert, never read by retrieval. Chunks embedded before 2026-10-19 carry no `document_id`; `chroma_service.backfill_chunk_document_ids` stamps it at API startup and on every Celery worker start, before the worker consumes (metadata-only, no re-embedding, idempotent).
+- **`pratidhvani_global`** — chunked transcripts. Metadata per chunk: `{document_id, video_id, source_type, source_id, chunk_index, timestamp_start, timestamp_end, channel_id, language, published_ts, era_*, ...}`. `document_id` ([D-070](decisions.md#d-070--document-visibility-keyed-on-document_id-not-the-legacy-video_id-2026-10-19)) is the field every scoped query filters on; `video_id` is empty for non-video sources. Chunk ids are `{video_id}:{index}` for YouTube documents and `{document_id}:{index}` for every other source — a storage key for in-place upsert, never read by retrieval. Chunks embedded before 2026-10-19 carry no `document_id`; `chroma_service.backfill_chunk_document_ids` stamps it at API startup and on every Celery worker start, before the worker consumes (metadata-only, no re-embedding, idempotent).
 - **`qa_library_global`** — Q&A exchanges, single document each. Metadata: `{exchange_id, surface (job/library/history), job_id (nullable), question_preview, asked_at}`.
 
 Chunk inserts are batched. Failures retry once and then surface as a `building_rag` failure on the job.
@@ -426,28 +440,29 @@ Chunk inserts are batched. Failures retry once and then surface as a `building_r
 ### Retrieval
 
 - **Per-job Q&A** filters by `document_id ∈ the job's approved set` (`JobVideo.document_id`, so a job's Reddit / HN / PDF documents are in scope). Top-K = 15 by default (env `RAG_TOP_K`).
-- **Library-wide Q&A** filters by `document_id ∈ the tenant's visible set` (D-063, keyed per D-070). Top-K = 15 by default. **An empty set retrieves nothing:** `query_collection(document_ids=[])` returns `[]`; only `None` is unrestricted, and no user-facing caller passes it.
+- **Library-wide Q&A** filters by `document_id ∈ the tenant's visible set` (D-063, keyed per D-070). Top-K = 15 by default. **An empty set retrieves nothing:** `query_collection(document_ids=[])` returns `[]`; only `None` is unrestricted, and no user-facing caller passes it. A question on a shelf narrows the set to the shelf; a question about one source (`document_id`, T-8.4.2.4) narrows it to that document, and the asker's notes to the ones on it. An invisible or missing document is a 404 before any quota is spent.
 - **Trust-weighted re-rank** ([D-068](decisions.md#d-068--curated-source-ranking-v1-per-tenant-trust-weight-re-ranks-retrieval-perspective-banding-deferred-2026-10-18), S-7.1.1). Both Q&A routers resolve the asker's non-neutral weights with `subscription_service.channel_weights(db, tenant_id)` at request time and pass them to the agent; `qa_agent._scoped_query` then draws 3 × top-K, drops anything over `RAG_DISTANCE_THRESHOLD` on the **raw** distance, sorts by `distance / weight` (weight clamped to 0.05–2.0, 1.0 for chunks with no `channel_id`) and keeps top-K, and the merged context follows the same score. With no weights set it is one top-K query, exactly as before. Weights are per tenant and chunks are shared, so a weight never lives in chunk metadata and is never a filter. Measured on the 200-video reference job: strong weights move promoted channels from about a quarter of the context to more than half and cut the distinct channels per answer by a third, at a small relevance cost on library Q&A ([measurement](notes/2026-10-19-e71-trust-weighting-measurement.md)).
 - **Corpus statistics come from SQLite, not from the hits.** Retrieval returns a handful of chunks, which say nothing about the corpus they came from, so `services/corpus_stats_service.py` computes `{video_count, total_words, earliest/latest/median published, videos_by_year, era span}` for the approved (job) or visible (library) document set in the router and passes them, with the length preference, into the Q&A agent. The output-length policy and the temporal note are dead code without them — which is exactly how R4's Q&A half shipped unwired from 2026-07-31 to 2026-10-18 (D-066 amendment, D-072).
 - **The asker's own notes** (S-8.5.2) live in a private `notes_global` collection, one vector per live note with `tenant_id` and `target_key` metadata, written on every note write and backfilled at startup. Job Q&A draws notes on the job's own material (the job, its documents and their knowledge reports, its answers, its documents' channels); library Q&A draws every note of the asker, so an empty library can still answer from a note. Notes pass the same raw threshold, then join the D-068 re-rank at `NOTE_RETRIEVAL_WEIGHT` (1.5, measured). They skip the refine step, which compresses and was found dropping them, and reach the answer step verbatim under `[NOTE by you, <date>]` with `NOTE_ANNOTATION_CONTRACT` in the system prompt. A cited note becomes a `note` reference.
-- **Q&A history meta-chat** queries `qa_library_global` with no filter. Returns top-15 past exchanges.
-- **Video knowledge extraction** doesn't use RAG — it works directly on the cached transcript (chunk-by-chunk via the knowledge agent's map-reduce).
+- **Q&A history meta-chat** queries `qa_library_global` filtered to the asker's tenant (T-5.6.6), top-K = `RAG_TOP_K`.
+- **Knowledge extraction** doesn't use RAG — it works on the document's full text (`document_text_service.full_text`, [D-113](decisions.md#d-113--knowledge-text-for-any-source-the-transcript-cache-else-the-documents-chunks-put-back-together-2026-10-29)), through the knowledge agent's map-reduce.
 
 ---
 
-## LangGraph agents
+## Agents
 
-Each agent is a stateful graph with a `TypedDict` shared state in `agents/state.py`.
+Search, Report, Q&A, Knowledge and Echo are LangGraph graphs with a `TypedDict` shared state (`agents/state.py`, or the agent's own file). Q&A History and Visual are plain functions, because their flows are linear.
 
 ### Search Agent (`search_agent.py`)
 
 Topic jobs only. Pipeline:
 
 ```
-generate_search_queries → execute_searches → rank_and_curate
+resolve_preferred_channels → plan_searches → execute_searches → rank_and_curate
 ```
 
-- **generate_search_queries** (`use_case=search_plan_queries`) plans 3-5 YouTube search queries from the user's topic + free-text instructions, and since 2026-10-19 a `temporal_profile` — a deliberate per-topic decision on how time should weigh in ranking (`recency_weight` of `dominant` / `secondary` / `minimal`, an optional `target_era`, a rationale).
+- **resolve_preferred_channels** turns the channels named on the job into ids.
+- **plan_searches** (`use_case=search_plan_queries`) plans 3-5 YouTube search queries from the user's topic + free-text instructions, and since 2026-10-19 a `temporal_profile` — a deliberate per-topic decision on how time should weigh in ranking (`recency_weight` of `dominant` / `secondary` / `minimal`, an optional `target_era`, a rationale).
 - **execute_searches** runs each query against YouTube Data API v3 in parallel (asyncio).
 - **rank_and_curate** (`use_case=search_rank_and_curate`) deduplicates and ranks the results into the final candidate list — the largest reasoning-mode win in the codebase. The prompt receives the temporal profile, each candidate's publish date and (when the library has already dated it) its discussed era, a `Script:` hint for non-Latin titles, and an English preference. All of these are ranking PREFERENCES; no candidate is ever excluded for its date or language (D-059, D-072).
 
@@ -466,37 +481,36 @@ compute_statistics → map_chunks → reduce_summaries → compose_report
   - **Words are counted once per document** (`compute_statistics`): `chunk_transcript` stamps every chunk with `document_word_count`, the words of the document's full text with `[VISUAL @ ...]` spans removed. Summing the chunks' own `word_count` counted every `CHUNK_OVERLAP` region twice (the 200-video reference job said 1,057,331 words for 947,239) and, on a visual run, the descriptions too. Chunks without the stamp are rebuilt in order without their overlap (`quote_fidelity.merge_chunk_texts`) and counted.
   - **Every section's HTML must be finished** (S-1.14.17). Sections are concatenated, so one that stops inside a tag or attribute folds the next section's headings into it. `utils/html_balance.check` scans each topic-report section, the executive summary and a channel job's narrative (whose end the template's closing tags follow) for an unfinished tag, attribute or comment and for elements left open. A `/` ending an unquoted attribute value belongs to the value, as in the HTML tokenizer, so `<a href=/x/>` counts as an open link. An unfinished answer is composed once more with twice the completion budget (clamped to the model's ceiling). If it is still unfinished, `html_balance.repair` cuts the longer attempt before the unfinished tag, closes what is open, and the processing note names the section as cut off on both attempts. If the retry call fails or comes back empty, the first attempt is closed instead and the note says the section could not be composed again. The note carries `class="processing-note"`, which is how the reading room finds and shows it.
 
-Channel jobs skip `map_chunks`/`reduce_summaries` and go straight to a stats-only HTML report.
+Channel jobs skip `map_chunks`/`reduce_summaries` and go straight to `compose_channel_report`, a stats-only HTML report.
 
 ### Q&A Agent (`qa_agent.py`)
 
-All three Q&A surfaces. Pipeline:
+Job, library and shelf Q&A. The graph:
 
 ```
-clarify (optional) → expand_sub_queries → retrieve_context → refine_context → formulate_answer → extract_references
+retrieve_context → refine_context → formulate_answer → extract_references
 ```
 
-- **clarify** (`use_case=qa_clarification` / `library_qa_clarification`) — short follow-up clarifier before answering, only when the question is too ambiguous.
-- **expand_sub_queries** (`use_case=qa_sub_query_expansion`) rewrites the question into 2 sub-queries for broader RAG recall.
-- **retrieve_context** queries ChromaDB with the original + sub-queries.
+- **Clarify** (`use_case=qa_clarification` / `library_qa_clarification`) is not a node: the `/qa/clarify` routes ask a short follow-up before the question is sent, only when it is too ambiguous, and the answers reach the agent as `context`.
+- **retrieve_context** rewrites the question into 2 sub-queries for broader RAG recall (`use_case=qa_sub_query_expansion`), then queries ChromaDB with the original + sub-queries.
 - **refine_context** (`use_case=qa_refine_context` / `library_qa_refine_context`) compacts ~45K raw RAG+report context into ~3K focused excerpts before the answer LLM sees it. This is the fix for "no relevant context" failures on large noisy inputs.
-- **formulate_answer** (`use_case=qa_formulate_answer` / `library_qa_formulate_answer`) — final user-facing answer, temperature 0, accepts an `answer_language` parameter (default English). Both sites share `_answer_policy`: the completion budget and the brief follow the corpus bracket (D-064) from the router-supplied statistics, with an optional per-request `output_length`; the prompt carries a CORPUS note (publication span, discussed-era span, "say so when sources disagree along a time axis") and allowed-source lines of the form `"Title" by Channel | published <date> | discusses <era>`.
+- **formulate_answer** (`use_case=qa_formulate_answer` / `library_qa_formulate_answer`) — final user-facing answer, temperature 0, accepts an `answer_language` parameter (default English). Both sites share `_answer_policy`: the completion budget and the brief follow the corpus bracket (D-064) from the router-supplied statistics, with an optional per-request `output_length` (the composers offer it per ask since S-1.15.3); the prompt carries a CORPUS note (publication span, discussed-era span, "say so when sources disagree along a time axis") and allowed-source lines of the form `"Title" by Channel | published <date> | discusses <era>`.
 - **extract_references** (`use_case=qa_extract_references`) parses the answer back into structured `(video_id, ts, quote)` so the frontend can render citation chips with `&t=` timestamp links.
 
 Topic jobs use RAG + report. Channel jobs use RAG only. Subscription jobs are queryable only via library-wide Q&A.
 
 ### Knowledge Agent (`knowledge_agent.py`)
 
-Per-video extraction. Pipeline:
+Per-document extraction, for every source type. Runs inside the request, not on the worker. Pipeline:
 
 ```
-batch_transcript → map_extract_per_batch → merge_with_dedupe → synthesize_report
+split_transcript → extract_per_batch → merge_extractions → synthesize_report
 ```
 
-- **batch_transcript** splits the cached transcript into token-budgeted batches (env `KNOWLEDGE_EXTRACT_BATCH_TOKENS=8000`, capped at `KNOWLEDGE_MAX_TRANSCRIPT_TOKENS=60000`).
-- **map_extract_per_batch** (`use_case=knowledge_extract_batch`) returns structured `{topics, concepts, events, facts}` JSON per batch.
-- **merge_with_dedupe** unions the per-batch outputs and deduplicates by case-insensitive equality.
-- **synthesize_report** (`use_case=knowledge_synthesize_report`) renders a Markdown knowledge document.
+- **split_transcript** splits the document's full text into token-budgeted batches (env `KNOWLEDGE_EXTRACT_BATCH_TOKENS=8000`, capped at `KNOWLEDGE_MAX_TRANSCRIPT_TOKENS=60000`). The text comes from `document_text_service.full_text`, keyed on `document_id`: the `transcript_cache` row for a YouTube video, otherwise the document's chunks put back together in order with the overlap removed ([D-113](decisions.md#d-113--knowledge-text-for-any-source-the-transcript-cache-else-the-documents-chunks-put-back-together-2026-10-29)). PDFs, pasted pages, threads and podcast episodes keep their text nowhere else. The prompts name the source by its type (`knowledge_prompts.SOURCE_PROFILES`).
+- **extract_per_batch** (`use_case=knowledge_extract_batch`) returns structured `{topics, concepts, events, facts}` JSON per batch.
+- **merge_extractions** unions the per-batch outputs and deduplicates by case-insensitive equality.
+- **synthesize_report** (`use_case=knowledge_synthesize_report`) renders a Markdown knowledge document. The budget follows the document's size (S-1.14.8). An optional `?output_length=brief|standard|deep` multiplies it by D-064's user multiplier and adds that depth's brief (S-1.15.3); unset or `auto` is exactly 1.0 with no brief, and extraction never changes.
 
 Output written to `Document.extracted_knowledge_json` and `Document.knowledge_report_md`. Triggered by `POST /api/v1/videos/{id}/extract-knowledge`. Returns 409 if already extracted unless `?force=true`.
 
@@ -510,7 +524,7 @@ select_moments → capture_frames → describe_frames → persist
 
 - **select_moments** (`use_case=visual_select_moments`, text-only) reads the timestamped transcript and returns `[{timestamp_seconds, reason, expected_content}]` for moments where the picture carries information the words do not — deictic language ("as you can see here"), figures read aloud, demonstrations, slides, screen shares. Zero is a valid answer. Spacing (`VISUAL_MIN_GAP_SECONDS`) and the per-video cap are re-enforced in code afterwards, because the prompt asks and the code guarantees.
 - **capture_frames** (`services/frame_service.py`) downloads the video **once** with `worstvideo[height>=360]` and runs `ffmpeg -ss T -frames:v 1` per timestamp against the local file. One download rather than N is the whole design: N downloads is how the transcript pipeline got IP-blocked in [D-051](decisions.md#d-051--transcript-pipeline-resilience-bundle-circuit-breaker--segmented-whisper--yt-dlp-client-fallback-2026-07-22).
-- **describe_frames** (`use_case=visual_describe_frame`) is the app's **only multimodal call site**. Each still goes to the model together with the speech within ±30s, answering one question: what does the picture add that the words do not? Returns `{informative, description, reads_as, legibility}`; frames the model judges uninformative or unreadable are stored but never merged.
+- **describe_frames** (`use_case=visual_describe_frame`) is one of the app's two **multimodal call sites** (the other is `echo_share_ocr`). Each still goes to the model together with the speech within ±30s, answering one question: what does the picture add that the words do not? Returns `{informative, description, reads_as, legibility}`; frames the model judges uninformative or unreadable are stored but never merged.
 - **persist** writes `visual_frames` rows. A failed commit rolls back explicitly — the session is shared with the extraction loop, and leaving it poisoned would turn one bad persist into a dead job.
 
 Merging happens later and elsewhere: `services/visual_service.annotate_segments` is a pure function producing a NEW segment list, called at chunk time. It never touches `transcript_cache`, which is globally shared across jobs and tenants.
@@ -527,7 +541,22 @@ The reader-side half is `prompts/shared.py::VISUAL_ANNOTATION_CONTRACT`, injecte
 
 The guard acts only on a detail it finds in a span, so every mark is true by construction. It never claims that a detail went unsaid ([D-108](decisions.md#d-108--the-attribution-guard-never-infers-that-a-detail-went-unsaid-it-checks-only-english-speech-in-latin-script-2026-10-25)): in R1 run 10, every such inference came from speech it could not fully read. It examines only sources whose speech is English in Latin script (`Source.readable`). Devanagari, Bengali and romanised Hinglish sources are left as written, and the processing note says how many were not checked. It never deletes a detail. The guard is fail-soft, counted in `processing_notes` (`map_attribution_guard`, `report_attribution_*`, `report_screen_*`), disclosed in the processing note, and listed in the run's intermediates. The note says what was matched, never "only on screen", because the guard cannot read Devanagari or Bengali speech or a garbled caption. `REPORT_ATTRIBUTION_GUARD_ENABLED` switches it off. It is a no-op when no source has a span. It realizes invention [N-003](inventions.md#n-003--true-by-construction-modality-marks-for-reports-written-from-speech-plus-machine-described-screens-2026-10-24).
 
-Gated by `VISUAL_ENABLED` (install) AND `jobs.visual_analysis` (per job); both must be true. Off by default — it is the only multimodal spend and the only path that downloads video rather than audio.
+Gated by `VISUAL_ENABLED` (install) AND `jobs.visual_analysis` (per job); both must be true. Off by default — it is the largest multimodal spend and the only path that downloads video rather than audio. R1 is parked ([D-109](decisions.md#d-109--r1-is-parked-visual-analysis-stays-hidden-its-measurement-stops-the-code-stays-2026-10-25)): the UI hides everything that starts it.
+
+### Echo Agent (`echo_agent.py`)
+
+"Speak as me" (S-3.4.1, [D-102](decisions.md#d-102--speak-as-me-two-switches-guards-in-code-the-reply-in-the-users-language-2026-10-20)). Pipeline:
+
+```
+classify_intent → retrieve_relevant_knowledge → retrieve_voice_signals → retrieve_personal_context → draft → self_critique_against_voice → (revise → critique again) → finalize
+```
+
+- **classify_intent** (`use_case=echo_classify_intent`) reads the message's intent, topic, language and the people it names. A private name stops the run until the user confirms it.
+- **draft** and **revise** (`use_case=echo_draft`) write in the user's voice and the reply's language (not D-066 English), from a trait card, five style-diverse exemplars of the user's own writing and the cited knowledge.
+- **self_critique_against_voice** (`use_case=echo_critique`) scores tone, vocabulary, structure and topicality from 1 to 5. It is advisory: the best round is kept. `ECHO_DRAFT_CRITIQUE_ROUNDS` bounds the loop, and `ECHO_DRAFT_CRITIQUE_TARGET` stops it early.
+- **finalize** applies the verbatim and citation guards. Like the private-name stop, they live in code, not in the prompt.
+
+Two switches gate it: the install's `ECHO_SPEAK_AS_ME_ENABLED`, and a passed voice test for each user (`echo_voice_gates`). Since T-3.4.1.8 the user takes that test in the app: `echo.generate_voice_test` writes 20 blinded pairs on the worker, about 40 `echo_draft` calls that run only when the user asks for them. `scripts/voice_match_harness.py user-score --record` remains the operator's route. A draft is never sent.
 
 ### Q&A History Agent (`qa_history_agent.py`)
 
@@ -545,13 +574,13 @@ retrieve_past_exchanges → refine_context → formulate_answer
 
 ## LLM routing
 
-Every LLM call site in the codebase is a **named use case** with a default `(provider, model, reasoning)` triple registered in `app/services/llm_routing.py::USE_CASE_REGISTRY`. Twenty-four entries today (full list in [CLAUDE.md](../CLAUDE.md) §LLM-configuration).
+Every LLM call site in the codebase is a **named use case** with a default `(provider, model, reasoning)` triple registered in `app/services/llm_routing.py::USE_CASE_REGISTRY`. 36 entries today (full list in [CLAUDE.md](../CLAUDE.md#registered-use-cases)).
 
-`resolve_config(use_case)` returns the effective config after applying, highest first: the caller's per-user override (`user_llm_overrides`, loaded into a ContextVar by `llm_service.byok_context`, E-1.13), `LLM_USE_CASE_CONFIG`, and `LLM_ROUTE_OVERRIDES` (legacy fallback). `get_llm(use_case)` returns a configured LangChain client (`ChatOpenAI`, `ChatAnthropic`, `ChatGoogleGenerativeAI`, or local OpenAI-compatible).
+`resolve_config(use_case)` returns the effective config after applying, highest first: the caller's per-user override (`user_llm_overrides`, loaded into a ContextVar by `llm_service.byok_context`, E-1.13), `LLM_USE_CASE_CONFIG`, and `LLM_ROUTE_OVERRIDES` (legacy fallback). `get_llm_for(use_case)` returns a configured LangChain client (`ChatOpenAI`, `ChatAnthropic`, `ChatGoogleGenerativeAI`, or local OpenAI-compatible).
 
 ### Measured guidance
 
-Each registry entry also carries `guidance`, which records what the E-1.14 measurements found for that use case. Eight entries are `measured` and cite a decision, the gap to the flagship tier and what fails on a downgrade. The other fifteen are `unmeasured`, with a note on what evidence exists. Each entry can also list per-model verdicts (`unacceptable` / `weaker`), scoped to reasoning levels where needed.
+Each registry entry also carries `guidance`, which records what the E-1.14 measurements found for that use case. Ten entries are `measured` and cite a decision, the gap to the flagship tier and what fails on a downgrade. The other twenty-six are `unmeasured`, with a note on what evidence exists. Each entry can also list per-model verdicts (`unacceptable` / `weaker`), scoped to reasoning levels where needed.
 
 `assess_choice(use_case, cfg)` turns those verdicts, plus the `VISION_CAPABLE_MODELS` check, into warnings. The warnings appear in three places:
 - `/health/llm`, for the config this process resolved;
@@ -574,7 +603,7 @@ Unsupported levels degrade gracefully with a warning log; never fatal.
 
 `services/llm_smoke.run_startup_probes` runs once from the FastAPI lifespan. It:
 
-1. Resolves the effective `UseCaseConfig` for all 24 use cases.
+1. Resolves the effective `UseCaseConfig` for all 36 use cases.
 2. Dedupes by `(provider, model, vision)` — each unique pair probed once. `temporal_scope_extract` is probed but gates no feature: a failure leaves each document's era unknown and the job completes.
 3. Fans a trivial one-token probe per unique config out via `asyncio.to_thread` (provider SDKs are synchronous).
 4. Stores per-use-case results on a process-global `LLMStatus` singleton.
@@ -601,23 +630,26 @@ A full call-site audit against a 200-video / 10.6M-token extreme corpus (real re
 
 ## Auth and tenancy
 
-### Today (self-host, single tenant)
+### Today (self-host; each user is a tenant)
 
-- Email + password registration and login (`auth_service.py`, bcrypt).
-- JWT issued on login; included in `Authorization: Bearer <token>` on every request.
-- Token verification in a FastAPI dependency `get_current_user` that loads the user row.
-- All user-scoped resources are FK-linked to `User.id` and filtered at query time.
-- `tenant_id` is **not yet** materialized in the schema but is reserved for the imminent migration; today's `User.id` plays the role of an implicit tenant.
+- **Sign-in.** Email + password (`auth_service.py`, bcrypt), and Google or GitHub OAuth 2.0 with PKCE, which links or creates an account only from a provider-verified email ([D-116](decisions.md#d-116--oauth-links-or-creates-an-account-only-from-a-provider-verified-email-and-the-link-records-it-2026-10-29)). `LOCKOUT_FAILURE_THRESHOLD` failed passwords lock an account for `LOCKOUT_DURATION_MIN` minutes.
+- **Tokens.** A JWT sent as `Authorization: Bearer <token>` on every HTTP request; no HTTP route reads a token from the URL (T-8.8.1.5). The WebSocket handshake is the one exception, and it makes the same check as an HTTP request (`auth_service.authenticate_access_token`, T-5.4.15, failing closed). Tokens say what they are: an access token has `typ: access`, so the second-factor ticket (`typ: mfa_step`) is not a sign-in token ([D-121](decisions.md#d-121--reset-codes-never-appear-in-a-response-two-step-verification-guards-every-sign-in-and-tokens-say-what-they-are-2026-11-04)).
+- **Sessions.** Every access token has a `jti` and a row in `sessions`, so `POST /auth/logout`, `DELETE /auth/sessions/{jti}` and `DELETE /auth/sessions` revoke it on the server. A row is never deleted; `active` on `GET /auth/sessions` says whether it still works.
+- **Two-step verification.** A TOTP authenticator or recovery codes, on password and OAuth sign-ins alike. The password step returns a five-minute ticket. Each code checked counts against the ticket's `jti` in `mfa_step_tickets`, never against the caller's address; the fifth miss kills it, even for the right code, and a ticket buys one session (T-5.4.13).
+- **Passwords.** A reset code goes by email, or to the server log when `SMTP_HOST` is unset, and never into a response. Confirming a reset revokes every session in the same commit (T-5.4.12). `POST /auth/password/change` needs the current password, counts a wrong one toward the lockout, and keeps only the session that asked (T-5.4.14).
+- **Encryption at rest.** Stored provider keys, authenticator secrets and connector tokens share one Fernet key, `BYOK_ENCRYPTION_KEY` ([D-043](decisions.md#d-043--single-shared-fernet-key-for-all-encrypted-at-rest-credentials-2026-05-05)). Unset, each process generates its own and what it stores is unreadable after a restart. Malformed, the routes that need it answer 503 naming the cause, never the key (T-5.6.9); `GET /settings/llm` reports the state ([D-118](decisions.md#d-118--a-provider-key-is-stored-only-for-a-provider-a-call-reads-it-for-the-settings-report-the-encryption-keys-state-never-the-key-2026-11-04)).
+- **Your own keys.** Studio users can store their own OpenAI, Anthropic and Google keys and choose per-use-case models, loaded into a ContextVar by `llm_service.byok_context`.
+- **Operators.** Only the accounts in `ADMIN_EMAILS`, or with none set the first registered, may switch tiers or restart the install ([D-111](decisions.md#d-111--operator-only-tier-switching-and-an-honest-pricing-page-2026-10-25)).
+- **Tenancy.** `get_current_user` loads the user row. Every user-scoped row carries `tenant_id`, today equal to `User.id`, and a read of someone else's row is a 404, the same as a row that does not exist. `document_visibility` is the grant over the shared documents (D-063).
+- **Limits and records.** Per-route and per-tier rate limits (`middleware/rate_limit.py`, E-5.5), per-user quotas (`quota_metering_service`, HTTP 429), the document caps above, and an audit log (`GET /auth/audit-log`).
 
 ### Future (SaaS)
 
 Per [saas-roadmap.md](saas-roadmap.md):
 
-- Explicit `tenant_id` on every user-scoped table; tenant → workspace → user hierarchy.
-- OAuth (Google, GitHub), MFA, session management, audit log.
-- Per-tenant quota allocation (YouTube API, LLM tokens, document count).
-- Per-tenant LLM keys (BYOK).
-- Stripe subscription billing.
+- A tenant → workspace → user hierarchy, with teams.
+- Stripe subscription billing; tier changes are a mock, operator-only flip until then (D-050).
+- Per-tenant allocation of the install's YouTube quota, and enforcement of the usage now recorded.
 
 ---
 
@@ -625,11 +657,11 @@ Per [saas-roadmap.md](saas-roadmap.md):
 
 ### YouTube API
 
-`quota_service.py` records every YouTube API call in `api_quota_log` with cost units (1 for search/playlistItems, etc.). A soft cap (default 10K daily units, the YouTube free quota) surfaces a banner on the frontend when usage crosses 80%. Hard cap rejects new searches with a 429 + a clear "quota exhausted" error.
+`quota_service.py` records every YouTube Data API call in `api_quota_log` with its cost in units and mirrors the day's total in Redis. `GET /health/quota` reports it against `YOUTUBE_DAILY_QUOTA` (default 10K, the YouTube free quota), and the system status page shows it. Nothing refuses a call at that figure: `QuotaExceededError` comes from YouTube's own 403.
 
-### LLM calls
+### Usage per tenant
 
-Per-call accounting is **not** in `api_quota_log` today (deferred to the SaaS phase). Cost observability for LLMs is through the provider dashboards.
+Usage is metered per tenant and by feature, at a scope rather than at each call site (E-5.2, [D-119](decisions.md#d-119--usage-is-metered-at-a-scope-that-names-the-tenant-and-written-in-a-session-of-its-own-2026-11-04)). `usage_service.metered(db, tenant_id)` names whose work it is. `llm_service.byok_context` opens one, `get_llm_for` attaches a meter to every client it builds, and `quota_service.record` charges each YouTube request to the open scope. The outermost scope writes `usage_records` (per UTC day, feature and metric) and the daily `quota_usage` totals when it closes, through a session of its own, so it never commits or rolls back the caller's. `GET /api/v1/usage` returns the caller's own figures, and `GET /auth/quota` reports them against the tier's limits. Nothing is enforced from these numbers (D-111). Not recorded yet: Whisper audio minutes, and tokens from local models that do not report them.
 
 ### Logs
 
@@ -653,7 +685,7 @@ An output is one row in `outputs`, generated by the outputter registered for its
 | Kind | Sources | Model calls | Files |
 |---|---|---|---|
 | `book` | the user's runs, one chapter each | none by default; `cohesion=light` / `full` adds `author_book_outline` / `author_book_prose` (opt-in, [D-093](decisions.md#d-093--book-cohesion-pass-ships-opt-in-none-stays-the-default-after-two-blind-rounds-2026-10-19)) | `md` text, `epub` always, `pdf` with a converter |
-| `deck` | the user's runs | `author_deck_outline`, one call | `pptx`, plus `md` text |
+| `deck` | the user's runs, and `document:<id>` for a document in their library with a knowledge report (S-6.3.2) | `author_deck_outline`, one call | `pptx`, plus `md` text |
 | `site` | `shelf:` and `job:` ids | none | `zip`, plus a Markdown contents page |
 | `newsletter` | none: a window `(since, until]` over the reader's own library | none by default; `featured` adds `author_newsletter_compose`, one call (opt-in, [D-097](decisions.md#d-097--newsletter-featured-section-ships-opt-in-the-rest-of-an-issue-is-listed-from-the-database-2026-10-19)) | `html` (the email), plus `md` text; an empty window ends `skipped` |
 
@@ -678,12 +710,14 @@ What every outputter keeps true:
 
 ## Dataset exports
 
-Four streaming JSONL endpoints (`routers/exports.py`):
+Six export routes (`routers/exports.py`), all read with the Authorization header, never a token in the URL (T-8.8.1.5). The four fine-tune datasets stream JSONL:
 
 - `/api/v1/exports/qa-dataset/openai.jsonl` — Q&A as OpenAI chat-format records.
 - `/api/v1/exports/qa-dataset/tuple.jsonl` — Q&A as plain `(system, user, assistant)` tuples.
 - `/api/v1/exports/knowledge-dataset/openai.jsonl` — knowledge artifacts in chat format.
 - `/api/v1/exports/knowledge-dataset/tuple.jsonl` — knowledge artifacts in tuple format.
+
+`/api/v1/exports/notes.jsonl` and `/api/v1/exports/notes.md` are the user's notes, not training data.
 
 `StreamingResponse` over a SQL iterator. Memory stays constant for arbitrarily large exports. System prompts are baked into `services/dataset_service.py` as module constants. The Q&A dataset unions `qa_exchanges` + `library_qa_exchanges` + `qa_history_exchanges` ordered by `created_at`. Both datasets are the caller's only: Q&A rows filter on `tenant_id`, and the knowledge dataset exports the documents in `visibility_service.visible_document_ids` that carry a knowledge report (S-5.10.5, keyed on `document_id` per D-070), the same set the library lists. It used to derive ownership from the caller's jobs joined on the legacy `video_id`, which dropped documents with no job, documents whose job was deleted, and every non-video document. It also broke on its first record until then: it loaded `Document` entities through `execution_options(yield_per=...)`, the legacy `Query` uniquifies entity rows unless `Query.yield_per()` set its load option, and SQLAlchemy refuses `yield_per` with `unique()`. It now selects the three columns it needs, with `Query.yield_per()`.
 
@@ -694,7 +728,7 @@ Four streaming JSONL endpoints (`routers/exports.py`):
 - **Whisper** is invoked with `task="transcribe"` (not `translate`) so mixed-language audio (e.g. Hindi-English code-mixed) is preserved faithfully.
 - The **embedding model** is multilingual (`paraphrase-multilingual-MiniLM-L12-v2`), so a Hindi transcript and an English question land in similar vector space — passably for Devanagari, badly for romanised Hindi. Non-English chunks are therefore embedded as an English rendering (see [Embedding](#embedding), D-084).
 - **Code-mixed speech** ([N-002](inventions.md#n-002--proportion-driven-rendering-policy-for-code-mixed-speech-2026-07-31), S-1.16.2). `language_service` profiles scripts exactly and is blind to Hindi in Latin letters by design. `code_mixing_service` answers the other question, which language each word is in, and runs on Latin and Devanagari alike. It works in four steps: a lexicon + character n-gram + Viterbi tagger; a matrix-language vote over system morphemes, which tells "Hindi grammar with English nouns" from "English with a Hindi clause"; a proportion-to-quote-form policy (`CODE_MIX_DOMINANT_SHARE` 0.6, `CODE_MIX_BORROWING_MAX_SHARE` 0.2); and one primary language per source, so a report never switches script for one speaker. The analysis path reads English (every prompt carries the English contract and the source's `speech:` note). Quotation keeps the original: report map items may carry `original` beside English `content`, and compose attaches the source's `quote_form`. Every kept `original` is verified in code before anything is composed: `app/services/quote_fidelity.py` (the same rule the R1 quote-fidelity audit uses) drops wording that is not verbatim or 80%-aligned with its own source's speech, mixes two scripts in one word, or is in a script other than the source's; the drop is disclosed in the report's processing note. After composing, the same rule checks the report itself (`quote_fidelity.scrub_report`): a native-script passage found in no source's speech (titles and channel names admitted) is removed with its transliteration, its English kept, and the removal counted in `processing_notes.report_quotes_removed` and disclosed. A source typed in Latin letters is quoted in Latin letters. Method and measurements: [the detection note](notes/2026-10-19-code-mixing-detection.md).
-- **Caption-track choice is the known weak point.** `_fetch_transcript_once` falls back to the first listed track, so an auto-dubbed track can be ingested instead of the original audio. In the S-1.16.2 study, 2 of 13 Hindi-speech videos arrived this way. An English dub cannot be detected downstream. Tracked as S-1.11.11.
+- **Caption tracks** (S-1.11.11, [D-117](decisions.md#d-117--the-caption-track-is-the-one-in-the-spoken-language-auto-dubs-are-read-from-the-players-audio-tracks-2026-10-29)). The fetch takes the track in the language the video is spoken in. Auto-dubs, which YouTube lists beside the original's captions, are recognised from the player's audio tracks and skipped, a creator's manual track beats the automatic one, and English-first is only the fallback when nothing says what language is spoken. A video whose every track is a dub goes to Whisper. The chosen track, and why, is recorded on the document. `scripts/refetch_dubbed_transcripts.py` finds transcripts that came from a dub before this.
 - The **Q&A agent** accepts an `answer_language` parameter and is instructed to translate quoted non-English context into the target language while preserving proper nouns in their original script.
 - **Visual annotations are always written in English**, whatever the spoken language, because they are our text rather than the speaker's. `visual_service.strip_annotations` exists so that speech-only surfaces — dataset exports, word counts, and the language profiler — measure the source and not our own commentary.
 
@@ -704,11 +738,11 @@ Four streaming JSONL endpoints (`routers/exports.py`):
 
 These sections describe the trajectory, not the current code:
 
-- **Multi-source ingest** — the `videos` → `documents` table rename landed in L1 PR 4; the `SourceConnector` interface contract (PR 2/3) routes every YouTube call site through `connector_for("video")`. The Reddit (S-1.5.1) and HN (S-1.5.2) standalone connectors followed; **E-1.10 UUID PK promotion shipped 2026-05-02** ([PR #112](https://github.com/khoks/VideoResearchPro/pull/112)) collapsing storage tasks to trivial inserts. Reddit + HN end-to-end ingest converges on **Milestone M-1.5** (3 of 7 component checks closed; orchestrator wiring + frontend ApprovalCard primitive + citation rendering + e2e tests are the remaining work). Full trajectory in [source-types.md](source-types.md). L1 in the [feature-roadmap](feature-roadmap.md).
-- **Personal Brain** — activity stream connectors, voice capture, "speak as me" agent are detailed in [personal-brain.md](personal-brain.md). Multi-quarter trajectory.
-- **SaaS** — tenancy, billing, abuse prevention, hosting are detailed in [saas-roadmap.md](saas-roadmap.md). Today's PRs already respect the forward-compat invariants.
+- **Multi-source ingest** — the `videos` → `documents` table rename landed in L1 PR 4; the `SourceConnector` interface contract (PR 2/3) routes every YouTube call site through `connector_for("video")`. The Reddit (S-1.5.1) and HN (S-1.5.2) standalone connectors followed; **E-1.10 UUID PK promotion shipped 2026-05-02** ([PR #112](https://github.com/khoks/VideoResearchPro/pull/112)) collapsing storage tasks to trivial inserts. Reddit, Hacker News, Mastodon, Bluesky, podcasts, web articles and X now run end to end, and a topic run chooses among them (S-1.5.13). Full trajectory in [source-types.md](source-types.md). L1 in the [feature-roadmap](feature-roadmap.md).
+- **Personal Brain** — activity stream connectors, voice capture and the "speak as me" agent have shipped behind their gates; what remains is in [personal-brain.md](personal-brain.md). Multi-quarter trajectory.
+- **SaaS** — tenancy, billing, abuse prevention, hosting are detailed in [saas-roadmap.md](saas-roadmap.md).
 - **Author Studio** — derivative artifact generation (books, sites, decks, newsletters, reels) is L2 in the [feature-roadmap](feature-roadmap.md). Books, decks, sites and the newsletter ship (see [Author Studio outputs](#author-studio-outputs)); reels remain.
-- **Curated source ranking** — source weights, disagreement detection, side-by-side narratives are L4. Source weights already have a column reservation on the `creators` table.
+- **Curated source ranking** — the per-tenant trust weight shipped (S-7.1.1); disagreement detection and side-by-side narratives remain in L4.
 
 ---
 
@@ -720,6 +754,6 @@ These sections describe the trajectory, not the current code:
 - Functional & non-functional requirements — [requirements.md](requirements.md)
 - Vision — [vision.md](vision.md)
 - Roadmap — [feature-roadmap.md](feature-roadmap.md)
-- LLM use case registry — [CLAUDE.md](../CLAUDE.md) §LLM-configuration and `backend/app/services/llm_routing.py::USE_CASE_REGISTRY`
+- LLM use case registry — [CLAUDE.md](../CLAUDE.md#llm-configuration) and `backend/app/services/llm_routing.py::USE_CASE_REGISTRY`
 - Testing — [testing.md](testing.md)
 - Contributing — [contributing.md](contributing.md)

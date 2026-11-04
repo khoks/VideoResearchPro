@@ -1,8 +1,8 @@
 # Pratidhvani — API Reference
 
-**Status:** canonical (2026-04-24, last refreshed 2026-10-19). This is the **single source of truth** for the REST and WebSocket API. All other docs link here rather than duplicating endpoint lists.
+**Status:** canonical (2026-04-24, last refreshed 2026-11-04). This is the **single source of truth** for the REST and WebSocket API. All other docs link here rather than duplicating endpoint lists.
 
-The API is mounted under `/api/v1/` (except the WebSocket, which is mounted at the root). All HTTP responses are JSON (content-type `application/json`) unless explicitly noted otherwise (HTML for reports, NDJSON for dataset exports). Authentication is via `Authorization: Bearer <jwt>` for everything except `/auth/register`, `/auth/login`, and `/health` family endpoints. No HTTP route accepts the JWT as a `?token=` query string (retired 2026-10-25, T-8.8.1.5, [D-085 addendum](decisions.md#d-085--reading-room-reports-stay-html-sanitised-and-parsed-in-the-browser-one-shared-citation-card-fed-by-the-runs-documents-2026-10-19)): a browser fetches files with the header and opens or saves them from a blob: URL. The `/ws/jobs` WebSocket is the one exception, since a WebSocket handshake cannot carry headers.
+The API is mounted under `/api/v1/` (except the WebSocket, which is mounted at the root). All HTTP responses are JSON (content-type `application/json`) unless explicitly noted otherwise (HTML for reports, NDJSON for dataset exports). Authentication is via `Authorization: Bearer <jwt>` for everything except `/auth/register`, `/auth/login`, `/auth/login/mfa`, the two `/auth/password-reset/*` routes, the `/auth/oauth/*` routes and the `/health` family. No HTTP route accepts the JWT as a `?token=` query string (retired 2026-10-25, T-8.8.1.5, [D-085 addendum](decisions.md#d-085--reading-room-reports-stay-html-sanitised-and-parsed-in-the-browser-one-shared-citation-card-fed-by-the-runs-documents-2026-10-19)): a browser fetches files with the header and opens or saves them from a blob: URL. The `/ws/jobs` WebSocket is the one exception, since a WebSocket handshake cannot carry headers.
 
 Every error follows FastAPI's default `{ "detail": "..." }` shape unless otherwise noted.
 
@@ -29,8 +29,79 @@ Issue a JWT. **Public.** Returns 200 + `TokenResponse`.
 // request
 { "email": "user@example.com", "password": "..." }
 // response
-{ "access_token": "...", "token_type": "bearer" }
+{ "access_token": "...", "token_type": "bearer", "expires_in": 86400 }
+// response when two-step verification is on
+{ "requires_mfa": true, "mfa_token": "...", "expires_in": 300 }
 ```
+
+A wrong email, a wrong password and a locked account all get the same 401 `Invalid email or password`. `LOCKOUT_FAILURE_THRESHOLD` failures lock the account for `LOCKOUT_DURATION_MIN` minutes. With two-step verification on, the password step issues no access token: `mfa_token` is good only at `POST /auth/login/mfa` ([D-121](decisions.md#d-121--reset-codes-never-appear-in-a-response-two-step-verification-guards-every-sign-in-and-tokens-say-what-they-are-2026-11-04)). The same applies to a Google or GitHub sign-in.
+
+### `POST /api/v1/auth/login/mfa`
+The second sign-in step. **Public.** Body `{ "mfa_token": "...", "code": "123456" }`, an authenticator code or a recovery code. Returns `TokenResponse`.
+
+Every code checked counts against the ticket, keyed on its `jti` in `mfa_step_tickets`, never on the caller's address (T-5.4.13). The fifth miss kills the ticket, even for the right code: 401 `Too many codes tried for this sign-in. Start over and sign in again.` A ticket lasts 5 minutes and buys one session; a used or expired one gets 401 `Invalid or expired MFA session`, and a wrong code 401 `Invalid TOTP or recovery code`. 503 when `BYOK_ENCRYPTION_KEY` is malformed, because the authenticator secret cannot be read; a recovery code still works.
+
+### `POST /api/v1/auth/logout`
+Revokes this request's session on the server: `{ "revoked": true }`. `false` for a token that predates sessions, which has nothing to revoke.
+
+### `POST /api/v1/auth/password-reset/request`
+**Public.** Body `{ "email": "..." }`. Always 200 `{ "message": "If that email is registered, a reset code has been sent." }`, so the response never says which addresses have accounts. The code goes by email, or to the server log when `SMTP_HOST` is unset. It is never in a response ([D-121](decisions.md#d-121--reset-codes-never-appear-in-a-response-two-step-verification-guards-every-sign-in-and-tokens-say-what-they-are-2026-11-04)): until 2026-11-03 it came back as `debug_secret` when SMTP was unset, which let anyone who knew an address reset that account.
+
+### `POST /api/v1/auth/password-reset/confirm`
+**Public.** Body `{ "token": "...", "new_password": "..." }` (6 to 128 characters). The code is single-use and lasts `PASSWORD_RESET_TOKEN_TTL_MIN` minutes. Sets the password and revokes every session of the account in the same commit (T-5.4.12), so whoever was signed in has to sign in again. 400 `Invalid or expired token`.
+
+### `POST /api/v1/auth/password/change`
+A signed-in user sets a new password by giving the current one (T-5.4.14). Body `{ "current_password": "...", "new_password": "..." }`. Returns `{ "message": "...", "sessions_revoked": 2 }`: every other session is signed out, this one stays.
+
+Refusals are 400 or 429, never 401, which the web client would read as a signed-out session:
+- 400 for a wrong current password, which counts toward the account lockout as at sign-in.
+- 429 while the account is locked.
+- 400 for an account with no password (Google or GitHub made it), pointing to the reset flow, which sets a first one.
+- 400 for a new password outside 6 to 128 characters, or with a character that cannot be stored.
+
+The per-IP limit is the sign-in one. No password is echoed back.
+
+### `GET /api/v1/auth/sessions`
+Every session of the caller, newest first: `[{ id, jti, created_at, last_used_at, revoked_at, ip_address, user_agent, is_current, expires_at, active }]`. A row is never deleted, so `active` says whether it still works (not revoked, not expired). `expires_at` is derived: `created_at` plus the current `JWT_EXPIRY_HOURS`.
+
+### `DELETE /api/v1/auth/sessions/{jti}`
+Revokes one session: `{ "revoked": true }`. 404 for a session that does not exist or is someone else's.
+
+### `DELETE /api/v1/auth/sessions?keep_current=`
+Revokes every active session: `{ "revoked_count": 3 }`. `keep_current=true` keeps this one, for "Sign out everywhere else".
+
+### `GET /api/v1/auth/audit-log?limit=&offset=&scope=`
+The caller's events, newest first: `[{ id, event, ip_address, user_agent, metadata_json, created_at }]`. `limit` is 100 by default, at most 500. `scope=account` keeps account and security events (`audit_service.ACCOUNT_EVENTS`), which the account security page shows; the default `all` also returns product analytics such as suggestion impressions.
+
+### Two-step verification (T-5.4.6)
+The authenticator secret is stored encrypted with the install's shared key ([D-043](decisions.md#d-043--single-shared-fernet-key-for-all-encrypted-at-rest-credentials-2026-05-05)). A route that needs it answers 503 when `BYOK_ENCRYPTION_KEY` is malformed. The body of a 503 names the cause, never the key (T-5.6.9).
+
+#### `GET /api/v1/auth/mfa/status`
+`{ "enabled": false }`.
+
+#### `POST /api/v1/auth/mfa/enroll`
+Starts enrollment: `{ "secret": "...", "provisioning_uri": "otpauth://..." }`. 409 when it is already on.
+
+#### `POST /api/v1/auth/mfa/verify-enrollment`
+Body `{ "code": "123456" }`, the first authenticator code. Turns it on and returns `{ "enabled": true, "recovery_codes": ["..."] }`. The recovery codes are shown this once and stored hashed. 400 when enrollment was not started or the code is wrong.
+
+#### `DELETE /api/v1/auth/mfa`
+Body `{ "code": "..." }`, an authenticator or recovery code, so a stolen session token cannot turn it off. `{ "disabled": true }`, also when it was already off. 400 for a wrong code.
+
+### Your own provider keys (E-5.6)
+Every `/auth/credentials` route needs the `byok_llm_keys` feature (Studio); other tiers get 403. A key is encrypted at rest and never returned ([D-118](decisions.md#d-118--a-provider-key-is-stored-only-for-a-provider-a-call-reads-it-for-the-settings-report-the-encryption-keys-state-never-the-key-2026-11-04)). `GET /settings/llm` reports whether saved keys will last.
+
+#### `GET /api/v1/auth/credentials`
+`[{ provider, label, created_at, updated_at, has_secret }]`, metadata only.
+
+#### `GET /api/v1/auth/credentials/providers`
+The providers a key can be set for, `["anthropic", "google", "openai"]`: the ones an LLM call reads a stored key for, the same list as `byok.providers` on `GET /settings/llm`.
+
+#### `PUT /api/v1/auth/credentials/{provider}`
+Body `{ "secret": "...", "label": "..." }`, replacing any stored key. Returns the metadata. 400 for a key over 2,048 characters, for an unknown provider, and for `local`, which no call reads; none of them quotes the key. 503 when `BYOK_ENCRYPTION_KEY` is malformed.
+
+#### `DELETE /api/v1/auth/credentials/{provider}`
+`{ "deleted": true }`. Takes `local` too, so a row stored before that rule can go.
 
 ### `GET /api/v1/auth/me`
 Return the current user. Requires bearer token.
@@ -98,13 +169,24 @@ Overall app status plus a summary of LLM probe results.
 ```json
 {
   "status": "ok",
+  "app": "Pratidhvani",
   "llm": {
     "status": "ok",            // ok | degraded | down | unknown
     "unavailable_features": [] // feature names that are non-functional
   },
+  "capabilities": {            // what this install has set up, so the UI offers only that
+    "reddit_search_enabled": false,
+    "article_search_enabled": false,
+    "twitter_search_enabled": false,
+    "playwright_fallback_enabled": false,
+    "whisper_transcribe_enabled": true,
+    "visual_analysis_enabled": false
+  },
   "search_backend": "fts5"     // fts5 | like — S-8.2.1; "like" when SQLite lacks FTS5
 }
 ```
+
+The three `*_search_enabled` flags come from `job_source_types`, the same check that refuses a source on `POST /jobs`, so the submit form never offers what the API would reject (S-1.5.13).
 
 ### `GET /api/v1/health/llm`
 Per-use-case LLM probe detail: the result of the startup smoke check (probes deduped by `(provider, model, vision)`; each use case reports its own reasoning level). `use_cases` is keyed by use-case name and is empty until the first probe completes.
@@ -153,15 +235,10 @@ Scheduler status (S-8.3.1). Configuration, the kinds **this process** can dispat
 ```
 
 ### `GET /api/v1/health/quota`
-YouTube API quota status (today's usage, soft cap, hard cap, time-to-reset).
+The install's YouTube Data API units today. `daily_limit` is `YOUTUBE_DAILY_QUOTA`; nothing is refused at that figure, and YouTube's own 403 is what stops a call.
 
 ```json
-{
-  "units_used_today": 7340,
-  "soft_cap": 8000,
-  "hard_cap": 10000,
-  "resets_at": "..."
-}
+{ "date": "2026-11-04", "used": 7340, "daily_limit": 10000, "remaining": 2660 }
 ```
 
 ---
@@ -313,22 +390,27 @@ Create a new job and dispatch its Celery task. The body discriminates on `job_ty
   "topic": "AI agent frameworks",
   "search_instructions": "...",
   "preferred_channels": ["@channel1", "..."],
-  "max_videos": 25
+  "num_videos": 25,
+  "source_types": ["video", "reddit_post"]
 }
 
 // channel
 {
   "job_type": "channel",
-  "channel_urls": ["https://youtube.com/@channel1"],
-  "max_videos_per_channel": 50
+  "channel_list": ["https://youtube.com/@channel1"],
+  "videos_per_channel": 50
 }
 
 // subscription
 {
   "job_type": "subscription",
-  "channel_urls": ["https://youtube.com/@channel1"]
+  "channel_list": ["https://youtube.com/@channel1"]
 }
 ```
+
+`source_types` (S-1.5.13, [D-114](decisions.md#d-114--which-sources-a-topic-run-searches-settings-decide-one-budget-for-the-run-no-whisper-before-approval-2026-10-29)) says what a topic run searches: `video`, `reddit_post`, `hn_story`, `mastodon_post`, `bluesky_post`, `podcast_episode`, `article`, `tweet`. Omitted, it searches YouTube only. A type that is unknown, library-only (`pdf`, `fb_post`, `ig_post`, `li_post`) or not set up on this install is a 422 naming the missing setting. `num_videos` (1 to 500, default 10) is the whole run's budget, shared across its sources, so it must be at least one per source. On a channel or subscription job, anything but YouTube is a 422.
+
+Also on a topic job: `min_duration_minutes`, `max_duration_minutes` and `channel_type_filters`. `videos_per_channel` is 1 to 50, default 10.
 
 Optional fields accepted on every job type:
 
@@ -348,7 +430,9 @@ List the current user's jobs. Returns `list[JobResponse]`.
 Fetch a single job. Returns `JobResponse` or 404.
 
 ### `PUT /api/v1/jobs/{job_id}/approve`
-Approve a subset of the searched videos and resume the job. Body: `{ "video_ids": ["...", "..."] }`. Dispatches `resume_job_after_approval`. Topic jobs only — channel and subscription jobs do not have an approval phase. Returns updated `JobResponse`.
+Approve a subset of the searched documents and resume the job. Body: `{ "approved_video_ids": ["...", "..."] }`. The name is legacy: each value is a YouTube `video_id`, or a `document_id` for a source without one. Dispatches `resume_job_after_approval`. Topic jobs only — channel and subscription jobs do not have an approval phase. Returns updated `JobResponse`.
+
+All or nothing against the tier's document cap ([D-115](decisions.md#d-115--the-document-cap-counts-visible-documents-a-request-that-names-its-documents-is-all-or-nothing-and-nothing-is-granted-before-approval-2026-10-29)): Free 500, Pro 5,000, Studio unlimited, counting the documents in the caller's library. A document already there never counts again; one only someone else added counts as new. Over the cap is a 429 whose `detail` holds the shared quota keys (`error`, `resource`, `consumed`, `limit`, `retry_at`) plus `requested`, `available` and `message`, and nothing is added. Visibility is granted here, for the approved documents only. `POST /library/upload-pdf` and `POST /library/paste-urls` refuse the same way. Subscribing to or syncing a channel is refused only when the library is already full; otherwise the sync stops at the cap, newest uploads first, and says how many it left out.
 
 ### `POST /api/v1/jobs/{job_id}/cancel`
 Cancel a running job. Revokes the active Celery task. Returns updated `JobResponse`.
@@ -357,7 +441,7 @@ Cancel a running job. Revokes the active Celery task. Returns updated `JobRespon
 Delete a job. Drops `job_videos` rows (videos and chunks survive in the global library), deletes the report file if present, and clears the per-job Q&A exchanges. Returns 204.
 
 ### `GET /api/v1/jobs/{job_id}/videos`
-List the documents selected for this job. Returns `list[VideoResponse]`. Each row includes the per-job `approved` flag and the polymorphic fields `document_id`, `source_type` (default `"video"`), `source_id`, `source_url`, `source_metadata` (parsed JSON object) and `classification`. `video_id`, `url`, `duration_seconds` and `channel_name` are nullable: they are NULL for non-video documents. Until S-8.8.2 (2026-10-19) the schema did not declare the polymorphic fields, so they were stripped from every response and a non-video document on a job failed serialisation.
+List the documents selected for this job. Returns `list[VideoResponse]`. Each row includes the per-job `approved` flag and the polymorphic fields `document_id`, `source_type` (default `"video"`), `source_id`, `source_url`, `source_metadata` (parsed JSON object) and `classification`. `language_mix` (T-1.16.1.7) is the document's measured language profile, here and on `GET /library/videos`: `{ primary_language, native_script, hi_share, matrix_hi_share, quote_mode, code_mixed }`, `null` until the document has been chunked since T-1.16.1.7 or profiled by `scripts/backfill_language_mix.py`. `video_id`, `url`, `duration_seconds` and `channel_name` are nullable: they are NULL for non-video documents. Until S-8.8.2 (2026-10-19) the schema did not declare the polymorphic fields, so they were stripped from every response and a non-video document on a job failed serialisation.
 
 ---
 
@@ -425,6 +509,8 @@ Ask a question scoped to this job. Runs the Q&A agent (retrieve → refine → a
 ```
 
 Returns 400 if the job is not yet `completed`.
+
+**Streaming.** `POST /api/v1/jobs/{job_id}/qa/stream` takes the same body and makes the same checks (a not-`completed` job, the `qa_exchanges` quota) before any streaming starts. It answers with server-sent events: `{ "type": "stage", "stage": "..." }` while the agent runs, then `{ "type": "complete", "exchange": <the /qa response> }` or `{ "type": "error", "detail": "..." }`, then `data: [DONE]`.
 
 **Reference shapes.** References are polymorphic by `source_type` (`video`, `reddit_post`, `hn_story`, `pdf`, `article`, ...) and every field the agent emits is returned; until S-8.5.2 the response schema kept only the YouTube fields. **Notes (S-8.5.2):** when the answer uses one of the asker's own notes, the reference is `{ "source_type": "note", "note_id", "note_target_type", "note_target_id", "note_target_label", "note_target_parent_id", "note_created_at", "quote", "video_title": "Your note of <date> on <target>", "channel_name": "you", ... }` with empty URL fields. Job Q&A draws notes on the job's own material; library Q&A (same reference shape) draws every note of the asker.
 
@@ -718,7 +804,7 @@ Times are naive UTC. `next_run_at` is null while paused. `last_status` is `ok`, 
 ### `POST /api/v1/saved-searches`
 Body `{question, cadence, answer_language?, scope?, notify_email?}`, unknown fields 422; 201 with the saved search. `cadence` is `daily`, `weekly` (with `weekday`, 0 = Monday) or `monthly` (with `day_of_month` 1 to 28), an `hour`, optional `minute`, and an IANA `timezone` (default UTC); `every` is for system kinds and is refused. `scope` is null (the whole library) or `{"shelf_id"}` for one of the caller's shelves (404 otherwise): the library-question scope of S-8.1.4, resolved by `qa_scope_service`. 409 when the tier's active cap is reached.
 
-### `GET` / `PATCH` / `DELETE /api/v1/saved-searches/{id}`
+### `GET /api/v1/saved-searches/{id}`, `PATCH /api/v1/saved-searches/{id}`, `DELETE /api/v1/saved-searches/{id}`
 PATCH accepts any of the create fields plus `enabled`; a new cadence recomputes `next_run_at`; resuming checks the cap (409) and moves a slot that passed while paused to the next one. DELETE removes the schedule too; past answers stay in library Q&A. Another tenant's id is a 404.
 
 ### `POST /api/v1/saved-searches/{id}/run-now`
@@ -922,9 +1008,13 @@ List meta-chat history. Query params: `limit`, `offset`. Returns `list[QAHistory
 All `/videos/{video_id}/...` endpoints require auth.
 
 ### `POST /api/v1/videos/{video_id}/extract-knowledge`
-Run the knowledge extraction agent for this video. Map-reduce over the cached transcript, producing structured `{topics, concepts, events, facts}` JSON and a synthesized Markdown report. Persists to `videos.extracted_knowledge_json`, `videos.knowledge_report_md`, and `videos.knowledge_extracted_at`.
+Run the knowledge extraction agent for this document, whatever its source type. The path segment may be the YouTube `video_id` or the `document_id`. Map-reduce over the document's full text (`document_text_service.full_text`: the `transcript_cache` row, else its Chroma chunks put back together, [D-113](decisions.md#d-113--knowledge-text-for-any-source-the-transcript-cache-else-the-documents-chunks-put-back-together-2026-10-29)), producing structured `{topics, concepts, events, facts}` JSON and a synthesized Markdown report. Persists to `documents.extracted_knowledge_json`, `documents.knowledge_report_md` and `documents.knowledge_extracted_at`.
 
-Query param: `?force=true` to re-run if already extracted. Returns 409 if already extracted and `force` is omitted.
+Query params:
+- `?force=true` re-runs if already extracted. Returns 409 if already extracted and `force` is omitted.
+- `?output_length=auto|brief|standard|deep` (S-1.15.3) multiplies the report's size-based budget by the [D-064](decisions.md#d-064--output-length-corpus-brackets-with-an-optional-user-override-2026-07-31) depth and gives the writer that depth's brief. Extraction is unchanged. Unset or `auto` is exactly the budget and prompt from before. The depth is stored in `extracted_knowledge_json` as `_output_length`, and the response returns it as `output_length`, `null` when none was asked for.
+
+404 for a document the caller cannot see, the same as one that does not exist. 422 when neither the transcript cache nor the chunks hold any text. 502 when no report came back: the stored artifact stands and no quota is spent.
 
 ```json
 // response
@@ -1010,8 +1100,11 @@ All `/author` endpoints require `require_feature("author_studio")` (Pro and abov
 ### `GET /api/v1/author/kinds`
 `{ "available": ["book", "deck", "newsletter", "site"], "supported": ["book", "deck", "newsletter", "reel", "site"], "formats": { "book": { "available": ["md", "epub"], "unavailable": { "pdf": "PDF export needs a converter on the server. Install one …" }, "pdf_engine": null } } }`. `available` lists kinds with a registered outputter; `supported` is every kind the schema accepts. Create a kind that is supported but not available and you get 501. `formats` (S-6.1.5) says, per available kind, which downloads this server can build and why any other cannot: a book's PDF needs WeasyPrint or Chromium (`backend/requirements-author.txt`), and `pdf_engine` names the one in use.
 
+### `GET /api/v1/author/knowledge-sources?q=&limit=`
+The documents a deck can be planned from (S-6.3.2): those in the caller's library with a knowledge report, most recently extracted first. `[{ document_id, title, source_type, channel_name, published_at, knowledge_extracted_at }]`, without the report text. `q` matches the title or channel before `limit` (200 by default, at most 500) applies.
+
 ### `POST /api/v1/author/outputs`
-Create the row and queue its generation in the worker (S-6.7.1). Body `{ "kind": "book", "title": "…", "source_ids": ["<job_id>", …], "parameters": { "include_qa": true, "include_toc": true } }`. For `book`, `source_ids` are job IDs **of the caller's own runs** (another tenant's id reads like a missing one), one chapter per run: its report's Markdown source (S-6.1.2) with headings demoted under the chapter heading, and its Q&A if `include_qa`; every citation becomes its working link plus a numbered GFM footnote, listed under `## Endnotes` with title, channel, timestamp and URL (S-6.1.4; footnote `n` is `GET …/citations` position `n`), and Q&A answers cite from their stored references; a run without a report, or whose file is missing, yields a disclosed placeholder chapter. An empty `source_ids` for `book` is 400 and writes no row. Returns the `OutputItem` at once in `pending` state with `celery_task_id` set; the worker (`author.generate_output`, on the owner's tier queue) publishes status changes and per-chapter progress on the `/ws/jobs` socket under the **output's id** (subscribe to it like a job id; the server checks the caller owns it). `?sync=true` generates inside the request and returns the finished row (`completed` or `failed`), the path tests and scripts use. If the broker is unreachable the row is returned `failed` with `Could not queue generation: …`. For `newsletter` (S-6.4.1), there are no `source_ids`; `parameters` take `since` and `until` (ISO 8601; `since` defaults to the caller's last issue, else seven days back) and `sections` (`featured`, `library`, `knowledge`, `questions`, `saved_searches`, `outputs`; `featured` is the only model-written part and is off by default, [D-097](decisions.md#d-097--newsletter-featured-section-ships-opt-in-the-rest-of-an-issue-is-listed-from-the-database-2026-10-19)). The output is the issue as Markdown and as a self-contained HTML email (`format=html`). An issue with nothing new in its enabled sections ends with status **`skipped`**, with the reason in `progress_message`. For `site` (S-6.2.1), `source_ids` name shelves and runs (`shelf:<id>`, `job:<id>`, or a bare run id), resolved inside the caller's library; the output is a zip of static pages (`format=zip`) that opens from disk, plus a Markdown contents page (`format=md`). No model is called. For `deck` (S-6.3.1), `source_ids` are the caller's own runs and there are no parameters: one `author_deck_outline` call plans 3 to 15 content slides from the reports, and the output carries a PPTX (`GET …/download?format=pptx`) and a Markdown rendering (`format=md`); every content slide cites at least one linked source (in its notes and on the closing sources slide), a slide citing none is left out and counted on the last slide, and `GET …/citations` lists one row per cited moment. A deck whose plan cites nothing, or whose call fails, is `failed` with the reason. A book's `parameters.cohesion` (S-6.1.3: `none` default, `light`, `full`) adds model-written framing around the unchanged chapters, disclosed in the front matter; the row's `usage` then carries each call's model, tokens and cost. A book's `parameters.formats` (S-6.1.5) picks the files built beside the Markdown, from `epub` and `pdf`; without it a book gets EPUB, plus PDF when the server has a converter. The resolved list is written back into `parameters` (`["md", "epub", "pdf"]`). 400 unknown kind, empty title or unknown format; 501 kind without an outputter, or `pdf` asked for on a server with no PDF converter (the detail says what to install), in both cases before any row is written.
+Create the row and queue its generation in the worker (S-6.7.1). Body `{ "kind": "book", "title": "…", "source_ids": ["<job_id>", …], "parameters": { "include_qa": true, "include_toc": true } }`. For `book`, `source_ids` are job IDs **of the caller's own runs** (another tenant's id reads like a missing one), one chapter per run: its report's Markdown source (S-6.1.2) with headings demoted under the chapter heading, and its Q&A if `include_qa`; every citation becomes its working link plus a numbered GFM footnote, listed under `## Endnotes` with title, channel, timestamp and URL (S-6.1.4; footnote `n` is `GET …/citations` position `n`), and Q&A answers cite from their stored references; a run without a report, or whose file is missing, yields a disclosed placeholder chapter. An empty `source_ids` for `book` is 400 and writes no row. Returns the `OutputItem` at once in `pending` state with `celery_task_id` set; the worker (`author.generate_output`, on the owner's tier queue) publishes status changes and per-chapter progress on the `/ws/jobs` socket under the **output's id** (subscribe to it like a job id; the server checks the caller owns it). `?sync=true` generates inside the request and returns the finished row (`completed` or `failed`), the path tests and scripts use. If the broker is unreachable the row is returned `failed` with `Could not queue generation: …`. For `newsletter` (S-6.4.1), there are no `source_ids`; `parameters` take `since` and `until` (ISO 8601; `since` defaults to the caller's last issue, else seven days back) and `sections` (`featured`, `library`, `knowledge`, `questions`, `saved_searches`, `outputs`; `featured` is the only model-written part and is off by default, [D-097](decisions.md#d-097--newsletter-featured-section-ships-opt-in-the-rest-of-an-issue-is-listed-from-the-database-2026-10-19)). The output is the issue as Markdown and as a self-contained HTML email (`format=html`). An issue with nothing new in its enabled sections ends with status **`skipped`**, with the reason in `progress_message`. For `site` (S-6.2.1), `source_ids` name shelves and runs (`shelf:<id>`, `job:<id>`, or a bare run id), resolved inside the caller's library; the output is a zip of static pages (`format=zip`) that opens from disk, plus a Markdown contents page (`format=md`). No model is called. For `deck` (S-6.3.1), `source_ids` are the caller's own runs, bare ids or `job:<id>`, and since S-6.3.2 `document:<id>` for a document in the caller's library with a knowledge report, alone or beside runs (`GET /author/knowledge-sources` lists them). A `document:` source is refused before any row is written, on create and on estimate: 404 when the caller cannot see it, the same as an id that does not exist, and 409 when it has no knowledge report. There are no parameters: one `author_deck_outline` call plans 3 to 15 content slides from the reports, and the output carries a PPTX (`GET …/download?format=pptx`) and a Markdown rendering (`format=md`); every content slide cites at least one linked source (in its notes and on the closing sources slide), a slide citing none is left out and counted on the last slide, and `GET …/citations` lists one row per cited moment. A deck whose plan cites nothing, or whose call fails, is `failed` with the reason. A book's `parameters.cohesion` (S-6.1.3: `none` default, `light`, `full`) adds model-written framing around the unchanged chapters, disclosed in the front matter; the row's `usage` then carries each call's model, tokens and cost. A book's `parameters.formats` (S-6.1.5) picks the files built beside the Markdown, from `epub` and `pdf`; without it a book gets EPUB, plus PDF when the server has a converter. The resolved list is written back into `parameters` (`["md", "epub", "pdf"]`). 400 unknown kind, empty title or unknown format; 501 kind without an outputter, or `pdf` asked for on a server with no PDF converter (the detail says what to install), in both cases before any row is written.
 
 ```json
 { "id": "...", "kind": "book", "title": "...", "status": "pending", "source_ids": ["..."], "parameters": {}, "error_message": null, "created_at": "...", "updated_at": "...", "has_content": false, "word_count": null, "progress_pct": 0, "progress_message": "Queued", "celery_task_id": "...", "formats": [], "citation_count": 0 }
@@ -1134,6 +1227,15 @@ Disconnect. Revokes at the provider (best effort) and deletes, in one request, t
 ### `GET /api/v1/echo/activity`
 The caller's activity timeline, newest first: `connector` (filter), `before` (ISO time; pass the previous page's `next_before`), `limit` (default 50, max 200). `{ "items": [{ "id", "connector", "event_type", "occurred_at", "payload", "text_content", "linked_document_id" }], "next_before": "…" | null }`.
 
+### Facts kept deleted (T-3.2.4.4)
+A fact that a connector or an import derived stays deleted once the user deletes it ([D-122](decisions.md#d-122--a-deleted-derived-fact-stays-deleted-per-connector-only-a-refused-refresh-asks-for-a-reconnect-restore-re-checks-the-evidence-2026-11-04)): `echo_fact_tombstones` holds its key, per connector, and the next sync or re-import skips it. Facts the user typed need no such record.
+
+#### `GET /api/v1/echo/fact-tombstones`
+The caller's deleted derived facts, newest first: `{ items: [{ id, connector, connector_display_name, kind, key, created_at }] }`.
+
+#### `DELETE /api/v1/echo/fact-tombstones/{tombstone_id}`
+"Allow again": `{ cleared: true }`. Nothing is re-created now; the next sync or re-import brings the fact back if the source still shows it. 404 for another tenant's id.
+
 ### Shares inbox (S-3.7.1)
 Everything the user forwards to Echo, no approval step. Every share is `pending` until S-3.7.2's processing exists. **Context-only by default:** `author_is_tenant` is false unless the user says the words are theirs; such a share is never quoted and never enters a dataset or derived export.
 
@@ -1203,6 +1305,8 @@ Signal shape: `{ id, signal_type, layer: "style"|"personality", value, weight, e
 - `POST /api/v1/echo/signals` — body `{ signal_type, value (1-500 chars), language?, register? }`; a signal the user states (`origin: "user"`). 201. 422 for an unknown type, language or register, and for a signal the user already rejected (same type, language and `value` ignoring case, spacing and surrounding quotes or full stops).
 - `PATCH /api/v1/echo/signals/{id}` — any of `value`, `language`, `register` (an explicit `null` clears; an absent field is kept), `weight` (0-100). The type is fixed.
 - `DELETE /api/v1/echo/signals/{id}` — "That's not me". A tombstone, not a delete: the row is kept with `suppressed_reason: "user"` so extraction never writes the signal again; it leaves every list and the live profile. Returns the signal. `DELETE /echo/brain` removes tombstones too.
+- `GET /api/v1/echo/signals/rejected` — the "That's not me" rows (T-3.3.1.6), most recent first: `{ items }`, each a signal plus `rejected_at`, listed by name without its examples, which only `restore` re-checks. A signal hidden because its sources were deleted is not a rejection and is not listed.
+- `POST /api/v1/echo/signals/{id}/restore` — undoes "That's not me": `{ signal, live }`. The signal brings back only evidence that still exists. `live: false` means nothing the user wrote still shows it, so it may be learned again but stays out of the profile until new writing does. 404 for another tenant's id.
 - `GET /api/v1/echo/signals/export` — the voice profile as a JSON download (`echo-voice-profile.json`): `{ format: "pratidhvani-voice-profile", version: 1, exported_at, consent_version, style: [...], personality: [...], rejected: [{signal_type, value, language}] }`. Every column of every row, tombstones included, is in the whole-brain archive below.
 
 **Learning (S-3.3.2).** Signals with `origin: "llm"` come from one economy-tier call per batch of the user's own texts. Each example is checked against the passage it cites and stored only if found there exactly. Signals with `origin: "stylometry"` (type `cadence`) are measured without a model and recomputed on every run. A personality signal has `language: null`; a style signal's language is that of its examples' passages ([D-099](decisions.md#d-099--signal-extraction-verbatim-checked-examples-language-free-beliefs-stylometry-without-a-model-2026-10-19)). Deleting a note withdraws it from every signal at once. An export import (S-3.7.5) counts as one input in `learning`. So does each connector whose events carry the user's own words (`text_content`, T-3.3.2.8). Their examples cite `event:<id>`, and revoking the connector withdraws them at once. A "speak as me" draft the user edited and saved is an input too (S-3.4.2), made of the words they typed into it and nothing of the draft or of the incoming message (an 8-word stretch repeated from it is the sender's): its examples cite `draft_edit:<id>`, an edit under 4 typed words is not an input, and deleting the draft withdraws it. Its examples cite the individual turns, so undoing the import withdraws them.
@@ -1224,6 +1328,14 @@ Backend: `backend/app/routers/echo_drafts.py`, service `services/echo_draft_serv
 - `GET /api/v1/echo/drafts?limit=` — the caller's drafts, newest first: `{ items }`.
 - `GET /api/v1/echo/drafts/{id}` and `DELETE /api/v1/echo/drafts/{id}` (204) — the caller's own only; another tenant's id is a 404. Deleting a draft withdraws what its edit taught (below) at once.
 - `POST /api/v1/echo/drafts/{id}/feedback` (S-3.4.2, [D-104](decisions.md#d-104--a-draft-edit-teaches-only-the-words-the-user-typed-2026-10-20)) — body `{ final_text (1-16000 chars), disclosure_kept: bool = true }`; unknown fields refused. The text the user used, sent again as often as they like (the newest wins). A trailing disclosure line is removed first. 200 with the draft, whose `final_text`, `disclosure_kept` and `feedback_at` are now set and whose `edit` is `{ written_words, removed_words, quoted_words, kept_words, written: [runs the user typed, verbatim], removed: [draft runs they cut], quoted: [typed stretches of 8+ words repeated from the incoming message] }` (`edit` is null before feedback). Only `written` teaches the user's voice. 404 for another tenant's draft; 422 for a text that is only the disclosure. Not counted against the daily cap; audited as `echo_draft_feedback` with counts only.
+
+**The voice test (T-3.4.1.8, in `routers/echo_voice_test.py`).** The D-100 "which of these did you write?" test, which an operator used to run with `scripts/voice_match_harness.py`. Every route needs `echo_speak_as_me` (Studio). Every test is the caller's own: another user's id is a 404.
+
+- `GET /api/v1/echo/voice-test` — `{ offer, gate, test }`: whether a test can start (each reason it cannot, in words), what one costs, the user's gate and their newest test. Spends nothing.
+- `POST /api/v1/echo/voice-test` — 202 with the test. Only this call spends: about 40 calls on the `echo_draft` use case, written in the background (`echo.generate_voice_test`, `ECHO_VOICE_TEST_GENERATION`). At most `ECHO_VOICE_TESTS_PER_DAY` per UTC day. 409 `{code, message}` when a gate is closed or a test is already open.
+- `GET /api/v1/echo/voice-test/{id}` — the test, for polling: `{ id, status, pairs_total, pairs_built, pairs, picks, result, error, model, cost_usd, created_at, ready_at, scored_at }`. `pairs` are sent only while the test is `ready`. Which side is the user's own never leaves the server.
+- `PUT /api/v1/echo/voice-test/{id}/picks` — body `{ pair: "p01", pick: "A"|"B" }`, saved per pair, so a reload loses nothing. 409 when the test is not open for picks.
+- `POST /api/v1/echo/voice-test/{id}/score` — scores the test and stores the gate: `{ test, gate }`. 409 when the test cannot be scored yet.
 
 Each draft is metered as the daily quota resource `echo_drafts` (`echo_drafts_per_day`: Free 0, Pro 0, Studio 20) and audited as `echo_drafted` with counts only. Drafts and voice-test results (`echo_drafts`, `echo_voice_gates`) are part of the brain: exported and erased with it.
 
@@ -1342,7 +1454,7 @@ Heartbeats every 30 seconds (server pings, client pongs). Auth is enforced via t
 - **IDs** are UUIDs except `video_id` (YouTube native ID, 11 chars) and `channel_id` (YouTube channel ID, 24 chars).
 - **Pagination** uses `limit` + `offset` (no cursor pagination today). Defaults vary per endpoint and are noted inline.
 - **Empty lists** return `[]`, not `null`.
-- **Errors** return `{ "detail": "..." }` with the appropriate HTTP status. 401 means missing/invalid token; 403 means valid token but insufficient privileges (rare today since all auth is binary); 404 means resource not found; 409 means conflict (e.g. knowledge already extracted); 422 is FastAPI's request-body validation error; 502 wraps a downstream LLM error; 429 is reserved for the YouTube quota hard-cap.
+- **Errors** return `{ "detail": "..." }` with the appropriate HTTP status. 401 means missing/invalid token; 403 means valid token but insufficient privileges (a tier without the feature, or an operator-only route); 404 means resource not found; 409 means conflict (e.g. knowledge already extracted); 422 is FastAPI's request-body validation error; 502 wraps a downstream LLM error; 429 is reserved for the YouTube quota hard-cap.
 
 ## Forward-compat
 
@@ -1350,7 +1462,7 @@ The shape above will evolve in three ways as the [feature-roadmap](feature-roadm
 
 1. **L1 Multi-source ingest.** Landed differently from this sketch: uploads and pasted URLs are library-scoped (`/library/upload-pdf`, `/library/paste-urls`) rather than new `job_type` values, per [D-069](decisions.md#d-069--shipped-backend-surfaces-ingest-as-a-library-tab-author-studio-as-one-page-readiness-as-a-gate-mean-2026-10-19). Still ahead: `VideoResponse` → `DocumentResponse` with `source_type`, and `video_id` path parameters becoming `document_id` (the legacy path stays as an alias for one release). See [source-types.md](source-types.md) and [D-070](decisions.md#d-070--document-visibility-keyed-on-document_id-not-the-legacy-video_id-2026-10-19).
 2. **L5 SaaS.** All resource paths gain an implicit `tenant_id` filter via the JWT claim. Public per-tenant aliases (e.g. `/t/{tenant_slug}/...`) appear for shared/published resources. See [saas-roadmap.md](saas-roadmap.md).
-3. **L3 Personal Brain.** The context store, the five-domain readiness gate, connectors, the activity stream, shares and voice signals shipped under `/echo/*` (above), not `/brain/*`. Still ahead: the "speak as me" agent. See [personal-brain.md](personal-brain.md).
+3. **L3 Personal Brain.** The context store, the five-domain readiness gate, connectors, the activity stream, shares and voice signals shipped under `/echo/*` (above), not `/brain/*`. "Speak as me" shipped there too (S-3.4.1). See [personal-brain.md](personal-brain.md).
 
 ---
 

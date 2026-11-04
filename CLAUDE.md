@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Pratidhvani (प्रतिध्वनि)** — Sanskrit for "echo". A full-stack personal research wiki. Users submit jobs to ingest sources (today: YouTube by topic search, channel list, or channel subscription; future: podcasts, articles, forum threads, PDFs — see [docs/source-types.md](docs/source-types.md)), contribute them to a **global, deduplicated document library**, generate comprehensive HTML reports via LangGraph agents (map-reduce pattern), and ask citation-backed questions either scoped to a single job, across the **entire library**, or across **every Q&A they've ever asked**. Transcripts, embeddings, and knowledge artifacts are computed once per document and reused across every job that references them.
 
-> **Legacy name.** The project was previously called *VideoResearchPro*. The legacy string survives in grandfathered environment-variable names (e.g. `CHROMA_GLOBAL_COLLECTION_NAME=videoresearchpro_global`) for back-compat only. All user-facing copy now reads `Pratidhvani`.
+> **Legacy name.** The project was previously called *VideoResearchPro*. The legacy string survives in one setting's default, `DATABASE_URL` (`sqlite:///./data/videoresearchpro.db`, grandfathered by [D-032](docs/decisions.md#d-032--operator-coordinated-runbook-vs-automatic-startup-migration-for-data-bearing-identifier-renames-2026-05-03)), in the Celery app's internal name, and in the repository's URL. The Chroma default is **not** grandfathered: `CHROMA_GLOBAL_COLLECTION_NAME` defaults to `pratidhvani_global` since T-2.6.1 (PR #106). `videoresearchpro_global` exists only on an install that embedded before then and pins that name in its `.env` ([runbook](docs/migration-code-identifiers.md)). All user-facing copy now reads `Pratidhvani`.
 
 ## Vision & Roadmap
 
@@ -38,8 +38,8 @@ Both skills can be invoked manually any time. If a session was purely tactical (
 - **Frontend**: React 19 + TypeScript + Vite + TanStack React Query + Zustand + React Router v7 (100% inline styles, tokens driven from `frontend/src/theme.ts`)
 - **Backend**: Python 3.12+ + FastAPI + SQLAlchemy 2.x (SQLite) + Alembic migrations
 - **Task Queue**: Celery + Redis (broker on db1, results on db2, pub/sub on db0)
-- **Vector DB**: ChromaDB with PersistentClient, sentence-transformers `paraphrase-multilingual-MiniLM-L12-v2` embeddings (two global collections: `videoresearchpro_global` for transcript chunks, `qa_library_global` for Q&A exchanges)
-- **AI Agents**: LangGraph (6 agents: Search, Report, Q&A, Q&A-History, Knowledge, Visual) + per-use-case LLM config (OpenAI / Anthropic / Google / local OpenAI-compatible)
+- **Vector DB**: ChromaDB with PersistentClient, sentence-transformers `paraphrase-multilingual-MiniLM-L12-v2` embeddings (five global collections: `pratidhvani_global` for transcript chunks, `qa_library_global` for Q&A exchanges, and the tenant-filtered `notes_global`, `shares_global` and `personal_context_global`)
+- **AI Agents**: 7 agents in `app/agents/`: 5 LangGraph graphs (Search, Report, Q&A, Knowledge, Echo) and 2 plain pipelines (Q&A-History, Visual), + per-use-case LLM config (OpenAI / Anthropic / Google / local OpenAI-compatible)
 - **Auth**: JWT, email+password, user-scoped jobs + Q&A history + knowledge artifacts
 - **YouTube**: YouTube Data API v3 + `youtube-transcript-api` + OpenAI Whisper fallback
 
@@ -60,7 +60,7 @@ npm run build        # Production build + type check
 
 ### Tests
 ```bash
-# All backend tests (168 tests)
+# All backend tests (3,700+; `pytest tests/ --collect-only -q` prints the count)
 cd backend && ./venv/Scripts/python -m pytest tests/ -v
 
 # Single test file
@@ -74,6 +74,9 @@ cd frontend && npm run build
 
 # Browser extension's logic (S-3.7.3; Node's built-in runner, no install)
 cd extension && npm test
+
+# Markdown anchor links (T-4.8.5): a dry run by default, --check as in CI, --write to repair
+cd backend && ./venv/Scripts/python scripts/fix_anchor_links.py --check
 ```
 
 ### One-shot launcher (recommended for dev)
@@ -127,11 +130,11 @@ npm install
 - **Subscription job**: User provides channel URLs → every video from each channel's uploads playlist is ingested into the global library → no approval step (fire-and-forget) → transcripts fetched (with Whisper fallback) → chunks added to the global Chroma collection → no report. Subsequent jobs that reference the same videos skip re-fetch / re-transcribe / re-embed entirely.
 
 ### Global Document Library
-- `documents` (renamed from `videos` in L1 PR 4) is a shared, global, deduplicated table: one row per source — today only YouTube videos (`source_type='video'`, primary key column still named `video_id`), tomorrow podcasts / articles / threads / PDFs. The ORM class is `Document` in `app/models/document.py`.
-- `channels` stores the shared facts about YouTube channels (name, subscriber count, uploads playlist). Per-user state — `subscribed`, `source_weight`, `last_synced_at` — lives in `channel_subscriptions` and goes through `subscription_service` (D-065; the global columns were dropped in S-5.10.3). (Will generalize to `creators` in a later PR.)
-- `job_videos` is a many-to-many join linking jobs to the documents they selected. (Will rename to `job_documents` once the PK column is promoted to UUID.)
-- Deleting a job drops its `job_videos` rows but leaves the documents and their chunks in the library — other jobs can still reference them.
-- Transcripts are cached in `transcript_cache` (by `video_id`) and reused across jobs. (Will generalize to `text_cache` keyed on `(source_type, source_id)` in a later PR.)
+- `documents` (renamed from `videos` in L1 PR 4) is a shared, global, deduplicated table: one row per source, whatever its type (YouTube videos, threads, podcasts, articles, PDFs, pasted pages). The primary key is `document_id`, a UUID (E-1.10); the legacy `video_id` column survives, NULL for every non-video source. The ORM class is `Document` in `app/models/document.py`.
+- `channels` stores the shared facts about YouTube channels (name, subscriber count, uploads playlist). Per-user state — `subscribed`, `source_weight`, `last_synced_at` — lives in `channel_subscriptions` and goes through `subscription_service` (D-065; the global columns were dropped in S-5.10.3). (`Creator` is already an alias of the `Channel` class; the table rename to `creators` waits on E-1.9.)
+- `job_documents` is a many-to-many join linking jobs to the documents they selected (composite primary key `(job_id, document_id)`; the Python class is still `JobVideo`).
+- Deleting a job drops its `job_documents` rows but leaves the documents and their chunks in the library — other jobs can still reference them.
+- Transcripts are cached in `transcript_cache` (primary key `document_id`) and reused across jobs.
 
 ### Job Lifecycle
 ```
@@ -145,10 +148,10 @@ Subscription jobs skip `awaiting_approval` and `generating_report` — they fan 
 Celery task exits after the search/fetch phase, saving discovered videos and setting status to `awaiting_approval`. User reviews and approves via REST API. A **new** Celery task is dispatched to resume from the extraction phase. No worker is blocked waiting.
 
 ### WebSocket Progress
-Single multiplexed WebSocket at `/ws/jobs`. Clients send `subscribe`/`unsubscribe` messages per job_id. Celery workers publish progress to Redis pub/sub (`job_progress:{job_id}`). The WebSocket manager listens on Redis and fans out to subscribed clients.
+Single multiplexed WebSocket at `/ws/jobs`. Clients send `subscribe`/`unsubscribe` messages per job_id, or `topic: "notifications"` for the bell. Celery workers publish progress to Redis pub/sub (`job_progress:{job_id}`, `notifications:{tenant_id}`). The WebSocket manager listens on Redis and fans out to subscribed clients.
 
 ### RAG Pipeline
-**Single global ChromaDB collection** named `videoresearchpro_global`. Transcripts are chunked at 256 tokens with 32-token overlap (env `CHUNK_SIZE`/`CHUNK_OVERLAP`), preserving timestamp mappings from YouTube transcript segments. Embeddings are computed exactly once per video using the multilingual `paraphrase-multilingual-MiniLM-L12-v2`.
+**Single global ChromaDB collection** named `pratidhvani_global` by default (`CHROMA_GLOBAL_COLLECTION_NAME`). Transcripts are chunked at 256 tokens with 32-token overlap (env `CHUNK_SIZE`/`CHUNK_OVERLAP`), preserving timestamp mappings from YouTube transcript segments. Embeddings are computed exactly once per video using the multilingual `paraphrase-multilingual-MiniLM-L12-v2`.
 
 - Per-job Q&A filters by `document_id ∈ the job's approved set` at query time (`chroma_service.query_collection(..., document_ids=[...])`).
 - Library-wide Q&A filters by `document_id ∈ the asking tenant's visible set` (D-063, keyed on the primary key per D-070). Chroma has no tenant concept, so the caller must pass the set — an **empty** list means "this tenant has ingested nothing" and retrieves nothing (enforced inside `query_collection`; only `None` is unrestricted, and no user-facing caller passes it).
@@ -156,8 +159,11 @@ Single multiplexed WebSocket at `/ws/jobs`. Clients send `subscribe`/`unsubscrib
 - Every chunk carries a `document_id` metadata field, written by `_build_video_metadata` for every source type; chunks embedded before 2026-10-19 are stamped by `backfill_chunk_document_ids`, which runs in the API lifespan (`app/main.py`) and, since S-5.10.5, when a Celery worker starts, before it consumes any task (the `worker_ready` hook `run_startup_backfills` in `app/tasks/celery_app.py`), so a worker-only start stamps them too. The hook then closes the Chroma client and drops the model, because a prefork pool forks replacement children from that process. Chunk ids are `{video_id}:{index}` for YouTube documents and `{document_id}:{index}` for everything else — a storage key only.
 
 ### LangGraph Agents
-- **Search Agent**: generate_search_queries → execute_searches → rank_and_curate (topic jobs only)
-- **Report Agent**: compute_statistics → map_chunks → reduce_summaries → compose_report (map-reduce for large transcript sets; channel jobs skip to stats-only)
+- **Search Agent**: resolve_preferred_channels → plan_searches → execute_searches → rank_and_curate (topic jobs only)
+- **Report Agent**: compute_statistics → map_chunks → reduce_summaries → compose_report (map-reduce for large transcript sets; channel jobs go straight to compose_channel_report, stats-only)
+- **Knowledge Agent**: split_transcript → extract_per_batch → merge_extractions → synthesize_report (one document at a time; see Video Knowledge Artifacts below)
+- **Echo Agent**: classify_intent → retrieve_relevant_knowledge → retrieve_voice_signals → retrieve_personal_context → draft → self_critique_against_voice → revise (back to the critique) or finalize ("speak as me", S-3.4.1)
+- **Not graphs** (plain functions in `app/agents/`): the Q&A-History agent (retrieve → refine → formulate) and the Visual pipeline (select moments → capture → describe → persist)
 - **Q&A Agent**: retrieve_context → refine_context → formulate_answer → extract_references (LLM-based context refinement compacts ~45K raw RAG+report into ~3K focused extracts before answering; topic jobs use RAG + report, channel jobs use RAG only, subscription jobs have no report and are only queried via library-wide Q&A; accepts an `answer_language` parameter; citations include `&t=` timestamp links). The routers pass `corpus_statistics` (from `corpus_stats_service`) and the length preference, so the answer budget and brief follow corpus size (R4) and the prompt sees the publication span, each source's date and discussed era (R3)
 
 ### Q&A Library RAG
@@ -187,6 +193,8 @@ Redis pub/sub → WebSocket Manager → Frontend React Query cache update
 | `backend/app/agents/report_agent.py` | Map-reduce LangGraph agent for HTML reports |
 | `backend/app/agents/search_agent.py` | LangGraph agent for YouTube video discovery |
 | `backend/app/agents/qa_agent.py` | LangGraph agent for Q&A with context refinement + citations |
+| `backend/app/agents/qa_history_agent.py` | Linear agent for the meta-chat across past Q&A (no LangGraph) |
+| `backend/app/agents/knowledge_agent.py` | Map-reduce LangGraph agent for per-document knowledge reports |
 | `backend/app/utils/chunking.py` | Transcript chunking with timestamp mapping (+ atomic visual annotations) |
 | `backend/app/agents/visual_agent.py` | R1 visual pipeline: select moments -> capture -> describe -> persist |
 | `backend/app/services/frame_service.py` | yt-dlp video fetch + ffmpeg frame extraction |
@@ -220,160 +228,291 @@ Redis pub/sub → WebSocket Manager → Frontend React Query cache update
 
 ## API Endpoints
 
+Every route the app mounts, by area. A backend test keeps this list in step with the routers. Request and response shapes: [docs/api-reference.md](docs/api-reference.md).
+
 ```
+# Health
 GET    /api/v1/health
-POST   /api/v1/jobs                    # Create job → dispatches Celery task
-GET    /api/v1/jobs                    # List all jobs
-GET    /api/v1/jobs/{id}               # Job detail
-PUT    /api/v1/jobs/{id}/approve       # Approve videos → resumes job
-POST   /api/v1/jobs/{id}/cancel        # Cancel + revoke Celery task
-DELETE /api/v1/jobs/{id}               # Delete job + ChromaDB collection + report
-GET    /api/v1/jobs/{id}/videos        # Video list for job
-GET    /api/v1/jobs/{id}/report        # Serve HTML report
-POST   /api/v1/jobs/{id}/qa            # Ask question (runs Q&A agent)
-GET    /api/v1/jobs/{id}/qa            # Q&A history
+GET    /api/v1/health/llm
+GET    /api/v1/health/scheduler
+GET    /api/v1/health/quota              # The install's YouTube Data API units today
 
-POST   /api/v1/library/qa              # Library-wide Q&A ask; `document_id` asks about that one source (404 if not visible)
-GET    /api/v1/library/qa              # Library-wide Q&A history
-POST   /api/v1/library/qa/clarify      # Library-wide clarify step
-DELETE /api/v1/library/qa/{id}         # Delete a library Q&A exchange (optional)
-GET    /api/v1/library/videos          # Browse global video library
+# Auth and account
+POST   /api/v1/auth/register
+POST   /api/v1/auth/login                # A token, or {requires_mfa, mfa_token} under two-step verification
+POST   /api/v1/auth/login/mfa            # Second step: 5 codes per ticket, one session per ticket
+POST   /api/v1/auth/logout               # Ends this session on the server
+POST   /api/v1/auth/password-reset/request
+POST   /api/v1/auth/password-reset/confirm  # Signs the account out everywhere
+POST   /api/v1/auth/password/change      # Signed in: keeps this session, ends the others
+GET    /api/v1/auth/me
+PUT    /api/v1/auth/me/tier              # Operators only
+GET/PATCH /api/v1/auth/me/onboarding
+GET    /api/v1/auth/audit-log            # ?scope=account: account and security events only
+GET    /api/v1/auth/quota                # Usage against tier limits, per resource
+GET/DELETE /api/v1/auth/sessions         # DELETE ?keep_current=true signs out everywhere else
+DELETE /api/v1/auth/sessions/{jti}
+GET    /api/v1/auth/mfa/status
+POST   /api/v1/auth/mfa/enroll
+POST   /api/v1/auth/mfa/verify-enrollment  # Returns the recovery codes, once
+DELETE /api/v1/auth/mfa
+GET    /api/v1/auth/oauth/providers
+GET    /api/v1/auth/oauth/{provider}/start
+GET    /api/v1/auth/oauth/{provider}/callback
+GET    /api/v1/auth/credentials          # BYOK keys (Studio): metadata, never the key
+GET    /api/v1/auth/credentials/providers
+PUT/DELETE /api/v1/auth/credentials/{provider}
+GET    /api/v1/settings/llm              # The caller's model choices, guidance and BYOK key state
+PUT/DELETE /api/v1/settings/llm/{use_case}
+POST   /api/v1/settings/llm/estimate
+GET    /api/v1/usage                     # The caller's own usage by feature, today + last 30 days (E-5.2); recorded, never limited
+POST   /api/v1/admin/restart             # Operators only
 
-GET    /api/v1/search?q=&types=&limit= # Grouped tenant-scoped keyword search (FTS5, LIKE fallback)
+# Jobs and reports
+POST   /api/v1/jobs                      # Create job → dispatches Celery task
+GET    /api/v1/jobs                      # The caller's jobs
+GET    /api/v1/jobs/{job_id}             # Job detail
+PUT    /api/v1/jobs/{job_id}/approve     # Approve videos → resumes job
+POST   /api/v1/jobs/{job_id}/cancel      # Cancel + revoke Celery task
+DELETE /api/v1/jobs/{job_id}             # Delete job + report; documents and chunks stay in the library
+POST   /api/v1/jobs/{job_id}/save-as-template
+GET    /api/v1/jobs/{job_id}/videos      # Documents for job
+GET    /api/v1/jobs/{job_id}/report      # Serve HTML report
+GET    /api/v1/jobs/{job_id}/report/body  # Sanitised body for the reading room
+GET    /api/v1/jobs/{job_id}/report.md   # Markdown source
+POST   /api/v1/jobs/{job_id}/qa/clarify
+POST   /api/v1/jobs/{job_id}/qa          # Ask question (runs Q&A agent)
+POST   /api/v1/jobs/{job_id}/qa/stream   # The same over server-sent events, with stage progress
+GET    /api/v1/jobs/{job_id}/qa          # Q&A history
+GET/POST /api/v1/job-templates
+GET/PUT/DELETE /api/v1/job-templates/{template_id}
+GET    /api/v1/job-templates/{template_id}/versions
+
+# Library
+POST   /api/v1/library/qa                # Library-wide Q&A ask; `document_id` narrows it to one source (T-8.4.2.4)
+GET    /api/v1/library/qa                # Library-wide Q&A history
+POST   /api/v1/library/qa/clarify        # Library-wide clarify step
+DELETE /api/v1/library/qa/{exchange_id}  # Delete a library Q&A exchange
+GET    /api/v1/library/videos            # Browse the caller's documents
+GET    /api/v1/library/video-channels
+GET    /api/v1/library/graph
+POST   /api/v1/library/upload-pdf
+POST   /api/v1/library/paste-urls
+GET    /api/v1/library/pdf/{digest}.pdf
+PUT/DELETE /api/v1/library/videos/{document_id}/tags/{tag_id}
+GET/POST /api/v1/tags
+PUT/DELETE /api/v1/tags/{tag_id}
+GET/POST /api/v1/shelves
+GET/PUT/DELETE /api/v1/shelves/{shelf_id}
+GET    /api/v1/shelves/{shelf_id}/documents
+GET/POST /api/v1/shelves/{shelf_id}/qa
+POST/DELETE /api/v1/shelves/{shelf_id}/jobs/{job_id}
+GET    /api/v1/search?q=&types=&limit=   # Grouped tenant-scoped keyword search (FTS5, LIKE fallback)
 GET    /api/v1/suggestions?context=      # "You might ask…": job:<id> | document:<id> | library (S-8.4.1)
 POST   /api/v1/suggestions/feedback      # A suggestion was used (fill | ask), for click-through
+GET/POST /api/v1/notes
+GET/PUT/DELETE /api/v1/notes/{note_id}
 
+# Channels
+GET    /api/v1/channels                  # List all channels
+GET    /api/v1/channels/{channel_id}     # Single channel detail
+GET    /api/v1/channels/{channel_id}/intelligence
+POST   /api/v1/channels/{channel_id}/subscribe
+POST   /api/v1/channels/{channel_id}/unsubscribe
+POST   /api/v1/channels/{channel_id}/sync  # Trigger a fresh sync
+PUT    /api/v1/channels/{channel_id}/weight  # Set the caller's trust weight 0.0-2.0 (D-068 re-rank)
+
+# Saved searches and notifications
 GET    /api/v1/saved-searches            # Pinned library questions (Pro+), S-8.3.2
 POST   /api/v1/saved-searches            # Pin: {question, cadence, scope?, notify_email?}
-GET/PATCH/DELETE /api/v1/saved-searches/{id}
-POST   /api/v1/saved-searches/{id}/run-now  # Queue a run now (quota checked first)
-GET    /api/v1/saved-searches/{id}/runs     # Run history: change signals, diff (S-8.3.3)
+GET/PATCH/DELETE /api/v1/saved-searches/{saved_search_id}
+POST   /api/v1/saved-searches/{saved_search_id}/run-now  # Queue a run now (quota checked first)
+GET    /api/v1/saved-searches/{saved_search_id}/runs     # Run history: change signals, diff (S-8.3.3)
 GET    /api/v1/notifications             # The bell: {items, unread}
-PATCH  /api/v1/notifications/{id}        # {read}
+PATCH  /api/v1/notifications/{notification_id}  # {read}
 POST   /api/v1/notifications/read-all
-GET    /api/v1/usage                     # The caller's own usage by feature, today + last 30 days (E-5.2); recorded, never limited
 
-GET    /api/v1/echo/voice-test                # Voice test: can it start (blockers in words), its cost, the gate, the newest test (T-3.4.1.8)
-POST   /api/v1/echo/voice-test                # Start one (202): about 40 calls on the user's echo_draft model, written by a worker task. One open test per tenant, held by an index
-GET    /api/v1/echo/voice-test/{id}           # The test, for polling; never says which side is the user's (nor does /echo/export while it is open)
-PUT    /api/v1/echo/voice-test/{id}/picks     # {pair, pick: A|B}
-POST   /api/v1/echo/voice-test/{id}/score     # Score as user-score does; writes echo_voice_gates as --record does
-
-GET    /api/v1/channels                # List all channels
-GET    /api/v1/channels/{id}           # Single channel detail
-POST   /api/v1/channels/{id}/subscribe
-POST   /api/v1/channels/{id}/unsubscribe
-POST   /api/v1/channels/{id}/sync      # Trigger a fresh sync
-PUT    /api/v1/channels/{id}/weight    # Set the caller's trust weight 0.0-2.0 (D-068 re-rank)
-GET    /api/v1/channels/{id}/videos
-
-POST   /api/v1/qa-history/chat               # Ask meta-question across all Q&A history
-GET    /api/v1/qa-history/exchanges          # List history chat exchanges
-POST   /api/v1/videos/{id}/extract-knowledge # Run knowledge extraction (409 if exists unless ?force)
-GET    /api/v1/videos/{id}/knowledge         # Fetch stored knowledge artifact
-GET    /api/v1/videos/{id}/frames            # Captured frames (R1, S-1.18.2)
-GET    /api/v1/videos/{id}/frames/{fid}/image  # One still (JPEG), visibility-checked
-POST   /api/v1/videos/{id}/extract-frames    # Capture frames on demand (202, worker task)
+# Q&A history, knowledge, frames, exports
+POST   /api/v1/qa-history/chat           # Ask meta-question across all Q&A history
+GET    /api/v1/qa-history/exchanges      # List history chat exchanges
+POST   /api/v1/videos/{video_id}/extract-knowledge  # Run knowledge extraction (409 if exists unless ?force; ?output_length=auto|brief|standard|deep)
+GET    /api/v1/videos/{video_id}/knowledge  # Fetch stored knowledge artifact
+GET    /api/v1/videos/{video_id}/frames  # Captured frames (R1, S-1.18.2)
+GET    /api/v1/videos/{video_id}/frames/{frame_id}/image  # One still (JPEG), visibility-checked
+POST   /api/v1/videos/{video_id}/extract-frames  # Capture frames on demand (202, worker task)
 GET    /api/v1/exports/qa-dataset/openai.jsonl         # Q&A dataset, OpenAI chat format
 GET    /api/v1/exports/qa-dataset/tuple.jsonl          # Q&A dataset, plain tuple format
 GET    /api/v1/exports/knowledge-dataset/openai.jsonl  # Knowledge dataset, chat format
 GET    /api/v1/exports/knowledge-dataset/tuple.jsonl   # Knowledge dataset, tuple format
+GET    /api/v1/exports/notes.jsonl       # Notes as W3C JSON-LD, withdrawals included
+GET    /api/v1/exports/notes.md
 
-WS     /ws/jobs                        # Multiplexed progress (subscribe/unsubscribe per job), plus `topic: "notifications"` for the token's own bell
+# Author Studio
+GET    /api/v1/author/kinds
+GET    /api/v1/author/knowledge-sources  # Documents a deck can be planned from (S-6.3.2)
+GET/POST /api/v1/author/outputs
+POST   /api/v1/author/outputs/estimate
+GET/DELETE /api/v1/author/outputs/{output_id}
+POST   /api/v1/author/outputs/{output_id}/cancel
+GET    /api/v1/author/outputs/{output_id}/content
+GET    /api/v1/author/outputs/{output_id}/download
+GET    /api/v1/author/outputs/{output_id}/citations
+GET/PUT/DELETE /api/v1/author/newsletter
+POST   /api/v1/author/newsletter/send-now
+
+# Echo
+GET    /api/v1/echo/status
+GET/POST /api/v1/echo/context
+DELETE /api/v1/echo/context/{kind}/{key}
+DELETE /api/v1/echo/sources/{source}
+GET/POST /api/v1/echo/shares
+POST   /api/v1/echo/shares/upload
+GET/PATCH/DELETE /api/v1/echo/shares/{share_id}
+POST   /api/v1/echo/shares/{share_id}/process
+POST   /api/v1/echo/shares/{share_id}/library
+GET    /api/v1/echo/shares/{share_id}/file
+GET/POST /api/v1/echo/share-tokens
+DELETE /api/v1/echo/share-tokens/{token_id}
+GET    /api/v1/echo/share-tokens/check
+GET    /api/v1/echo/connectors
+POST   /api/v1/echo/connectors/{name}/authorize
+POST   /api/v1/echo/connectors/{name}/callback
+POST   /api/v1/echo/connectors/{name}/sync
+DELETE /api/v1/echo/connectors/{name}
+GET    /api/v1/echo/activity
+GET    /api/v1/echo/fact-tombstones      # Deleted derived facts ("Kept deleted"), T-3.2.4.4
+DELETE /api/v1/echo/fact-tombstones/{tombstone_id}  # "Allow again"
+POST   /api/v1/echo/import/preview
+POST   /api/v1/echo/import
+GET    /api/v1/echo/imports
+GET/DELETE /api/v1/echo/imports/{import_id}
+POST   /api/v1/echo/imports/{import_id}/embed
+GET/POST /api/v1/echo/signals
+POST   /api/v1/echo/signals/learn
+GET    /api/v1/echo/signals/export
+GET    /api/v1/echo/signals/rejected     # "That's not me" rows, T-3.3.1.6
+POST   /api/v1/echo/signals/{signal_id}/restore
+PATCH/DELETE /api/v1/echo/signals/{signal_id}
+GET    /api/v1/echo/draft/status
+POST   /api/v1/echo/draft
+GET    /api/v1/echo/drafts
+GET/DELETE /api/v1/echo/drafts/{draft_id}
+POST   /api/v1/echo/drafts/{draft_id}/feedback
+GET/POST /api/v1/echo/voice-test         # The in-app voice test, T-3.4.1.8. POST spends about 40 model calls
+GET    /api/v1/echo/voice-test/{test_id}
+PUT    /api/v1/echo/voice-test/{test_id}/picks
+POST   /api/v1/echo/voice-test/{test_id}/score
+GET    /api/v1/echo/cards
+POST   /api/v1/echo/cards/dismiss
+POST   /api/v1/echo/cards/shown
+POST   /api/v1/echo/cards/act
+GET/PUT /api/v1/echo/cards/settings
+POST   /api/v1/echo/cards/seen/shares
+GET    /api/v1/echo/export
+GET    /api/v1/echo/brain/footprint
+DELETE /api/v1/echo/brain
+
+WS     /ws/jobs                          # Multiplexed progress (subscribe/unsubscribe per job) and the bell
 ```
 
 ## Environment Variables
 
-Copy `.env.example` to `backend/.env` and fill in required keys:
+Copy `.env.example` to `backend/.env` and fill in required keys. The repository holds one template, at the root ([D-112](docs/decisions.md#d-112--the-remaining-rulings-of-2026-10-25-map-batching-public-sharing-the-code-mixing-threshold-and-the-quick-calls-2026-10-25)). It lists every `Settings` field in the groups below, and `backend/tests/test_ci/test_docs_match_code.py` fails when the template or this table drifts from `app/config.py`, so a new setting goes in all three.
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `YOUTUBE_API_KEY` | Yes | — | YouTube Data API v3 key |
-| `REDDIT_CLIENT_ID` | No | — | Reddit script-app client ID; required for the Reddit connector (S-1.5.1). Register at https://www.reddit.com/prefs/apps |
-| `REDDIT_CLIENT_SECRET` | No | — | Reddit script-app client secret |
-| `REDDIT_USER_AGENT` | No | `pratidhvani/0.1 (by u/anonymous)` | Reddit-required UA string — bad/empty UAs are aggressively rate-limited |
-| `REDDIT_RATE_LIMIT_RPM` | No | `100` | Requests/minute on Reddit's free OAuth tier; client spaces calls accordingly |
-| `REDDIT_COMMENT_DEPTH_DEFAULT` | No | `50` | Top-N comments by score to flatten alongside the OP body |
-| `OPENAI_API_KEY` | Yes* | — | Required if any use case resolves to `openai` (most defaults do) |
-| `ANTHROPIC_API_KEY` | No | — | Required if any use case resolves to `anthropic` |
-| `GOOGLE_API_KEY` | No | — | Required if any use case resolves to `google` |
+| **App and infrastructure** | | | |
+| `APP_NAME` | No | `Pratidhvani` | Title of the FastAPI app, shown on the API docs page |
+| `DEBUG` | No | `False` | Logs every SQL statement (`echo` on the SQLAlchemy engine) |
 | `DATABASE_URL` | No | `sqlite:///./data/videoresearchpro.db` | SQLAlchemy connection string |
 | `REDIS_URL` | No | `redis://localhost:6379/0` | Redis for pub/sub |
 | `CELERY_BROKER_URL` | No | `redis://localhost:6379/1` | Celery broker |
-| `CHUNK_SIZE` | No | `256` | RAG chunk size in tokens (`CHUNK_OVERLAP` default 32) |
-| `RAG_TOP_K` | No | `15` | Number of RAG results per query |
+| `CELERY_RESULT_BACKEND` | No | `redis://localhost:6379/2` | Celery result store |
+| `APP_BASE_URL` | No | `http://localhost:5173` | Base of the links in emails (saved-search alerts) |
+| **YouTube** | | | |
+| `YOUTUBE_API_KEY` | Yes | (unset) | YouTube Data API v3 key |
+| `YOUTUBE_DAILY_QUOTA` | No | `10000` | The install's daily YouTube Data API units: the limit `/health/quota` reports usage against |
+| `YOUTUBE_SEARCH_MAX_PAGES` | No | `2` | Search pages per broad query (each page = 100 quota units, 50 results) |
 | **Transcript-pipeline resilience (E-1.11 / D-051)** | | | |
 | `YOUTUBE_TRANSCRIPT_RATE_LIMIT` | No | `3.0` | Min seconds between transcript fetches (0.5 triggered an IP block at ~60 videos) |
 | `YOUTUBE_TRANSCRIPT_RATE_JITTER` | No | `0.4` | ± fraction of the base rate randomized per wait |
-| `YOUTUBE_SEARCH_MAX_PAGES` | No | `2` | Search pages per broad query (each page = 100 quota units, 50 results) |
 | `TRANSCRIPT_BREAKER_THRESHOLD` | No | `3` | Consecutive IP-block signals before the circuit breaker opens |
-| `TRANSCRIPT_BREAKER_COOLDOWN_BASE` | No | `120` | First cooldown (s); doubles per re-trip |
-| `TRANSCRIPT_BREAKER_COOLDOWN_MAX` | No | `900` | Cooldown ceiling (s) |
-| `TRANSCRIPT_BREAKER_MAX_WAIT` | No | `300` | Max per-video wait (s) for an open breaker before falling to Whisper |
+| `TRANSCRIPT_BREAKER_COOLDOWN_BASE` | No | `120.0` | First cooldown (s); doubles per re-trip |
+| `TRANSCRIPT_BREAKER_COOLDOWN_MAX` | No | `900.0` | Cooldown ceiling (s) |
+| `TRANSCRIPT_BREAKER_MAX_WAIT` | No | `300.0` | Max per-video wait (s) for an open breaker before falling to Whisper |
 | `WHISPER_SEGMENT_TARGET_MB` | No | `20` | Target chunk size when splitting >25 MB audio for Whisper |
-| `WHISPER_SEGMENT_OVERLAP_SECONDS` | No | `15` | Shared audio between neighbouring Whisper chunks |
+| `WHISPER_SEGMENT_OVERLAP_SECONDS` | No | `15.0` | Shared audio between neighbouring Whisper chunks |
 | `WHISPER_MAX_PER_JOB` | No | `50` | Max Whisper transcriptions per job (`0` disables Whisper) — bounds OpenAI spend |
 | `YOUTUBE_PROXY_URL` | No | (unset) | Proxy for transcript API + yt-dlp (`http://…` or `socks5://…`) — the D-051 escape hatch for IP blocks |
 | `YTDLP_COOKIES_FROM_BROWSER` | No | (unset) | Opt-in: use the operator's logged-in browser session for yt-dlp (`chrome`, `firefox`, `chrome:Profile`) — passes YouTube's bot-wall; requests then carry the operator's account |
 | `YTDLP_COOKIES_FILE` | No | (unset) | Netscape-format cookies.txt for yt-dlp (browser source wins when both set) |
 | `YTDLP_DOWNLOAD_RATE_LIMIT` | No | `2.0` | Min seconds between yt-dlp download attempts (burst downloads escalate the bot-wall) |
+| **Other sources** | | | |
+| `REDDIT_CLIENT_ID` | No | (unset) | Reddit script-app client ID; required for the Reddit connector (S-1.5.1). Register at https://www.reddit.com/prefs/apps |
+| `REDDIT_CLIENT_SECRET` | No | (unset) | Reddit script-app client secret |
+| `REDDIT_USER_AGENT` | No | `pratidhvani/0.1 (by u/anonymous)` | Reddit-required UA string — bad/empty UAs are aggressively rate-limited |
+| `REDDIT_RATE_LIMIT_RPM` | No | `100` | Requests/minute on Reddit's free OAuth tier; client spaces calls accordingly |
+| `REDDIT_COMMENT_DEPTH_DEFAULT` | No | `50` | Top-N comments by score to flatten alongside the OP body |
+| `HN_USER_AGENT` / `HN_RATE_LIMIT_RPM` / `HN_COMMENT_DEPTH_DEFAULT` | No | `pratidhvani/0.1 (+https://github.com/anthropics/pratidhvani)` / `60` / `50` | Hacker News connector (Algolia API, no key): User-Agent, requests/minute, top-N comments flattened alongside a story |
+| `MASTODON_INSTANCE_BASE` | No | `https://mastodon.social` | Instance searched when a job names none |
+| `MASTODON_USER_AGENT` / `MASTODON_RATE_LIMIT_RPM` / `MASTODON_COMMENT_DEPTH_DEFAULT` | No | `pratidhvani/0.1 (+https://github.com/anthropics/pratidhvani)` / `60` / `50` | Mastodon connector: User-Agent, requests/minute, top-N replies |
+| `BLUESKY_XRPC_BASE` | No | `https://public.api.bsky.app` | Public AT-Protocol endpoint; a private PDS can replace it |
+| `BLUESKY_USER_AGENT` / `BLUESKY_RATE_LIMIT_RPM` / `BLUESKY_COMMENT_DEPTH_DEFAULT` | No | `pratidhvani/0.1 (+https://github.com/anthropics/pratidhvani)` / `60` / `50` | Bluesky connector: User-Agent, requests/minute, top-N replies |
+| `PODCAST_USER_AGENT` / `PODCAST_RATE_LIMIT_RPM` | No | `pratidhvani/0.1 (+https://github.com/anthropics/pratidhvani)` / `60` | Podcast connector: User-Agent and requests/minute (iTunes search, RSS feeds) |
+| `PODCAST_EPISODES_PER_SHOW` / `PODCAST_SEARCH_TOP_N_SHOWS` | No | `5` / `3` | A topic search returns up to shows × episodes candidates |
+| `PODCAST_AUDIO_FETCH_TIMEOUT_SEC` | No | `180` | Audio download budget for the Whisper path (episodes run 50-150 MB) |
+| `BRAVE_SEARCH_API_KEY` | No | (unset) | Web-article search; unset, articles come by pasted URL only |
+| `BRAVE_SEARCH_BASE` | No | `https://api.search.brave.com/res/v1/web/search` | Brave Search endpoint |
+| `ARTICLE_USER_AGENT` / `ARTICLE_SEARCH_RATE_LIMIT_RPM` | No | `pratidhvani/0.1 (+https://github.com/anthropics/pratidhvani)` / `60` | Article fetches: User-Agent and search requests/minute |
+| `ARTICLE_PLAYWRIGHT_ENABLED` / `ARTICLE_PLAYWRIGHT_TIMEOUT_SEC` | No | `False` / `30` | Headless Chromium fallback for pages that need scripts (opt-in install, `backend/requirements-spa.txt`) and its per-page budget in seconds |
+| `TWITTER_BEARER_TOKEN` | No | (unset) | X / Twitter API v2 (BYOK, D-009). Set, tweet search turns on and `/health` reports `twitter_search_enabled`; unset, tweets come by pasted URL only |
+| `TWITTER_API_BASE` | No | `https://api.twitter.com/2` | X API endpoint |
+| `TWITTER_USER_AGENT` / `TWITTER_RATE_LIMIT_RPM` | No | `pratidhvani/0.1 (+https://github.com/anthropics/pratidhvani)` / `60` | X client: User-Agent and requests/minute |
+| `TWITTER_REPLY_DEPTH_DEFAULT` | No | `50` | Not read by any code yet |
+| `PDF_UPLOAD_DIR` / `PDF_MAX_BYTES` | No | `./data/uploads/pdf` / `104857600` | Where uploaded PDFs are kept, and the upload cap (100 MB) |
+| **RAG and ChromaDB** | | | |
+| `CHROMA_PERSIST_DIR` | No | `./data/chroma` | Where ChromaDB keeps its files |
+| `CHROMA_GLOBAL_COLLECTION_NAME` | No | `pratidhvani_global` | The one global collection of transcript chunks. An install that embedded under the legacy default `videoresearchpro_global` pins that name here or migrates ([runbook](docs/migration-code-identifiers.md)) |
+| `CHROMA_QA_COLLECTION_NAME` | No | `qa_library_global` | Central Q&A collection |
+| `CHROMA_NOTES_COLLECTION_NAME` | No | `notes_global` | The asker's own notes, one vector per live note, tenant-filtered (S-8.5.2) |
+| `CHROMA_SHARES_COLLECTION_NAME` / `CHROMA_PERSONAL_CONTEXT_COLLECTION_NAME` | No | `shares_global` / `personal_context_global` | Echo's private collections (tenant-filtered). The full Echo delete sweeps both |
+| `CHUNK_SIZE` / `CHUNK_OVERLAP` | No | `256` / `32` | RAG chunk size and overlap, in tokens |
+| `RAG_TOP_K` | No | `15` | Number of RAG results per query |
+| `RAG_DISTANCE_THRESHOLD` | No | `0.6` | Relevance cut on the raw distance, applied before any D-068 re-rank |
+| `EMBEDDING_MODEL_NAME` | No | `paraphrase-multilingual-MiniLM-L12-v2` | SentenceTransformer model |
+| `NOTES_INDEX_ENABLED` | No | `True` | Notes in Q&A retrieval: index writes on every note write, startup backfill, queries. The test suite turns it off |
+| `NOTE_RETRIEVAL_WEIGHT` | No | `1.5` | D-068 re-rank weight for notes, after the raw threshold. Measured before shipping (docs/notes/2026-10-19-s852-note-weight-measurement.md) |
+| **Jobs, reports and knowledge** | | | |
+| `MAX_CONCURRENT_JOBS` | No | `5` | Active jobs across the whole install, counted over every user; one more is refused |
+| `MAX_VIDEOS_PER_JOB` | No | `100` | Not read by any code (tier limits apply instead) |
+| `DEFAULT_TRANSCRIPT_LANGUAGE` | No | `en` | Language the YouTube connector asks for when nothing says what is spoken |
+| `REPORTS_DIR` | No | `./data/reports` | Where report files live |
+| `MAX_REPORT_WORDS` | No | `20000` | Not read by any code (the length policy applies instead) |
+| `REPORT_INTERMEDIATES_ENABLED` | No | `True` | Persist the report pipeline's per-batch map extractions and reduced dataset to `job_report_intermediates` (S-1.14.6), about twice the reduced dataset's size per run. Audit with `backend/scripts/audit_report_intermediates.py` |
+| `REPORT_MAP_BATCHING` / `REPORT_MAP_BATCH_TOKENS` | No | `packed` / `120000` | How report map batches are filled (S-1.14.19, D-094): `packed` fills them in source order up to the token cap, `source` never puts two sources in one call and doubles report length. The window of the resolved model also caps a batch |
+| `REPORT_MAP_CONCURRENCY` | No | `4` | Map calls in flight at once; results stay in batch order |
+| `REPORT_ATTRIBUTION_GUARD_ENABLED` | No | `True` | The deterministic attribution guard for on-screen details (S-1.18.9). A no-op without visual spans |
+| `KNOWLEDGE_EXTRACT_BATCH_TOKENS` | No | `8000` | Max tokens per extract batch |
+| `KNOWLEDGE_MAX_TRANSCRIPT_TOKENS` | No | `60000` | Max transcript size for knowledge extraction |
+| **Author Studio** | | | |
 | `OUTPUTS_DIR` | No | `./data/outputs` | Author Studio artifacts (PDF, EPUB, PPTX, site zips), one directory per output: `<OUTPUTS_DIR>/<user_id>/<output_id>/` (S-6.7.2) |
 | `AUTHOR_PDF_ENGINE` | No | `auto` | Book PDF converter (S-6.1.5): `auto` tries WeasyPrint (needs Pango) then Chromium via Playwright; `weasyprint` / `chromium` pin one; `off` disables PDF. Both are optional (`backend/requirements-author.txt`); EPUB and Markdown need neither. Probed once per process, so restart after installing. Off for the test suite |
 | `AUTHOR_PDF_TIMEOUT_SEC` | No | `180` | Wall-clock budget for Chromium to launch and lay out one book |
-| `EMBEDDING_MODEL_NAME` | No | `paraphrase-multilingual-MiniLM-L12-v2` | SentenceTransformer model |
-| `CHROMA_GLOBAL_COLLECTION_NAME` | No | `videoresearchpro_global` | Name of the single global Chroma collection |
-| `CHROMA_QA_COLLECTION_NAME` | No | `qa_library_global` | Central Q&A collection name |
-| `CHROMA_NOTES_COLLECTION_NAME` | No | `notes_global` | The asker's own notes, one vector per live note, tenant-filtered (S-8.5.2) |
-| `NOTES_INDEX_ENABLED` | No | `True` | Notes in Q&A retrieval: index writes on every note write, startup backfill, queries. The test suite turns it off |
-| `NOTE_RETRIEVAL_WEIGHT` | No | `1.5` | D-068 re-rank weight for notes, after the raw threshold. Measured before shipping (docs/notes/2026-10-19-s852-note-weight-measurement.md) |
-| `CHROMA_SHARES_COLLECTION_NAME` / `CHROMA_PERSONAL_CONTEXT_COLLECTION_NAME` | No | `shares_global` / `personal_context_global` | Echo's private collections (tenant-filtered). The full Echo delete sweeps both |
-| `ECHO_SHARES_DIR` | No | `./data/echo/shares` | Echo shares inbox files, one directory per tenant; removed by the full Echo delete |
-| `ECHO_SHARE_MAX_BYTES` / `ECHO_SHARE_TEXT_MAX_CHARS` | No | `26214400` / `50000` | Caps on one quick-share file (25 MB) and one text share |
-| `ECHO_CONNECTOR_SYNC` | No | `celery` | How a connector sync runs after connecting and on "Sync now" (S-3.2.1): `celery` (`echo.sync_connector`), `inline`, or `off` (the suite). Scheduled syncs always go through the scheduler tick (`echo_sync`) |
-| `ECHO_READY_FACTS_MIN` / `_FACT_KINDS_MIN` | No | `30` / `3` | Readiness domain 1 (S-3.5.1): facts the user wrote, and distinct kinds. Every `ECHO_READY_*` threshold set to `0` switches that check off |
-| `ECHO_READY_EVENTS_MIN` / `_EVENT_DAYS_MIN` | No | `200` / `90` | Domain 2: activity events from any connector or import, and days between the first and last |
-| `ECHO_READY_SIGNALS_MIN` / `_SIGNAL_TYPES_MIN` | No | `50` / `4` | Domain 3: live voice signals, and distinct types |
-| `ECHO_READY_SHARES_MIN` / `_SHARE_TYPES_MIN` | No | `100` / `4` | Domain 5: shares, and distinct content types |
-| `ECHO_READY_VOICE_PIECES_MIN` / `_VOICE_WORDS_MIN` | No | `30` / `2000` | Voice floor: own-writing pieces OR words in one script (notes plus own-words shares) |
-| `ECHO_READY_VOICE_SPREAD_MAX` / `_VOICE_MIN_VECTORS` | No | `0.05` / `10` | Voice stability: max bootstrap-centroid spread of the note vectors in `notes_global`, and the vectors needed to measure it. Untuned |
-| `ECHO_VOICE_TEST_NOTES_MIN` | No | `40` | Live notes before readiness says the user can take the D-100 voice test (reported, not gated) |
-| `ECHO_SHARE_PROCESSING` | No | `celery` | How shares are processed after intake: `celery` (the `echo.process_share` task), `inline` (in the request, single-process dev) or `off` (the test suite) |
-| `ECHO_SHARE_EMBED_MAX_CHARS` | No | `2000` | Text embedded per share in `shares_global`: annotation, title and the opening of the extracted text |
-| `ECHO_IMPORT_MAX_BYTES` / `ECHO_IMPORT_MAX_UNCOMPRESSED_BYTES` | No | `200 MB` / `1 GB` | Caps on one export upload (S-3.7.5) and on what a zip may unpack to (a zip-bomb guard). Parsing streams, so memory stays flat |
-| `ECHO_SHARE_TOKENS_MAX` | No | `10` | Active share tokens per tenant (S-3.7.3): the browser extension's credential, accepted only by the share intake routes |
-| `ECHO_FETCH_TIMEOUT_SEC` / `ECHO_FETCH_ALLOW_PRIVATE` | No | `20` / `False` | Fetching an image shared by its address. Hosts resolving to private, loopback or link-local addresses are refused unless allowed (a self-hosted LAN) |
-| `ECHO_IMPORT_TURN_GAP_MIN` / `ECHO_IMPORT_TURN_MAX_CHARS` | No | `10` / `2000` | A WhatsApp chat is stored as turns: consecutive messages from one sender at most this many minutes apart, up to this many characters |
-| `ECHO_REMOTE_MEDIA` | No | `True` | Whether a shared image (vision fallback) or recording (Whisper) may go to a remote provider. Off, or a local-only tenant: images use on-device OCR only, recordings are skipped with a note |
-| `ECHO_OCR_MIN_CHARS` / `ECHO_OCR_MIN_CONFIDENCE` | No | `20` / `0.90` | When an on-device OCR reading is kept rather than sent to the vision fallback (measured: English 0.978+, Hindi and mixed 0.87 or less) |
-| `ECHO_OCR_THREADS` | No | `4` | ONNX threads for on-device OCR; the all-cores default was four times slower on a 32-thread machine |
-| `ECHO_OCR_VISION_MAX_SIDE` / `ECHO_OCR_VISION_MAX_TOKENS` | No | `2048` / `4000` | Image downscale before the vision fallback, and its completion cap |
-| `ECHO_MEDIA_DECODE_TIMEOUT_SEC` | No | `300` | ffmpeg wall-clock cap when reducing a shared recording to speech audio |
-| `KNOWLEDGE_EXTRACT_BATCH_TOKENS` | No | `8000` | Max tokens per extract batch |
-| `KNOWLEDGE_MAX_TRANSCRIPT_TOKENS` | No | `60000` | Max transcript size for knowledge extraction |
-| `LLM_USE_CASE_CONFIG` | No | (unset) | Primary per-use-case override knob — see "LLM configuration" below |
-| `LLM_LOCAL_BASE_URL` | No | (unset) | Base URL for the local OpenAI-compatible server (LM Studio, Ollama, vLLM, llama.cpp-server) used when a use case resolves to `provider=local` |
-| `LLM_LOCAL_API_KEY` | No | `not-needed` | API key for the local endpoint; most servers ignore this but the OpenAI SDK validator requires a non-empty string |
-| `LLM_ROUTE_OVERRIDES` | No | (unset) | **Deprecated.** Binary `use_case=primary\|fast` knob. Honored as a lower-precedence fallback. New work should use `LLM_USE_CASE_CONFIG` |
-| `LLM_FAST_MODEL` | No | `gpt-4.1-mini` | **Deprecated.** Legacy fast-slot model name; consulted only by `LLM_ROUTE_OVERRIDES=...=fast` fallback path |
-| `LLM_FAST_BASE_URL` | No | (unset) | **Deprecated.** Legacy alias for `LLM_LOCAL_BASE_URL`; still honored when the canonical name is unset |
-| `LLM_FAST_API_KEY` | No | `not-needed` | **Deprecated.** Legacy alias for `LLM_LOCAL_API_KEY` |
-| `LLM_MODEL` | No | `gpt-5` | **Deprecated.** Legacy primary-model name retained for back-compat; per-use-case defaults live in `app/services/llm_routing.py::USE_CASE_REGISTRY` |
-| **Echo signal extraction (S-3.3.2 / D-099)** | | | |
-| `ECHO_SIGNAL_EXTRACTION` | No | `celery` | `celery` queues one `echo.extract_signals` run per tenant; `inline` runs in the request; `off` never runs (the test suite) |
-| `ECHO_SIGNALS_MIN_NEW_INPUTS` | No | `10` | New, edited or deleted texts waiting before a run starts on its own ("Learn now" runs below it) |
-| `ECHO_SIGNALS_BATCH_TOKENS` | No | `6000` | User text per economy-tier call |
-| `ECHO_SIGNALS_MAX_PER_BATCH` / `ECHO_SIGNALS_MAX_OUTPUT_TOKENS` | No | `12` / `2500` | Candidates per call and the output cap that bounds them (reasoning stays off) |
-| `ECHO_SIGNALS_MAX_BATCHES_PER_RUN` | No | `20` | Cost bound per run; a larger backlog is read over several runs |
-| `ECHO_SIGNALS_IMPORT_SAMPLE` / `ECHO_SIGNALS_MIN_PASSAGE_WORDS` | No | `300` / `4` | An export import is one input: stylometry reads every own-words turn; the model reads at most this many turns of at least this many words, spread over the chat's timeline (T-3.3.2.10) |
-| **Speak as me (S-3.4.1 / D-102)** | | | |
-| `ECHO_SPEAK_AS_ME_ENABLED` | No | `False` | The install switch. Each user also needs a passed voice test (`echo_voice_gates`, written by the Echo page's test or `scripts/voice_match_harness.py user-score --record`), readiness and the Studio tier |
-| `ECHO_VOICE_TEST_GENERATION` | No | `celery` | How the in-app voice test's pairs are written (T-3.4.1.8): `celery` (`echo.generate_voice_test`), `inline` or `off` (the suite) |
-| `ECHO_VOICE_TESTS_PER_DAY` | No | `3` | Voice tests one user may start per UTC day; each makes about 40 calls on `echo_draft`. `0` = no limit |
-| `ECHO_DRAFT_CRITIQUE_ROUNDS` / `ECHO_DRAFT_CRITIQUE_TARGET` | No | `2` / `4.0` | Critique-and-revise rounds per draft, and the mean voice score (1-5) at which they stop early |
-| `ECHO_DRAFT_SOURCES` | No | `6` | Library chunks retrieved for one draft |
-| `ECHO_PERSONAL_INDEX_ENABLED` | No | `True` | S-3.3.3: keep `personal_context_global` (one vector per live fact and signal) in step on every write and at startup. Off for the test suite, like `NOTES_INDEX_ENABLED` |
+| **Saved searches, notifications and suggestions** | | | |
+| `SAVED_SEARCH_JACCARD_THRESHOLD` | No | `0.5` | S-8.3.3: a run whose cited document set overlaps the previous one less than this votes "changed". Pre-registered prior (docs/notes/2026-10-19-saved-search-change-thresholds.md); calibration pending |
+| `SAVED_SEARCH_EMBEDDING_THRESHOLD` | No | `0.15` | S-8.3.3: an answer whose embedding is further than this (cosine distance) from the previous one votes "changed". Pre-registered prior; calibration pending |
+| `SAVED_SEARCH_GATE_ENABLED` | No | `True` | Skip a scheduled saved-search run whose scope resolves to the same document set as the last good run (no quota, no model). Run now always asks |
+| `NOTIFICATIONS_PUSH_ENABLED` | No | `True` | T-8.3.3.8: publish each new notification on `notifications:{tenant_id}` so an open bell refetches at once over `/ws/jobs`; the one-minute poll is the fallback. Off for the test suite |
+| `SUGGESTIONS_CACHE_TTL_MIN` | No | `60` | How long a context's question suggestions (S-8.4.1) are reused before recomputing; a new exchange, report or knowledge state invalidates sooner. `0` = never reuse |
+| **Scheduler (S-8.3.1 / M3)** | | | |
+| `SCHEDULER_ENABLED` | No | `True` | Registers the single beat entry `scheduler.tick`; off = no entry and a tick that still arrives no-ops. Beat is its own process (`celery -A app.tasks.celery_app beat`), started by `scripts/start.ps1`; run exactly one |
+| `SCHEDULER_TICK_SECONDS` | No | `300` | Tick interval; also the tick's `expires`, so a backlog never replays after a restart |
+| `SCHEDULER_LEASE_SECONDS` | No | `600` | A row claim older than this is stale and may be re-taken (the holder crashed between claim and advance) |
+| `SCHEDULER_GRACE_SECONDS` | No | `30` | Rows due within this window count as due, so an early beat still runs them; `next_run_at` advances from the scheduled time, never twice |
+| `SCHEDULER_BATCH_SIZE` | No | `50` | Max rows one tick claims (bounds the catch-up after downtime) |
+| `SCHEDULER_MAX_RETRY_TICKS` | No | `3` | A failed dispatch is retried at the next tick this many times, then waits for its cadence |
 | **Visual understanding (R1 / E-1.18)** | | | |
-| `VISUAL_ENABLED` | No | `False` | Install-wide switch for frame capture + description. AND-ed with the per-job `visual_analysis` opt-in — both must be true. Off by default: capture needs a *video* stream (more yt-dlp traffic than the audio path that caused the D-051 IP block) and it is the app's only multimodal spend |
+| `VISUAL_ENABLED` | No | `False` | Install-wide switch for frame capture + description. AND-ed with the per-job `visual_analysis` opt-in — both must be true. Off by default: capture needs a *video* stream (more yt-dlp traffic than the audio path that caused the D-051 IP block) and it is the app's largest multimodal spend |
 | `VISUAL_FRAMES_DIR` | No | `./data/frames` | Where extracted JPEGs live, keyed by document so they are computed once and reused |
 | `VISUAL_MAX_FRAMES_PER_VIDEO` | No | `12` | Per-document frame cap |
 | `VISUAL_MAX_FRAMES_PER_JOB` | No | `200` | Per-job ceiling across all documents; unused per-video allowance returns to the pool |
@@ -385,44 +524,87 @@ Copy `.env.example` to `backend/.env` and fill in required keys:
 | **Temporal awareness (R3 / E-1.17)** | | | |
 | `TEMPORAL_SCOPE_ENABLED` | No | `True` | Per-document discussed-era extraction on first ingest (`temporal_scope_extract`, one economy-tier call per NEW document). Off = every era reads as unknown, which is also how a missing value is treated |
 | `TEMPORAL_SCOPE_WINDOW_TOKENS` | No | `1500` | Size of each of the three transcript windows (opening / middle / close) sampled for the era call |
-| `SAVED_SEARCH_JACCARD_THRESHOLD` | No | `0.50` | S-8.3.3: a run whose cited document set overlaps the previous one less than this votes "changed". Pre-registered prior (docs/notes/2026-10-19-saved-search-change-thresholds.md); calibration pending |
-| `SAVED_SEARCH_EMBEDDING_THRESHOLD` | No | `0.15` | S-8.3.3: an answer whose embedding is further than this (cosine distance) from the previous one votes "changed". Pre-registered prior; calibration pending |
-| `SAVED_SEARCH_GATE_ENABLED` | No | `True` | Skip a scheduled saved-search run whose scope resolves to the same document set as the last good run (no quota, no model). Run now always asks |
-| `APP_BASE_URL` | No | `http://localhost:5173` | Base of the links in emails (saved-search alerts) |
-| `NOTIFICATIONS_PUSH_ENABLED` | No | `True` | T-8.3.3.8: publish each new notification on `notifications:{tenant_id}` so an open bell refetches at once over `/ws/jobs`; the one-minute poll is the fallback. Off for the test suite |
-| `SUGGESTIONS_CACHE_TTL_MIN` | No | `60` | How long a context's question suggestions (S-8.4.1) are reused before recomputing; a new exchange, report or knowledge state invalidates sooner. `0` = never reuse |
-| `REPORT_INTERMEDIATES_ENABLED` | No | `True` | Persist the report pipeline's per-batch map extractions and reduced dataset to `job_report_intermediates` (S-1.14.6), about twice the reduced dataset's size per run. Audit with `backend/scripts/audit_report_intermediates.py` |
 | **Code-mixed speech (R5 / N-002 / D-080)** | | | |
 | `CODE_MIX_DOMINANT_SHARE` | No | `0.6` | A Hindi-grammar span with at least this Hindi share is quoted in Devanagari (with transliteration + translation). The threshold is the user's; a lower one is more robust to the tagger's Devanagari blind spot (open question in D-080) |
 | `CODE_MIX_ENGLISH_RENDERING_ENABLED` | No | `True` | Embed non-English chunks as an English rendering (`code_mixing_render_english`, once per document) while the stored text stays the original. Off = embed as written (retrieval MRR 0.40–0.57 instead of 0.81, D-084). Off for the test suite |
 | `CODE_MIX_BORROWING_MAX_SHARE` | No | `0.2` | An English-grammar span with at most this Hindi share is rendered as plain English; between the two thresholds, quotes stay in Roman script |
-| **Scheduler (S-8.3.1 / M3)** | | | |
-| `SCHEDULER_ENABLED` | No | `True` | Registers the single beat entry `scheduler.tick`; off = no entry and a tick that still arrives no-ops. Beat is its own process (`celery -A app.tasks.celery_app beat`), started by `scripts/start.ps1`; run exactly one |
-| `SCHEDULER_TICK_SECONDS` | No | `300` | Tick interval; also the tick's `expires`, so a backlog never replays after a restart |
-| `SCHEDULER_LEASE_SECONDS` | No | `600` | A row claim older than this is stale and may be re-taken (the holder crashed between claim and advance) |
-| `SCHEDULER_GRACE_SECONDS` | No | `30` | Rows due within this window count as due, so an early beat still runs them; `next_run_at` advances from the scheduled time, never twice |
-| `SCHEDULER_BATCH_SIZE` | No | `50` | Max rows one tick claims (bounds the catch-up after downtime) |
-| `SCHEDULER_MAX_RETRY_TICKS` | No | `3` | A failed dispatch is retried at the next tick this many times, then waits for its cadence |
-| **Auth hardening (E-5.4)** | | | |
+| **Echo: shares, connectors and imports** | | | |
+| `ECHO_SHARES_DIR` | No | `./data/echo/shares` | Echo shares inbox files, one directory per tenant; removed by the full Echo delete |
+| `ECHO_SHARE_MAX_BYTES` / `ECHO_SHARE_TEXT_MAX_CHARS` | No | `26214400` / `50000` | Caps on one quick-share file (25 MB) and one text share |
+| `ECHO_CONNECTOR_SYNC` | No | `celery` | How a connector sync runs after connecting and on "Sync now" (S-3.2.1): `celery` (`echo.sync_connector`), `inline`, or `off` (the suite). Scheduled syncs always go through the scheduler tick (`echo_sync`) |
+| `ECHO_SHARE_PROCESSING` | No | `celery` | How shares are processed after intake: `celery` (the `echo.process_share` task), `inline` (in the request, single-process dev) or `off` (the test suite) |
+| `ECHO_SHARE_EMBED_MAX_CHARS` | No | `2000` | Text embedded per share in `shares_global`: annotation, title and the opening of the extracted text |
+| `ECHO_IMPORT_MAX_BYTES` / `ECHO_IMPORT_MAX_UNCOMPRESSED_BYTES` | No | `209715200` / `1073741824` | Caps on one export upload (S-3.7.5, 200 MB) and on what a zip may unpack to (1 GB, a zip-bomb guard). Parsing streams, so memory stays flat |
+| `ECHO_SHARE_TOKENS_MAX` | No | `10` | Active share tokens per tenant (S-3.7.3): the browser extension's credential, accepted only by the share intake routes |
+| `ECHO_FETCH_TIMEOUT_SEC` / `ECHO_FETCH_ALLOW_PRIVATE` | No | `20` / `False` | Fetching an image shared by its address. Hosts resolving to private, loopback or link-local addresses are refused unless allowed (a self-hosted LAN) |
+| `ECHO_IMPORT_TURN_GAP_MIN` / `ECHO_IMPORT_TURN_MAX_CHARS` | No | `10` / `2000` | A WhatsApp chat is stored as turns: consecutive messages from one sender at most this many minutes apart, up to this many characters |
+| `ECHO_REMOTE_MEDIA` | No | `True` | Whether a shared image (vision fallback) or recording (Whisper) may go to a remote provider. Off, or a local-only tenant: images use on-device OCR only, recordings are skipped with a note |
+| `ECHO_OCR_MIN_CHARS` / `ECHO_OCR_MIN_CONFIDENCE` | No | `20` / `0.9` | When an on-device OCR reading is kept rather than sent to the vision fallback (measured: English 0.978+, Hindi and mixed 0.87 or less) |
+| `ECHO_OCR_THREADS` | No | `4` | ONNX threads for on-device OCR; the all-cores default was four times slower on a 32-thread machine |
+| `ECHO_OCR_VISION_MAX_SIDE` / `ECHO_OCR_VISION_MAX_TOKENS` | No | `2048` / `4000` | Image downscale before the vision fallback, and its completion cap |
+| `ECHO_MEDIA_DECODE_TIMEOUT_SEC` | No | `300` | ffmpeg wall-clock cap when reducing a shared recording to speech audio |
+| **Echo readiness (S-3.5.1)** | | | |
+| `ECHO_READY_FACTS_MIN` / `ECHO_READY_FACT_KINDS_MIN` | No | `30` / `3` | Readiness domain 1 (S-3.5.1): facts the user wrote, and distinct kinds. Every `ECHO_READY_*` threshold set to `0` switches that check off |
+| `ECHO_READY_EVENTS_MIN` / `ECHO_READY_EVENT_DAYS_MIN` | No | `200` / `90` | Domain 2: activity events from any connector or import, and days between the first and last |
+| `ECHO_READY_SIGNALS_MIN` / `ECHO_READY_SIGNAL_TYPES_MIN` | No | `50` / `4` | Domain 3: live voice signals, and distinct types |
+| `ECHO_READY_SHARES_MIN` / `ECHO_READY_SHARE_TYPES_MIN` | No | `100` / `4` | Domain 5: shares, and distinct content types |
+| `ECHO_READY_VOICE_PIECES_MIN` / `ECHO_READY_VOICE_WORDS_MIN` | No | `30` / `2000` | Voice floor: own-writing pieces OR words in one script (notes plus own-words shares) |
+| `ECHO_READY_VOICE_SPREAD_MAX` / `ECHO_READY_VOICE_MIN_VECTORS` | No | `0.05` / `10` | Voice stability: max bootstrap-centroid spread of the note vectors in `notes_global`, and the vectors needed to measure it. Untuned |
+| `ECHO_VOICE_TEST_NOTES_MIN` | No | `40` | Live notes before readiness says the user can take the D-100 voice test (reported, not gated) |
+| **Echo signal extraction (S-3.3.2 / D-099)** | | | |
+| `ECHO_SIGNAL_EXTRACTION` | No | `celery` | `celery` queues one `echo.extract_signals` run per tenant; `inline` runs in the request; `off` never runs (the test suite) |
+| `ECHO_SIGNALS_MIN_NEW_INPUTS` | No | `10` | New, edited or deleted texts waiting before a run starts on its own ("Learn now" runs below it) |
+| `ECHO_SIGNALS_BATCH_TOKENS` | No | `6000` | User text per economy-tier call |
+| `ECHO_SIGNALS_MAX_PER_BATCH` / `ECHO_SIGNALS_MAX_OUTPUT_TOKENS` | No | `12` / `2500` | Candidates per call and the output cap that bounds them (reasoning stays off) |
+| `ECHO_SIGNALS_MAX_BATCHES_PER_RUN` | No | `20` | Cost bound per run; a larger backlog is read over several runs |
+| `ECHO_SIGNALS_IMPORT_SAMPLE` / `ECHO_SIGNALS_MIN_PASSAGE_WORDS` | No | `300` / `4` | An export import is one input: stylometry reads every own-words turn; the model reads at most this many turns of at least this many words, spread over the chat's timeline (T-3.3.2.10) |
+| **Speak as me (S-3.4.1 / D-102)** | | | |
+| `ECHO_SPEAK_AS_ME_ENABLED` | No | `False` | The install switch. Each user also needs a passed voice test (`echo_voice_gates`, written by the Echo page's test or `scripts/voice_match_harness.py user-score --record`), readiness and the Studio tier |
+| `ECHO_DRAFT_CRITIQUE_ROUNDS` / `ECHO_DRAFT_CRITIQUE_TARGET` | No | `2` / `4.0` | Critique-and-revise rounds per draft, and the mean voice score (1-5) at which they stop early |
+| `ECHO_DRAFT_SOURCES` | No | `6` | Library chunks retrieved for one draft |
+| `ECHO_VOICE_TEST_GENERATION` | No | `celery` | How the in-app voice test's pairs are written (T-3.4.1.8): `celery` (`echo.generate_voice_test`), `inline` or `off` (the suite) |
+| `ECHO_VOICE_TESTS_PER_DAY` | No | `3` | Voice tests one user may start per UTC day; each makes about 40 calls on `echo_draft`. `0` = no limit |
+| `ECHO_PERSONAL_INDEX_ENABLED` | No | `True` | S-3.3.3: keep `personal_context_global` (one vector per live fact and signal) in step on every write and at startup. Off for the test suite, like `NOTES_INDEX_ENABLED` |
+| **LLM providers and routing** | | | |
+| `OPENAI_API_KEY` | Yes* | (unset) | Required if any use case resolves to `openai` (most defaults do) |
+| `ANTHROPIC_API_KEY` | No | (unset) | Required if any use case resolves to `anthropic` |
+| `GOOGLE_API_KEY` | No | (unset) | Required if any use case resolves to `google` |
+| `LLM_USE_CASE_CONFIG` | No | (unset) | Primary per-use-case override knob — see "LLM configuration" below |
+| `LLM_LOCAL_BASE_URL` | No | (unset) | Base URL for the local OpenAI-compatible server (LM Studio, Ollama, vLLM, llama.cpp-server) used when a use case resolves to `provider=local` |
+| `LLM_LOCAL_API_KEY` | No | (unset) | API key for the local endpoint; most servers ignore it but the OpenAI SDK needs a non-empty string, so unset falls back to `LLM_FAST_API_KEY` |
+| **Legacy LLM knobs (deprecated)** | | | |
+| `LLM_ROUTE_OVERRIDES` | No | (unset) | **Deprecated.** Binary `use_case=primary\|fast` knob. Honored as a lower-precedence fallback. New work should use `LLM_USE_CASE_CONFIG` |
+| `LLM_PRIMARY_PROVIDER` / `LLM_PRIMARY_MODEL` | No | `openai` / (unset) | **Deprecated.** Provider and model of the legacy primary slot; a blank model falls back to `LLM_MODEL` |
+| `LLM_MODEL` | No | `gpt-5` | **Deprecated.** Legacy primary-model name retained for back-compat; per-use-case defaults live in `app/services/llm_routing.py::USE_CASE_REGISTRY` |
+| `LLM_FALLBACK_MODEL` | No | `gpt-4o` | **Deprecated.** Legacy fallback for the primary slot |
+| `LLM_MAX_CONTEXT_TOKENS` | No | `1047576` | Legacy context ceiling; per-model windows live in `llm_routing.MODEL_CONTEXT_WINDOWS` |
+| `LLM_FAST_MODEL` | No | `gpt-4.1-mini` | **Deprecated.** Legacy fast-slot model name; consulted only by `LLM_ROUTE_OVERRIDES=...=fast` fallback path |
+| `LLM_FAST_BASE_URL` | No | (unset) | **Deprecated.** Legacy alias for `LLM_LOCAL_BASE_URL`; still honored when the canonical name is unset |
+| `LLM_FAST_API_KEY` | No | `not-needed` | **Deprecated.** Legacy alias for `LLM_LOCAL_API_KEY` |
+| **Auth** | | | |
+| `JWT_SECRET` | **Yes (production)** | (insecure dev value) | Signs every token. Blank falls back to the insecure value with a warning at startup |
+| `JWT_ALGORITHM` / `JWT_EXPIRY_HOURS` | No | `HS256` / `24` | Token signing algorithm and lifetime |
 | `LOCKOUT_FAILURE_THRESHOLD` | No | `5` | Failed-login count before account locks. Set `0` to disable lockout (not recommended). |
 | `LOCKOUT_DURATION_MIN` | No | `15` | How long an account stays locked (minutes). |
 | `PASSWORD_RESET_TOKEN_TTL_MIN` | No | `30` | Password-reset token validity window (minutes). Single-use. |
 | `MFA_ISSUER_NAME` | No | `Pratidhvani` | Issuer label shown by the user's authenticator app. |
 | `ADMIN_EMAILS` | No | (empty) | The install's operators, comma-separated and case-insensitive (T-5.2.8 / D-111). Only operators may switch tiers (`PUT /auth/me/tier`) or restart the services (`POST /admin/restart`); anyone else gets 403. Empty: the earliest-registered account is the operator, so a single-user install needs nothing. A multi-user install should name its operators. **Register the account before listing it**: sign-up verifies no email, so password registration refuses a listed address (403); Google or GitHub sign-in with that address, verified by the provider, still works, and startup warns about every listed address with no account |
+| **Email (SMTP)** | | | |
 | `SMTP_HOST` | No | (unset) | SMTP server for password-reset emails. When unset, the reset email (with its code) goes to the server log for the operator to hand over out-of-band. The code is never in the API response: it was until 2026-11-03 (T-5.4.8's `debug_secret`), which let anyone reset any account by its address. |
 | `SMTP_PORT` | No | `587` | SMTP port. |
-| `SMTP_USERNAME` / `SMTP_PASSWORD` | No | (unset) | SMTP auth. Both required, or both unset for anonymous relays. |
-| `SMTP_FROM_ADDRESS` | No | `no-reply@<SMTP_HOST>` | Sender envelope. |
+| `SMTP_USERNAME` / `SMTP_PASSWORD` | No | (unset) / (unset) | SMTP auth. Both required, or both unset for anonymous relays. |
+| `SMTP_FROM_ADDRESS` | No | (unset) | Sender envelope. |
 | `SMTP_USE_SSL` | No | `False` | SMTPS-on-connect (port 465 typical). |
 | `SMTP_USE_STARTTLS` | No | `True` | STARTTLS after connect (port 587 typical). |
-| `OAUTH_GOOGLE_CLIENT_ID` / `OAUTH_GOOGLE_CLIENT_SECRET` | No | (unset) | Google OAuth 2.0 + PKCE. Both must be set; endpoint returns 503 when unconfigured. |
-| `OAUTH_GITHUB_CLIENT_ID` / `OAUTH_GITHUB_CLIENT_SECRET` | No | (unset) | GitHub OAuth 2.0 + PKCE. |
-| `OAUTH_GITHUB_CONNECTOR_CLIENT_ID` / `_SECRET` | No | (unset) | Echo's GitHub connector (S-3.2.4). Unset, it uses the sign-in app above, whose callback URL must then cover both redirects (register the frontend origin) |
-| `OAUTH_GOOGLE_CONNECTOR_CLIENT_ID` / `_SECRET` | No | (unset) | Reserved for the Google connectors (S-3.2.2, S-3.2.5), on their own client so a scope review never touches Google sign-in |
-| `OAUTH_REDIRECT_BASE_URL` | No | (unset) | Override the redirect base when frontend lives on a different origin. |
+| **OAuth** | | | |
+| `OAUTH_GOOGLE_CLIENT_ID` / `OAUTH_GOOGLE_CLIENT_SECRET` | No | (unset) / (unset) | Google OAuth 2.0 + PKCE. Both must be set; endpoint returns 503 when unconfigured. |
+| `OAUTH_GITHUB_CLIENT_ID` / `OAUTH_GITHUB_CLIENT_SECRET` | No | (unset) / (unset) | GitHub OAuth 2.0 + PKCE. |
+| `OAUTH_GITHUB_CONNECTOR_CLIENT_ID` / `OAUTH_GITHUB_CONNECTOR_CLIENT_SECRET` | No | (unset) / (unset) | Echo's GitHub connector (S-3.2.4). Unset, it uses the sign-in app above, whose callback URL must then cover both redirects (register the frontend origin) |
+| `OAUTH_GOOGLE_CONNECTOR_CLIENT_ID` / `OAUTH_GOOGLE_CONNECTOR_CLIENT_SECRET` | No | (unset) / (unset) | Reserved for the Google connectors (S-3.2.2, S-3.2.5), on their own client so a scope review never touches Google sign-in. Not read by any code yet |
+| `OAUTH_REDIRECT_BASE_URL` | No | (unset) | Not read by any code yet: the redirect comes from the request's `redirect_uri` |
 | **Rate limiting (E-5.5)** | | | |
 | `RATE_LIMIT_ENABLED` | No | `True` | Kill switch. Set `False` for dev / under-test. |
-| `RATE_LIMIT_PER_MIN_FREE` / `_PRO` / `_STUDIO` | No | `60` / `600` / `6000` | Per-user-tier caps for authenticated routes (req/min). |
+| `RATE_LIMIT_PER_MIN_FREE` / `RATE_LIMIT_PER_MIN_PRO` / `RATE_LIMIT_PER_MIN_STUDIO` | No | `60` / `600` / `6000` | Per-user-tier caps for authenticated routes (req/min) |
 | `RATE_LIMIT_PER_MIN_UNAUTH` | No | `100` | Per-IP cap for unauthenticated GETs. |
 | `RATE_LIMIT_LOGIN_PER_MIN` | No | `10` | Per-IP credential-stuffing defence on `/auth/login`. |
 | `RATE_LIMIT_RESET_PER_MIN` | No | `5` | Per-IP cap on `/auth/password-reset/{request,confirm}`. |
@@ -436,13 +618,13 @@ Copy `.env.example` to `backend/.env` and fill in required keys:
 
 - **Backend always runs inside venv**: Use `./venv/Scripts/python` (Windows) or `./venv/bin/python` (Linux)
 - **Version constraints**: `requirements.txt` uses `>=` (not `==`) to avoid pip resolution conflicts
-- **Tests mock Celery**: `conftest.py` patches all three Celery task `.delay()` methods to avoid Redis dependency in tests
+- **Tests mock Celery**: `conftest.py` patches the Celery tasks the routers dispatch, so tests need no Redis
 - **ChromaDB tests**: Use `EphemeralClient` monkeypatch instead of `PersistentClient`
 - **Frontend inline styles**: Components use inline `style={{}}` objects rather than CSS modules or styled-components
 - **State management split**: Server state in React Query, UI state in Zustand
-- **Celery autodiscover**: Uses `related_name="job_tasks"` since tasks live in `job_tasks.py`, not `tasks.py`
+- **Celery autodiscover**: `celery_app.py` makes one `autodiscover_tasks(..., related_name=...)` call per module in `app/tasks/`, since tasks live in `job_tasks.py` and its siblings, not `tasks.py`
 - **Celery on Windows**: Must use `--pool=solo` flag
-- **Transcript language fallback**: `fetch_transcript()` tries English first, falls back to any available language
+- **Transcript caption track**: `fetch_transcript()` takes the track in the language the video is spoken in, never an auto-dub; English-first is only the fallback when nothing says what is spoken ([D-117](docs/decisions.md#d-117--the-caption-track-is-the-one-in-the-spoken-language-auto-dubs-are-read-from-the-players-audio-tracks-2026-10-29))
 - **Q&A context refinement**: Raw RAG+report context is compacted by an LLM before the answer LLM sees it — prevents "no relevant context" on large noisy inputs
 - **HTML report rendering**: Uses `jinja2.Environment` with custom `number_format` filter (not `Template.globals`)
 - **WebSocket cache invalidation**: `useJobProgress` invalidates the `jobVideos` query on `awaiting_approval` status change so the approval list auto-populates
@@ -451,7 +633,7 @@ Copy `.env.example` to `backend/.env` and fill in required keys:
 - **Code-mixed sources carry their language mix on every chunk** (R5 / N-002, [D-080](docs/decisions.md#d-080--code-mixing-detection-a-lexicon-tagger-not-an-llm-pass-2026-10-19)): every chunking path profiles the whole transcript once (`language_mix_service.ensure`, which stores the profile on `documents.language_mix` and hands it to `chunk_transcript` as `language_profile=`, T-1.16.1.7; older documents are profiled by `scripts/backfill_language_mix.py` from their cached text, no LLM) and the chunker writes `code_mix_primary` / `_script` / `_share` / `_matrix_share` / `_quote` plus per-chunk `code_mix_chunk_share` / `_chunk_matrix`, **omitted entirely for English sources** (under 3% non-English words, `DOCUMENT_PRESENCE_SHARE`; English talks read 0.0–0.6%, comment threads under Hinglish videos 3–30%). Prompts read it through `code_mixing_service.source_note` (`speech: ... — quote in ...` on source headers). Report map items may carry `original` wording beside English `content`; compose attaches the source's `quote_form`. Such chunks are EMBEDDED as their English rendering (`text_en`, D-084) while the stored text stays the original. Any new prompt that shows sources to a model should carry the speech note.
 - **Q&A reads the corpus from the database, not from its retrieval hits** (S-1.15.2): `routers/qa.py` and `routers/library.py` compute `corpus_stats_service` figures for the approved (job) or visible (library) document set and pass them, with the length preference, into the agents. The length policy and the publication-span note are dead code without them — exactly how R4's Q&A half shipped unwired from 2026-07-31 to 2026-10-18 — so `tests/test_routers/test_qa_length_policy.py` asserts at the production caller. Verify a feature at its caller, not at the function that implements it.
 - **Visual annotations are marked in the TEXT, never only in metadata** ([D-067](docs/decisions.md#d-067--visual-understanding-separate-frames-table-marker-in-text-annotation-opt-in-per-job-2026-07-31)): frame descriptions are merged as `[VISUAL @ mm:ss - ...]` spans inside the chunk text. Chunking splits, merges and re-packs segments, and the dominant-segment heuristic promotes exactly one segment's metadata — so metadata alone is not a survivable channel. Any prompt that reads transcript text MUST include `VISUAL_ANNOTATION_CONTRACT` from `app/agents/prompts/shared.py`, or the model will read machine-written descriptions as things the speaker said. Frames live in `visual_frames` and are merged at chunk time; **never** annotate `transcript_cache`, which is globally shared. Since S-1.18.8 the report pipeline also carries each extracted item's `modality` (`said` / `shown` / `both` / `unknown`) from the map stage through reduce, and compose renders it as a tag the composer attributes from; code forces `said` for sources without annotations. A new extraction prompt that reads annotated text should emit the same field.
-- **Single global Chroma collection**: All chunks live in `videoresearchpro_global`. Per-job scoping is a metadata filter at query time. Deleting a job does NOT delete chunks.
+- **Single global Chroma collection**: All chunks live in `pratidhvani_global`. Per-job scoping is a metadata filter at query time. Deleting a job does NOT delete chunks.
 - **Usage is metered per tenant, by feature, at the scope, not the call site** (E-5.2): `usage_service.metered(db, tenant_id)` names whose work it is; `llm_service.byok_context` opens one, `get_llm_for` attaches a meter to every client it builds, and `quota_service.record` charges each YouTube Data API request to the open scope (the install-wide `api_quota_log` is unchanged). The outermost scope writes `usage_records` (and the daily `quota_usage` totals) when it closes, through a session of its own: it never commits or rolls back the caller's session, and when the caller's transaction has already written (a flush, a DML statement, an open SQLite write transaction) the write waits for that transaction to end (commit, rollback or close). A new user-triggered entry point that is not inside `byok_context` opens a scope; a new LLM use case needs a `USE_CASE_FEATURES` entry (a test enforces it); a pool thread needs the caller's context (`report_agent._map_in_context`), or BYOK, model overrides and the meter all miss it. Nothing is enforced from these numbers (D-111). Tests that patch `get_llm_for` bypass the meter; patch `llm_service._build_from_config` instead (`tests/usage_helpers.py`).
 - **Per-use-case LLM config**: Call sites resolve their (provider, model, reasoning) triple via `app/services/llm_routing.py::resolve_config(use_case)`. Override per use case with `LLM_USE_CASE_CONFIG` (see "LLM configuration" below). The legacy `get_llm(..., purpose='fast')` / `LLM_ROUTE_OVERRIDES` knobs are still honored as deprecated fallbacks.
 
@@ -507,7 +689,7 @@ From highest to lowest:
 
 ### Registered use cases
 
-Thirty-six named call sites — full rationale, token budgets, and recommended minimum context live in the registry alongside each entry.
+36 named call sites — full rationale, token budgets, and recommended minimum context live in the registry alongside each entry.
 
 ### Measured guidance (S-1.14.7)
 
@@ -558,7 +740,7 @@ Every `UseCaseInfo` carries a required `guidance: UseCaseGuidance`: `status` is 
 **Author Studio (`app/services/outputters/`, S-6.1.3 / S-6.3.1):**
 - `author_book_outline` — plan a book from chapter digests (order, parts, bridges, briefs, glossary terms); JSON. Opt-in per book (`cohesion=light|full`), fail-soft, not a feature gate
 - `author_book_prose` — introduction, bridges, conclusion and glossary around the unchanged chapters; marked plain-text sections. `cohesion=full` only; `none` stays the default after two blind rounds (D-093)
-- `author_deck_outline` — plan a slide deck from one or more reports whose citations arrive as `[S#]` markers; JSON. Not fail-soft: a failed call fails the deck. Slides citing nothing are dropped by the renderer
+- `author_deck_outline` — plan a slide deck from one or more reports or knowledge reports (S-6.3.2) whose citations arrive as `[S#]` markers; JSON. Not fail-soft: a failed call fails the deck. Slides citing nothing are dropped by the renderer
 - `author_newsletter_compose` — a newsletter issue's featured deep-dive about one source, citing `[S#]` markers; plain prose. Opt-in per issue (D-097), fail-soft to the source's own summary
 
 **Code-mixed speech (`app/services/code_mixing_service.py`, R5 / N-002):**
@@ -570,6 +752,9 @@ Every `UseCaseInfo` carries a required `guidance: UseCaseGuidance`: `status` is 
 
 **Question suggestions (`app/services/suggestion_service.py`, M4 / S-8.4.1):**
 - `qa_suggest_questions` — "You might ask…": seven next questions from a summary of a run, a source or the library plus what was already asked there; merged with the caller's nearest past questions, de-duplicated, MMR-diversified, cached per (tenant, context) in `suggestion_cache`. Volume tier, reasoning OFF (900-token cap), fail-soft (history only), not a feature gate. The first LLM spend in I-8; impressions and clicks go to `audit_log`
+
+**Social ingest (`app/services/social_classify.py`):**
+- `social_classify_stance` — one call per fetched post and top comment, inside each connector ([D-023](docs/decisions.md#d-023--social_classify_stance-invoked-inline-inside-each-connector-2026-04-28)): `{stance, sentiment, framing, topic_relevance}` at fetch time, kept under `documents.source_metadata_json["classification"]`. Volume tier, reasoning OFF
 
 **Report generation (`app/agents/report_agent.py`):**
 - `report_map_chunks` — map phase; per-batch fact extraction (highest-volume call in the codebase)

@@ -67,12 +67,14 @@ def test_source_weight_in_response_is_the_callers_not_another_tenants(
     assert subscription_service.get_or_create(db, CH, OTHER).source_weight == 1.8
 
 
-def test_library_listing_filtered_by_channel_matches_channel_videos(
+def test_library_listing_filtered_by_channel_is_the_visible_set(
     client, db, test_user
 ):
     """The page lists documents through `GET /library/videos?channel_id=`
-    (it needs `job_count` / `job_titles` for the shared row component).
-    Both routes must scope to the same per-tenant visible set (D-063)."""
+    (it needs `job_count` / `job_titles` for the shared row component), and
+    its header counts them with `video_count`. Both scope to the same
+    per-tenant visible set (D-063). `GET /channels/{id}/videos`, which this
+    test used to compare against, had no caller and was removed."""
     _seed(db, test_user.id)
     now = datetime.now(timezone.utc)
     docs = [
@@ -92,9 +94,7 @@ def test_library_listing_filtered_by_channel_matches_channel_videos(
     visibility_service.grant(db, [docs[2].document_id], OTHER)
 
     via_library = client.get("/api/v1/library/videos", params={"channel_id": CH})
-    via_channel = client.get(f"/api/v1/channels/{CH}/videos")
-    assert via_library.status_code == 200 and via_channel.status_code == 200
+    assert via_library.status_code == 200
     lib_ids = {row["video_id"] for row in via_library.json()}
-    ch_ids = {row["video_id"] for row in via_channel.json()}
-    assert lib_ids == ch_ids == {"pagevid0000", "pagevid0001"}
+    assert lib_ids == {"pagevid0000", "pagevid0001"}
     assert client.get(f"/api/v1/channels/{CH}").json()["video_count"] == 2

@@ -37,7 +37,7 @@ ROUTE_LINE = re.compile(r"^(?P<methods>(?:GET|POST|PUT|PATCH|DELETE|WS)(?:/(?:GE
 ROUTE_MENTION = re.compile(r"\b(GET|POST|PUT|PATCH|DELETE|WS)\s+`?(/[^\s`),]+)")
 SKIPPED_DIRS = {".claude", ".git", ".venv", "__pycache__", "data", "dist", "node_modules", "venv"}
 UNREAD = "Not read by any code"
-LEGACY = re.compile(r"videoresearchpro[\w.]*\w", re.IGNORECASE)
+LEGACY = re.compile(r"videoresearchpro(?:[\w.]*\w)?", re.IGNORECASE)
 
 
 def _claude_section(start: str, end: str) -> str:
@@ -300,8 +300,10 @@ def _legacy_strings() -> frozenset[str]:
     return frozenset(m for path in sources for m in LEGACY.findall(path.read_text(encoding="utf-8")))
 
 
-def test_the_scan_finds_the_browser_keys() -> None:
-    assert {"videoresearchpro.authToken", "videoresearchpro.authUser", "videoresearchpro.db"} <= _legacy_strings()
+def test_the_scan_finds_the_strings_it_exists_for() -> None:
+    expected = {"videoresearchpro", "VideoResearchPro", "videoresearchpro.authToken",
+                "videoresearchpro.authUser", "videoresearchpro.db"}
+    assert expected <= _legacy_strings()
 
 
 def test_claude_md_names_every_legacy_string() -> None:

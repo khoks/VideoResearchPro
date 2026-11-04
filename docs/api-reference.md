@@ -1,6 +1,6 @@
 # Pratidhvani — API Reference
 
-**Status:** canonical (2026-04-24, last refreshed 2026-11-04). This is the **single source of truth** for the REST and WebSocket API. All other docs link here rather than duplicating endpoint lists.
+**Status:** canonical (2026-04-24, last refreshed 2026-11-04). This is the **single source of truth** for the REST and WebSocket API: bodies, errors and behaviour live here. CLAUDE.md keeps a one-line index of every route, and `backend/tests/test_ci/test_docs_match_code.py` holds both to what the app serves.
 
 The API is mounted under `/api/v1/` (except the WebSocket, which is mounted at the root). All HTTP responses are JSON (content-type `application/json`) unless explicitly noted otherwise (HTML for reports, NDJSON for dataset exports). Authentication is via `Authorization: Bearer <jwt>` for everything except `/auth/register`, `/auth/login`, `/auth/login/mfa`, the two `/auth/password-reset/*` routes, the `/auth/oauth/*` routes and the `/health` family. No HTTP route accepts the JWT as a `?token=` query string (retired 2026-10-25, T-8.8.1.5, [D-085 addendum](decisions.md#d-085--reading-room-reports-stay-html-sanitised-and-parsed-in-the-browser-one-shared-citation-card-fed-by-the-runs-documents-2026-10-19)): a browser fetches files with the header and opens or saves them from a blob: URL. The `/ws/jobs` WebSocket is the one exception, since a WebSocket handshake cannot carry headers.
 
@@ -438,7 +438,7 @@ All or nothing against the tier's document cap ([D-115](decisions.md#d-115--the-
 Cancel a running job. Revokes the active Celery task. Returns updated `JobResponse`.
 
 ### `DELETE /api/v1/jobs/{job_id}`
-Delete a job. Drops `job_videos` rows (videos and chunks survive in the global library), deletes the report file if present, and clears the per-job Q&A exchanges. Returns 204.
+Delete a job. Drops `job_documents` rows (documents and chunks survive in the global library), deletes the report file if present, and clears the per-job Q&A exchanges. Returns 204.
 
 ### `GET /api/v1/jobs/{job_id}/videos`
 List the documents selected for this job. Returns `list[VideoResponse]`. Each row includes the per-job `approved` flag and the polymorphic fields `document_id`, `source_type` (default `"video"`), `source_id`, `source_url`, `source_metadata` (parsed JSON object) and `classification`. `language_mix` (T-1.16.1.7) is the document's measured language profile, here and on `GET /library/videos`: `{ primary_language, native_script, hi_share, matrix_hi_share, quote_mode, code_mixed }`, `null` until the document has been chunked since T-1.16.1.7 or profiled by `scripts/backfill_language_mix.py`. `video_id`, `url`, `duration_seconds` and `channel_name` are nullable: they are NULL for non-video documents. Until S-8.8.2 (2026-10-19) the schema did not declare the polymorphic fields, so they were stripped from every response and a non-video document on a job failed serialisation.
@@ -585,7 +585,7 @@ An absent or empty `types` means every type, so a client that wants sources only
 `?video_ids=a,b,c` → `{ "<video_id>": { "channel_id": "UC…", "channel_name": "…" } }` (S-8.7.4). Maps cited YouTube videos to their channel so a citation chip can link to the channel page. Only videos the caller can see answer; unknown or invisible ids are simply absent (never an error, never a hint that another reader holds them). At most 200 distinct ids per call. Resolved at read time, so every existing answer gains the link without changing stored references. The frontend batches every chip on screen into one call.
 
 ### `GET /api/v1/library/videos`
-Browse the global, deduplicated video library. Returns `list[LibraryVideoResponse]`. Each row aggregates `job_count` and `job_titles[]` across `job_videos → jobs` so the UI can show "appears in N research runs" without follow-up requests.
+Browse the caller's visible documents: the library is one deduplicated store, but this lists only what the caller ingested ([D-063](decisions.md#d-063--per-user-isolation-shared-cache-private-catalogue-2026-07-31)). Returns `list[LibraryVideoResponse]`. Each row aggregates `job_count` and `job_titles[]` across `job_documents → jobs` so the UI can show "appears in N research runs" without follow-up requests.
 
 Query params:
 - `search` — free-text match across video title and channel name (ILIKE).
@@ -1454,7 +1454,7 @@ Heartbeats every 30 seconds (server pings, client pongs). Auth is enforced via t
 - **IDs** are UUIDs except `video_id` (YouTube native ID, 11 chars) and `channel_id` (YouTube channel ID, 24 chars).
 - **Pagination** uses `limit` + `offset` (no cursor pagination today). Defaults vary per endpoint and are noted inline.
 - **Empty lists** return `[]`, not `null`.
-- **Errors** return `{ "detail": "..." }` with the appropriate HTTP status. 401 means missing/invalid token; 403 means valid token but insufficient privileges (a tier without the feature, or an operator-only route); 404 means resource not found; 409 means conflict (e.g. knowledge already extracted); 422 is FastAPI's request-body validation error; 502 wraps a downstream LLM error; 429 is reserved for the YouTube quota hard-cap.
+- **Errors** return `{ "detail": "..." }` with the appropriate HTTP status. 401 means missing/invalid token; 403 means valid token but insufficient privileges (a tier without the feature, or an operator-only route); 404 means resource not found; 409 means conflict (e.g. knowledge already extracted); 422 is FastAPI's request-body validation error; 502 wraps a downstream LLM error. 429 means one of the install's own limits was hit, each with its own body: a rate limit (`{ detail, retry_after_sec }` plus `Retry-After`), a per-user quota or the document cap (`QuotaExceededError`, whose `detail` is an object: `error`, `resource`, `consumed`, `limit`, `retry_after_sec`, `retry_at`, and for the cap `requested`, `available`, `message`), the concurrent jobs limit on `POST /jobs` (a plain string), the daily draft cap (`detail.code` is `daily_cap`), and a locked account on `POST /auth/password/change`.
 
 ## Forward-compat
 

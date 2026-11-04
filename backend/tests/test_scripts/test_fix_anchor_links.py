@@ -69,6 +69,113 @@ def test_a_comment_in_a_code_block_is_not_a_heading():
     assert fal.heading_slugs(text) == {"real"}
 
 
+FORMS = SCRIPT.parents[1] / "tests" / "fixtures" / "anchors" / "heading_forms.md"
+
+
+def test_heading_forms_match_what_github_rendered():
+    """The expected ids are GitHub's, read from the rendered file (contents API,
+    `html` media type): re-read them when the fixture changes. Numbering runs in
+    document order across every form, so a form this missed would shift `repeat-…`."""
+    expected = {
+        "atx-one", "setext-one", "setext-two", "two-lines-of-setext",
+        "quoted-atx", "quoted-setext", "nested-quote", "quote-with-no-space",
+        "repeat", "repeat-1", "repeat-2", "repeat-3",
+        "atx-then-a-rule", "spaces-after-the-underline", "inline-code-here", "between-two-rules",
+    }
+    assert fal.heading_slugs(FORMS.read_text(encoding="utf-8")) == expected
+
+
+@pytest.mark.parametrize(
+    "text,slugs",
+    [
+        ("Title\n=====\n", {"title"}),
+        ("Title\n-----\n", {"title"}),
+        ("Title\n-\n", {"title"}),
+        ("One\ntwo\n---\n", {"one-two"}),
+        ("Title\r\n---\r\n", {"title"}),
+    ],
+)
+def test_a_setext_heading_is_a_heading(text, slugs):
+    assert fal.heading_slugs(text) == slugs
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Text\n\n---\n",           # a blank line first: a rule
+        "- item\n---\n",           # a list item
+        "1. item\n---\n",
+        "| a |\n|---|\n| 1 |\n---\n",  # a table
+        "<div>\n---\n</div>\n",      # an HTML block
+        "    code\n    ---\n",     # indented code
+        "Text\n    ---\n",         # four spaces: more paragraph
+        "> quoted\n---\n",          # a rule after the quote
+        "Text\n> ---\n",            # the same the other way round
+        "```\nTitle\n---\n```\n",   # a code block
+    ],
+)
+def test_an_underline_with_no_paragraph_of_its_own_is_not_a_heading(text):
+    assert fal.heading_slugs(text) == set()
+
+
+@pytest.mark.parametrize(
+    "text,slugs",
+    [
+        ("> ## Note\n", {"note"}),
+        (">## Note\n", {"note"}),
+        ("   > ## Note\n", {"note"}),
+        ("> > ### Deep\n", {"deep"}),
+        ("> Note\n> ---\n", {"note"}),
+        ("> Note\n> ===\n", {"note"}),
+        ("> ## Note\r\n", {"note"}),
+    ],
+)
+def test_a_heading_in_a_blockquote_is_a_heading(text, slugs):
+    assert fal.heading_slugs(text) == slugs
+
+
+def test_a_code_block_in_a_blockquote_is_not_a_heading():
+    assert fal.heading_slugs("> ```\n> # not a heading\n> ```\n") == set()
+
+
+def test_a_code_block_opened_in_a_blockquote_ends_with_it():
+    assert fal.heading_slugs("> ```\n> code\n\n## Real\n") == {"real"}
+
+
+def test_repeated_headings_number_in_document_order_across_forms():
+    text = "Scope\n=====\n\n## Scope\n\n> ### Scope\n\nScope\n-----\n\n## Scope\n"
+    assert fal.heading_slugs(text) == {"scope", "scope-1", "scope-2", "scope-3", "scope-4"}
+
+
+def test_front_matter_is_not_a_heading():
+    text = "---\ntitle: x\nstatus: y\n---\n\n# Real\n"
+    assert fal.heading_slugs(text) == {"real"}
+    assert fal.heading_slugs(text.replace("\n", "\r\n")) == {"real"}
+
+
+def test_check_accepts_a_good_link_to_every_heading_form(tmp_path):
+    # The review's reproduction: three correct links, "unrepairable: 3", exit 1.
+    (tmp_path / "a.md").write_text(
+        "One\n===\n\nTwo\n---\n\n> ## Three\n\n[1](#one) [2](#two) [3](#three)\n",
+        encoding="utf-8",
+    )
+    result = _cli(tmp_path, "--check")
+    assert result.returncode == 0, result.stdout
+    assert "unrepairable: 0" in result.stdout
+
+
+def test_a_failure_names_the_heading_forms_it_cannot_see(tmp_path):
+    (tmp_path / "a.md").write_text("<h2>Raw</h2>\n\n- ## Listed\n\n[x](#raw)\n", encoding="utf-8")
+    result = _cli(tmp_path, "--check")
+    assert result.returncode == 1
+    assert "raw HTML" in result.stdout and "list item" in result.stdout
+
+
+def test_a_clean_run_says_nothing_about_heading_forms(tmp_path):
+    (tmp_path / "a.md").write_text("# A\n\n[x](#a)\n", encoding="utf-8")
+    assert "raw HTML" not in _cli(tmp_path, "--check").stdout
+
+
 def test_an_anchor_tag_is_a_link_target():
     assert fal.heading_slugs('# Real\n\n<a id="kept-name"></a>\n') == {"real", "kept-name"}
 

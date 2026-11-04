@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Pratidhvani (प्रतिध्वनि)** — Sanskrit for "echo". A full-stack personal research wiki. Users submit jobs to ingest sources (today: YouTube by topic search, channel list, or channel subscription; future: podcasts, articles, forum threads, PDFs — see [docs/source-types.md](docs/source-types.md)), contribute them to a **global, deduplicated document library**, generate comprehensive HTML reports via LangGraph agents (map-reduce pattern), and ask citation-backed questions either scoped to a single job, across the **entire library**, or across **every Q&A they've ever asked**. Transcripts, embeddings, and knowledge artifacts are computed once per document and reused across every job that references them.
 
-> **Legacy name.** The project was previously called *VideoResearchPro*. The legacy string survives in one setting's default, `DATABASE_URL` (`sqlite:///./data/videoresearchpro.db`, grandfathered by [D-032](docs/decisions.md#d-032--operator-coordinated-runbook-vs-automatic-startup-migration-for-data-bearing-identifier-renames-2026-05-03)), in the Celery app's internal name, and in the repository's URL. The Chroma default is **not** grandfathered: `CHROMA_GLOBAL_COLLECTION_NAME` defaults to `pratidhvani_global` since T-2.6.1 (PR #106). `videoresearchpro_global` exists only on an install that embedded before then and pins that name in its `.env` ([runbook](docs/migration-code-identifiers.md)). All user-facing copy now reads `Pratidhvani`.
+> **Legacy name.** The project was previously called *VideoResearchPro*. The legacy string survives in the default database file (`DATABASE_URL`'s `sqlite:///./data/videoresearchpro.db`, which `backend/alembic.ini` repeats, grandfathered by [D-032](docs/decisions.md#d-032--operator-coordinated-runbook-vs-automatic-startup-migration-for-data-bearing-identifier-renames-2026-05-03)), in the browser's `localStorage` keys `videoresearchpro.authToken` and `videoresearchpro.authUser` (renaming them signs every browser out), in the Celery app's internal name, and in the repository's URL. The Chroma default is **not** grandfathered: `CHROMA_GLOBAL_COLLECTION_NAME` defaults to `pratidhvani_global` since T-2.6.1 (PR #106). `videoresearchpro_global` exists only on an install that embedded before then and pins that name in its `.env` ([runbook](docs/migration-code-identifiers.md)). All user-facing copy now reads `Pratidhvani`.
 
 ## Vision & Roadmap
 
@@ -40,7 +40,7 @@ Both skills can be invoked manually any time. If a session was purely tactical (
 - **Task Queue**: Celery + Redis (broker on db1, results on db2, pub/sub on db0)
 - **Vector DB**: ChromaDB with PersistentClient, sentence-transformers `paraphrase-multilingual-MiniLM-L12-v2` embeddings (five global collections: `pratidhvani_global` for transcript chunks, `qa_library_global` for Q&A exchanges, and the tenant-filtered `notes_global`, `shares_global` and `personal_context_global`)
 - **AI Agents**: 7 agents in `app/agents/`: 5 LangGraph graphs (Search, Report, Q&A, Knowledge, Echo) and 2 plain pipelines (Q&A-History, Visual), + per-use-case LLM config (OpenAI / Anthropic / Google / local OpenAI-compatible)
-- **Auth**: JWT, email+password, user-scoped jobs + Q&A history + knowledge artifacts
+- **Auth**: JWT with revocable sessions, email+password, Google and GitHub OAuth (PKCE), two-step verification (TOTP + recovery codes), user-scoped jobs + Q&A history + knowledge artifacts
 - **YouTube**: YouTube Data API v3 + `youtube-transcript-api` + OpenAI Whisper fallback
 
 ## Build & Run Commands
@@ -577,7 +577,7 @@ Copy `.env.example` to `backend/.env` and fill in required keys. The repository 
 | `LLM_PRIMARY_PROVIDER` / `LLM_PRIMARY_MODEL` | No | `openai` / (unset) | **Deprecated.** Provider and model of the legacy primary slot; a blank model falls back to `LLM_MODEL` |
 | `LLM_MODEL` | No | `gpt-5` | **Deprecated.** Legacy primary-model name retained for back-compat; per-use-case defaults live in `app/services/llm_routing.py::USE_CASE_REGISTRY` |
 | `LLM_FALLBACK_MODEL` | No | `gpt-4o` | **Deprecated.** Legacy fallback for the primary slot |
-| `LLM_MAX_CONTEXT_TOKENS` | No | `1047576` | Legacy context ceiling; per-model windows live in `llm_routing.MODEL_CONTEXT_WINDOWS` |
+| `LLM_MAX_CONTEXT_TOKENS` | No | `1047576` | Not read by any code (report batches are budgeted from `llm_routing.MODEL_CONTEXT_WINDOWS`) |
 | `LLM_FAST_MODEL` | No | `gpt-4.1-mini` | **Deprecated.** Legacy fast-slot model name; consulted only by `LLM_ROUTE_OVERRIDES=...=fast` fallback path |
 | `LLM_FAST_BASE_URL` | No | (unset) | **Deprecated.** Legacy alias for `LLM_LOCAL_BASE_URL`; still honored when the canonical name is unset |
 | `LLM_FAST_API_KEY` | No | `not-needed` | **Deprecated.** Legacy alias for `LLM_LOCAL_API_KEY` |

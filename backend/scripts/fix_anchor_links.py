@@ -19,6 +19,13 @@ Every Markdown file in the repository is scanned, and every inline or
 reference link with a fragment: `other.md#x`, `../CLAUDE.md#x`, and `#x` within
 the same file. Code blocks, code spans and HTML comments are not links.
 
+Headings are read in document order, because the `-1` numbering runs across all
+of them: ATX (`## x`), setext (`x` over `===` or `---`), and either inside a
+blockquote. Front matter is not one. Two forms GitHub also gives ids to are NOT
+read, and a good link to one fails --check as unrepairable: a heading inside a
+list item (`- ## x`), and raw HTML (`<h2>x</h2>`). Each also shifts the
+numbering of a later repeat of its text. No doc uses either.
+
 Usage (from backend/, stdlib only, no venv needed):
     python scripts/fix_anchor_links.py            # dry run: say what --write would do
     python scripts/fix_anchor_links.py --check    # same, and exit 1 on any bad link (CI)
@@ -33,12 +40,14 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import html
+import itertools
 import os
 import pathlib
 import re
 import sys
 import unicodedata
 import urllib.parse
+from collections.abc import Iterator
 
 # Directories that hold no docs of ours: dependencies, build output, runtime
 # data, test fixtures, and .claude, whose worktrees are whole copies of this
@@ -51,6 +60,12 @@ SKIP_DIRS = {
 
 FENCE_RE = re.compile(r" {0,3}(`{3,}|~{3,})")
 HEADING_RE = re.compile(r" {0,3}#{1,6}[ \t]+(.+?)(?:[ \t]+#+)?[ \t]*$")
+SETEXT_RE = re.compile(r" {0,3}(?:=+|-+)[ \t]*$")
+RULE_RE = re.compile(r" {0,3}(?:[-*_][ \t]*){3,}$")
+# A list item, a table row or an HTML block: an underline after one is a rule.
+NO_SETEXT_RE = re.compile(r" {0,3}(?:[-*+][ \t]|\d{1,9}[.)][ \t]|\||<)")
+QUOTE_RE = re.compile(r" {0,3}> ?")
+FRONT_MATTER_RE = re.compile(r"\A---[ \t]*\r?\n(?:.*?\r?\n)??---[ \t]*(?:\r?\n|\Z)", re.DOTALL)
 # <a name="x"> and <a id="x"> are link targets on GitHub too.
 HTML_ANCHOR_RE = re.compile(r"<a\s[^>]*?\b(?:id|name)=[\"']([^\"']+)[\"']", re.IGNORECASE)
 COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
@@ -150,16 +165,41 @@ def mask_fences(text: str) -> str:
     return "\n".join(lines)
 
 
+def _heading_texts(masked: str) -> Iterator[str]:
+    """Each heading's inline Markdown in document order, blockquotes included."""
+    for quoted, run in itertools.groupby(masked.split("\n"), key=lambda line: bool(QUOTE_RE.match(line))):
+        lines = [line.rstrip("\r") for line in run]
+        if quoted:
+            # One quote at a time: a code block opened in a quote ends with it,
+            # and an underline belongs to the paragraph of its own quote.
+            yield from _heading_texts(mask_fences("\n".join(QUOTE_RE.sub("", line, count=1) for line in lines)))
+            continue
+        paragraph: list[str] = []
+        closed = False  # in a block that an underline cannot turn into a heading
+        for line in lines:
+            if not line.strip():
+                paragraph, closed = [], False
+            elif m := HEADING_RE.match(line):
+                paragraph = []
+                yield m.group(1)
+            elif paragraph and SETEXT_RE.match(line):
+                yield " ".join(paragraph)
+                paragraph = []
+            elif RULE_RE.match(line):
+                paragraph, closed = [], False
+            elif NO_SETEXT_RE.match(line):
+                paragraph, closed = [], True
+            elif not closed and (paragraph or not line.startswith("    ")):
+                paragraph.append(line.strip())
+
+
 def heading_slugs(text: str) -> set[str]:
     """Every anchor a Markdown file offers, as GitHub numbers them."""
-    masked = mask_fences(text)
+    masked = mask_fences(FRONT_MATTER_RE.sub(lambda m: _spaces(m.group(0)), text, count=1))
     seen: dict[str, int] = {}
     slugs: set[str] = set()
-    for line in masked.split("\n"):
-        m = HEADING_RE.match(line.rstrip("\r"))
-        if not m:
-            continue
-        base = slug = github_slug(_rendered_text(m.group(1)))
+    for heading in _heading_texts(masked):
+        base = slug = github_slug(_rendered_text(heading))
         while slug in seen:
             seen[base] += 1
             slug = f"{base}-{seen[base]}"
@@ -273,6 +313,8 @@ def run(root: pathlib.Path, write: bool = False, out=None, skip_sources: tuple[s
     print(f"unrepairable: {len(report.broken)}", file=out)
     for b in report.broken:
         print(f"  {b}", file=out)
+    if report.broken:
+        print("  (not read as headings: raw HTML like <h2>x</h2>, and a heading inside a list item)", file=out)
     if write:
         apply(root, report)
     return report

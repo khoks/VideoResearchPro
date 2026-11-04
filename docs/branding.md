@@ -280,11 +280,11 @@ These are tracked in [feature-roadmap.md](feature-roadmap.md) as a "rebrand asse
 ### How the full lockup is built
 
 - **The wordmarks follow §3:** Tiro Devanagari Hindi Regular, and Fraunces Italic at optical size 14, weight 500, letter-spacing −0.01em, lowercase.
-- **§3 sets no colours, so the lockup takes the live pages':** Devanagari in `accent.primary`, Latin in `text.secondary`.
+- **§3 sets no colours, so the lockup takes the app's:** Devanagari in `accent.primary`, Latin in `text.secondary`. The Astro site sets its Devanagari in `text.primary`.
 - **Layout:** the mark at its master size, the text block exactly as tall as the mark's ink, both wordmarks on one left edge.
 - **Smallest size: 32 px tall.** Below that the Latin line stops being legible at 1× pixels. Use the mark alone (§1).
 - **Dark is a separate file, not a media query:** `prefers-color-scheme` follows the operating system, and the app's theme is a toggle on `data-theme`.
-- **The live pages set the Latin line differently from §3:** roman capitals, tracked wide, in `frontend/src/layouts/AppLayout.tsx`, `AuthShell.tsx` and the marketing pages. The logo follows §3. One of the two should change, and that is the owner's call.
+- **The live pages set the Latin line differently from §3:** roman capitals, tracked wide, in `frontend/src/layouts/AppLayout.tsx`, `frontend/src/components/auth/AuthShell.tsx` and `frontend/src/pages/marketing/`, and roman mixed case on the Astro site. The logo follows §3. One of the two should change, and that is the owner's call.
 
 The text is outlines, shaped by HarfBuzz, so no logo depends on an installed font. To change the artwork, change `logo-mark.svg` or the constants in `frontend/scripts/outline-logos.py` and regenerate (its header has the steps); do not edit the SVGs by hand. `backend/tests/test_ci/test_brand_assets.py` holds the files to the master, the tokens and the shaping.
 

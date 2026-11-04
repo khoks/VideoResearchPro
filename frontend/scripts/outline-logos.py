@@ -49,7 +49,7 @@ MASTER = REPO / "frontend" / "public" / "logo-mark.svg"
 FAVICON = REPO / "frontend" / "public" / "favicon.svg"
 
 DEVANAGARI = "प्रतिध्वनि"
-# Section 3: "Set lowercase". The live pages set Pratidhvani in tracked capitals
+# Section 3: "Set lowercase". The app's pages set Pratidhvani in tracked capitals
 # instead; this file follows the brand document, which says it is the source.
 LATIN = "pratidhvani"
 
@@ -65,7 +65,7 @@ FRAUNCES_AXES = {"opsz": 14, "wght": 500, "SOFT": 0, "WONK": 0}
 LATIN_TRACKING_EM = -0.01
 
 # Tokens of docs/branding.md section 4 (frontend/src/theme.ts). The wordmark
-# colours are the live lockups': Devanagari in the accent, Latin in textSecondary.
+# colours are the app's lockups': Devanagari in the accent, Latin in textSecondary.
 THEMES = {
     "": {"mark": "#7a2c1a", "devanagari": "#7a2c1a", "latin": "#5c5448"},
     "-dark": {"mark": "#b04a2f", "devanagari": "#b04a2f", "latin": "#a89f93"},

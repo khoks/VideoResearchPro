@@ -39,6 +39,19 @@ def hash_password(password: str) -> str:
     return _pwd_context.hash(password)
 
 
+def password_can_be_hashed(password: str) -> bool:
+    """Whether ``hash_password`` will take ``password``. It raises on a NUL
+    character (bcrypt ends its input there) and on a lone surrogate, which
+    JSON can carry and UTF-8 cannot encode."""
+    if "\x00" in password:
+        return False
+    try:
+        password.encode("utf-8")
+    except UnicodeEncodeError:
+        return False
+    return True
+
+
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     try:
         return _pwd_context.verify(plain_password, hashed_password)
@@ -448,10 +461,12 @@ def decode_access_token(token: str) -> dict[str, Any] | None:
     ``get_current_jti``, the ``/ws/jobs`` handshake) must decode through this,
     not ``decode_token``. The second-factor ticket
     (``mfa_service.issue_mfa_step_token``) is signed with the same key and
-    algorithm, and carries a ``sub`` but no ``jti``, so it passes every other
-    check: before this, the ticket POST /auth/login hands out after the
-    password step worked as a full access token for its five minutes, and two-
-    step verification could be skipped by never sending the code.
+    algorithm, and carries a ``sub`` and a ``jti`` with no session row, which
+    ``is_session_active`` passes (it fails open on a missing row). So this
+    refusal is the only thing that stops a ticket: before it, the ticket POST
+    /auth/login hands out after the password step worked as a full access
+    token for its five minutes, and two-step verification could be skipped by
+    never sending the code.
 
     A ticket carries ``mfa_step`` (and, since this change, ``typ="mfa_step"``);
     an access token carries ``typ="access"``. A token with no ``typ`` was

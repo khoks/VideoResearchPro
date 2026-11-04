@@ -227,9 +227,10 @@ def test_oauth_sign_in_without_two_step_still_signs_in(
 # ---------------------------------------------------------------------------
 #
 # The ticket the first step hands out is signed with the access-token key and
-# carries a `sub` but no `jti`. Until decode_access_token, every bearer check
-# took it, so whoever had the password (or the provider account) could skip
-# the code and use the ticket as an access token for its five minutes.
+# carries a `sub`, and a `jti` with no session row. Until decode_access_token,
+# every bearer check took it, so whoever had the password (or the provider
+# account) could skip the code and use the ticket as an access token for its
+# five minutes.
 
 # Routes that read the caller through get_current_user, plus logout, whose
 # get_current_jti read the ticket too.

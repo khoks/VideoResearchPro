@@ -40,12 +40,20 @@ dropping the up-front check from ``start_connect``
 removing the app's exception handler
 (``test_any_other_route_meets_the_handler_not_a_500``); an OAuth-created
 account marked as having a password
-(``test_an_account_google_made_is_told_to_use_the_reset``).
+(``test_an_account_google_made_is_told_to_use_the_reset``); removing the
+app's 422 handler (``test_a_malformed_change_request_quotes_neither_password``,
+``test_no_validation_error_quotes_what_was_sent``); dropping the
+``password_can_be_hashed`` check from the change route
+(``test_a_password_bcrypt_cannot_read_is_refused_and_changes_nothing``,
+``test_a_lone_surrogate_is_a_refusal_not_a_crash``); letting
+``decode_access_token`` take a ticket
+(``test_a_ticket_has_a_jti_and_no_session_so_only_its_type_refuses_it``).
 """
 from __future__ import annotations
 
 import json
 import urllib.parse
+import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -192,6 +200,20 @@ def _ticket(client, email: str) -> str:
     r = client.post("/api/v1/auth/login", json={"email": email, "password": PASSWORD})
     assert r.status_code == 200 and r.json()["requires_mfa"] is True, r.text
     return r.json()["mfa_token"]
+
+
+def test_a_ticket_has_a_jti_and_no_session_so_only_its_type_refuses_it(unauthenticated_client, db, stable_key):
+    # Why decode_access_token's refusal is the only thing in the way: the
+    # session check fails open on a missing row, so it passes a ticket.
+    _mfa_user(db, "ticket-jti@x.com")
+    ticket = _ticket(unauthenticated_client, "ticket-jti@x.com")
+    jti = auth_service.decode_token(ticket)["jti"]
+    assert db.query(SessionRow).filter(SessionRow.jti == jti).first() is None
+    assert auth_service.is_session_active(db, jti) is True
+
+    assert auth_service.decode_access_token(ticket) is None
+    assert auth_service.authenticate_access_token(db, ticket) is None
+    assert _me(unauthenticated_client, ticket) == 401
 
 
 def _wrong_code(secret: str) -> str:
@@ -446,6 +468,125 @@ def test_a_wrong_current_password_is_not_echoed(unauthenticated_client, db):
     token = _login(unauthenticated_client, "change-echo@x.com")
     r = _change(unauthenticated_client, token, "Distinct-Wrong-77", "brand-new-pw")
     assert "Distinct-Wrong-77" not in r.text and "brand-new-pw" not in r.text
+
+
+# Set apart from everything else in a body, so a test can look for them.
+ECHO_CURRENT = "Secret-Current-Pass-41"
+ECHO_NEW = "Secret-New-Pass-99"
+
+
+@pytest.mark.parametrize(
+    "request_kwargs",
+    [
+        # One field missing: FastAPI's default 422 quotes the whole body.
+        {"json": {"new_password": ECHO_NEW}},
+        {"json": {"current_password": ECHO_CURRENT}},
+        # One field the wrong type: it quotes that value, and both when both are.
+        {"json": {"current_password": ECHO_CURRENT, "new_password": 12345678}},
+        {"json": {"current_password": [ECHO_CURRENT], "new_password": [ECHO_NEW]}},
+        # Not an object at all.
+        {"json": [ECHO_CURRENT, ECHO_NEW]},
+        {"json": ECHO_NEW},
+        # curl -d with no content type: the raw bytes come back.
+        {
+            "content": json.dumps({"current_password": ECHO_CURRENT, "new_password": ECHO_NEW}),
+            "headers": {"Content-Type": "application/x-www-form-urlencoded"},
+        },
+    ],
+)
+def test_a_malformed_change_request_quotes_neither_password(unauthenticated_client, db, request_kwargs):
+    email = f"change-malformed-{uuid.uuid4().hex[:8]}@x.com"
+    auth_service.create_user(db, email=email, password=PASSWORD)
+    token = _login(unauthenticated_client, email)
+    kwargs = dict(request_kwargs)
+    headers = {**kwargs.pop("headers", {}), **_auth(token)}
+
+    r = unauthenticated_client.post(CHANGE, headers=headers, **kwargs)
+
+    assert r.status_code == 422
+    assert ECHO_NEW not in r.text
+    assert ECHO_CURRENT not in r.text
+    assert "12345678" not in r.text
+    # What was wrong and where is still there, only the value is gone.
+    for error in r.json()["detail"]:
+        assert {"type", "loc", "msg"} <= set(error)
+        assert "input" not in error
+
+
+@pytest.mark.parametrize(
+    "path, body, value",
+    [
+        ("/api/v1/auth/register", {"email": "quoted@x.com", "password": "Zq9!x"}, "Zq9!x"),
+        ("/api/v1/auth/login", {"email": "quoted@x.com", "password": "Q" * 129}, "Q" * 129),
+        ("/api/v1/auth/password-reset/confirm", {"token": "t0ken-t0ken", "new_password": "Zq9!x"}, "Zq9!x"),
+        ("/api/v1/auth/password-reset/confirm", {"token": "Zq9!x", "new_password": "goodpw1234"}, "Zq9!x"),
+    ],
+)
+def test_no_validation_error_quotes_what_was_sent(unauthenticated_client, path, body, value):
+    r = unauthenticated_client.post(path, json=body)
+    assert r.status_code == 422
+    assert value not in r.text
+
+
+def test_a_validation_error_on_a_key_does_not_quote_the_key(unauthenticated_client, db):
+    user = auth_service.create_user(db, email="quoted-key@x.com", password=PASSWORD)
+    user.tier = "studio"
+    db.commit()
+    token = _login(unauthenticated_client, "quoted-key@x.com")
+    r = unauthenticated_client.put(
+        "/api/v1/auth/credentials/openai",
+        json={"secret": ["distinct-placeholder-value"]},
+        headers=_auth(token),
+    )
+    assert r.status_code == 422
+    assert "distinct-placeholder-value" not in r.text
+
+
+def test_a_password_bcrypt_cannot_read_is_refused_and_changes_nothing(unauthenticated_client, db):
+    user = auth_service.create_user(db, email="change-nul@x.com", password=PASSWORD)
+    here = _login(unauthenticated_client, "change-nul@x.com")
+    elsewhere = _login(unauthenticated_client, "change-nul@x.com")
+
+    r = _change(unauthenticated_client, here, PASSWORD, "abc\x00defgh")
+
+    assert r.status_code == 400
+    assert "null" in r.json()["detail"].lower()
+    assert "defgh" not in r.text
+    # Nothing moved: the old password still signs in, both sessions still work.
+    assert _me(unauthenticated_client, elsewhere) == 200
+    assert _login(unauthenticated_client, "change-nul@x.com")
+    assert _events(db, Event.PASSWORD_CHANGED, user.id) == []
+
+
+def test_a_current_password_bcrypt_cannot_read_is_a_wrong_password(unauthenticated_client, db):
+    auth_service.create_user(db, email="change-nul-current@x.com", password=PASSWORD)
+    token = _login(unauthenticated_client, "change-nul-current@x.com")
+    r = _change(unauthenticated_client, token, "abc\x00defgh", "brand-new-pw")
+    assert r.status_code == 400
+    assert r.json()["detail"] == "The current password is not right."
+
+
+@pytest.mark.parametrize(
+    "field, detail",
+    [
+        ("current_password", "The current password is not right."),
+        ("new_password", "The new password has a character that cannot be stored"),
+    ],
+)
+def test_a_lone_surrogate_is_a_refusal_not_a_crash(unauthenticated_client, db, field, detail):
+    # Valid JSON, and pydantic takes it, but it has no UTF-8 form to hash.
+    email = f"change-surrogate-{field[:3]}@x.com"
+    auth_service.create_user(db, email=email, password=PASSWORD)
+    token = _login(unauthenticated_client, email)
+    body = {"current_password": PASSWORD, "new_password": "brand-new-pw"}
+    raw = json.dumps(body).replace(body[field], "abc\\ud800defgh")
+
+    r = unauthenticated_client.post(
+        CHANGE, content=raw, headers={**_auth(token), "Content-Type": "application/json"}
+    )
+
+    assert r.status_code == 400
+    assert r.json()["detail"].startswith(detail)
 
 
 def test_change_needs_a_session(unauthenticated_client):

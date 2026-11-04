@@ -3,6 +3,8 @@ import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -165,6 +167,21 @@ async def _encryption_key_invalid(request: Request, exc: Exception) -> JSONRespo
         status_code=503,
         content={"detail": byok_service.invalid_key_detail("Nothing stored encrypted can be saved or read")},
     )
+
+
+@app.exception_handler(RequestValidationError)
+async def _validation_error_without_values(request: Request, exc: RequestValidationError) -> JSONResponse:
+    """FastAPI's default 422, minus ``input``, on every route.
+
+    ``input`` quotes what was sent: the rejected value, the whole body when
+    a field is missing, the raw bytes when the content type is not JSON. A
+    body here can be a password or a provider key, and a response goes
+    through whatever proxy or error tracker logs it. ``type``, ``loc`` and
+    ``msg`` still say what is wrong and where; nothing reads ``input``.
+    """
+    errors = [{k: v for k, v in error.items() if k != "input"} for error in exc.errors()]
+    return JSONResponse(status_code=422, content={"detail": jsonable_encoder(errors)})
+
 
 # E-5.5: per-route + per-tier rate limiting. Disabled in tests via
 # RATE_LIMIT_ENABLED=False (set automatically in conftest.py).

@@ -2,8 +2,8 @@
 
 ``users.has_password`` is backfilled false only for an account an OAuth
 sign-in created (its first identity linked within a minute of the account)
-whose holder never completed a password reset; every other account keeps a
-password. ``mfa_step_tickets`` appears; downgrade removes both.
+that never registered with a password or completed a reset; every other
+account keeps one. ``mfa_step_tickets`` appears; downgrade removes both.
 """
 from __future__ import annotations
 
@@ -80,6 +80,16 @@ def test_backfill_marks_only_accounts_an_oauth_sign_in_made(migrated):
     _identity(eng, "two-links", "2026-10-03 10:00:00.000000", "g5")
     _identity(eng, "two-links", "2026-10-01 10:00:00.020000", "gh5")
 
+    # Registered with a password, then signed in with Google 40 seconds later:
+    # inside the window, but only the register route writes `user_registered`.
+    _user(eng, "registered-then-linked", "2026-10-01 10:00:00.000000")
+    _identity(eng, "registered-then-linked", "2026-10-01 10:00:40.000000", "g6")
+    _exec(
+        eng,
+        "INSERT INTO audit_log (id, user_id, event, created_at) "
+        "VALUES ('a2', 'registered-then-linked', 'user_registered', '2026-10-01 10:00:00')",
+    )
+
     command.upgrade(cfg, THIS)
 
     rows = dict(_exec(eng, "SELECT id, has_password FROM users"))
@@ -89,6 +99,7 @@ def test_backfill_marks_only_accounts_an_oauth_sign_in_made(migrated):
         "made-then-reset": 1,
         "plain": 1,
         "two-links": 0,
+        "registered-then-linked": 1,
     }
     assert "mfa_step_tickets" in inspect(eng).get_table_names()
 

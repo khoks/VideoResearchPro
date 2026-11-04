@@ -282,15 +282,20 @@ def change_password(
     * An account with no password (Google or GitHub sign-in made it) gets
       400 pointing to the reset flow, which sets a first one.
     * Refusals are 400 or 429, never 401: the web client treats a 401 as a
-      signed-out session and would sign the user out for a typo.
-    * No password, current or new, is echoed back: the payload has no
-      pydantic length bounds (a 422 would quote the value), so the new one
-      is measured here.
+      signed-out session and would sign the user out for a typo. A body
+      that is not two strings is a 422 before any of this runs.
+    * No password, current or new, is echoed back: every 400 here is a
+      fixed sentence, and the 422 handler in ``app/main.py`` drops ``input``.
     """
     if not (PASSWORD_MIN_CHARS <= len(payload.new_password) <= PASSWORD_MAX_CHARS):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"The new password must be {PASSWORD_MIN_CHARS} to {PASSWORD_MAX_CHARS} characters.",
+        )
+    if not auth_service.password_can_be_hashed(payload.new_password):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="The new password has a character that cannot be stored: a null character or broken Unicode.",
         )
     outcome, revoked = auth_service.change_password(
         db,

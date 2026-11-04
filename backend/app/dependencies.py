@@ -41,10 +41,11 @@ def _resolve_user(token: str | None, db: Session) -> User:
         headers={"WWW-Authenticate": "Bearer"},
     )
     # The same check the /ws/jobs handshake makes (T-5.4.15): an access
-    # token, not the second-factor ticket (signed with the same key, no
-    # `jti`, so it would pass every other check and skip two-step
-    # verification); a session that is not revoked (T-5.4.7; a token with no
-    # `jti` predates sessions); a user that still exists.
+    # token, not the second-factor ticket (signed with the same key, with a
+    # `jti` but no session row, so it would pass the session check, and only
+    # decode_access_token's refusal stops it skipping two-step verification);
+    # a session that is not revoked (T-5.4.7; a token with no `jti` predates
+    # sessions); a user that still exists.
     resolved = auth_service.authenticate_access_token(db, token)
     if resolved is None:
         raise credentials_exc

@@ -101,11 +101,11 @@ class PasswordResetConfirmResponse(BaseModel):
 
 # T-5.4.14 change the password while signed in
 class PasswordChangePayload(BaseModel):
-    # No length constraints here: FastAPI's 422 body carries a rejected
-    # value as ``input``, so a constraint would send the password straight
-    # back in the response (the reason /auth/credentials checks its key in
-    # the handler). ``routers/auth.change_password`` checks the new one
-    # against PASSWORD_MIN_CHARS..PASSWORD_MAX_CHARS, the rule a reset uses.
+    # No length constraints here: ``routers/auth.change_password`` checks the
+    # new one against PASSWORD_MIN_CHARS..PASSWORD_MAX_CHARS, the rule a reset
+    # uses, so a bad one gets a 400 with a sentence the page can show (the
+    # ``detail`` of a 422 is a list). A 422 quotes nothing either way: the
+    # handler in ``app/main.py`` drops ``input``.
     current_password: str
     new_password: str
 

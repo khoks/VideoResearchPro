@@ -16,10 +16,13 @@ Two additive changes:
   identity was linked to it within ``OAUTH_CREATED_WINDOW`` of the account
   being created (``oauth_service._link_or_create_user`` creates the user and
   links the identity in one request, milliseconds apart; linking to an
-  account that already existed happens at a later sign-in) and no password
-  reset was ever completed for it (``audit_log``). The flag only decides
-  what the change-password route answers: sign-in never reads it, so a
-  wrong guess here costs a user nothing but a pointer to the reset flow.
+  account that already existed happens at a later sign-in), unless
+  ``audit_log`` says otherwise: ``user_registered`` is written only by
+  POST /auth/register, so that account chose a password even if Google
+  followed within the window, and a completed password reset gave one to
+  an account that had none. The flag only decides what the change-password
+  route answers: sign-in never reads it, so a wrong guess here costs a user
+  nothing but a pointer to the reset flow.
 
 * ``mfa_step_tickets``: one row per second-factor ticket that has been
   tried, keyed on the ticket's ``jti``, counting the codes checked against
@@ -54,27 +57,29 @@ def _parse(value) -> datetime | None:
 
 def _oauth_created_accounts(bind) -> list[str]:
     """Ids of accounts an OAuth sign-in created whose holder never set a
-    password since. Compared in Python, not SQL, so it does not depend on
-    the database's date functions."""
+    password since: linked within the window, and no audit event that
+    says the account has a password. Compared in Python, not SQL, so it
+    does not depend on the database's date functions."""
     created = {row[0]: _parse(row[1]) for row in bind.execute(sa.text("SELECT id, created_at FROM users"))}
     first_link: dict[str, datetime] = {}
     for user_id, linked_at in bind.execute(sa.text("SELECT user_id, created_at FROM oauth_identities")):
         when = _parse(linked_at)
         if when is not None and (user_id not in first_link or when < first_link[user_id]):
             first_link[user_id] = when
-    reset = {
+    set_a_password = {
         row[0]
         for row in bind.execute(
             sa.text(
                 "SELECT DISTINCT user_id FROM audit_log "
-                "WHERE event = 'password_reset_completed' AND user_id IS NOT NULL"
+                "WHERE event IN ('user_registered', 'password_reset_completed') "
+                "AND user_id IS NOT NULL"
             )
         )
     }
     out = []
     for user_id, linked_at in first_link.items():
         made = created.get(user_id)
-        if made is None or user_id in reset:
+        if made is None or user_id in set_a_password:
             continue
         if abs(linked_at - made) <= OAUTH_CREATED_WINDOW:
             out.append(user_id)

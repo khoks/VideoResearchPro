@@ -50,7 +50,7 @@ from app.models.library_qa_exchange import LibraryQAExchange
 from app.models.qa_exchange import QAExchange
 from app.models.suggestion_cache import SuggestionCache
 from app.models.user import User
-from app.services import chroma_service, job_service, quota_metering_service, report_service, visibility_service
+from app.services import chroma_service, job_service, report_service, usage_service, visibility_service
 from app.services.llm_service import get_llm_for, response_text
 
 logger = logging.getLogger(__name__)
@@ -409,13 +409,6 @@ def _parse_suggestions(text: str) -> list[dict]:
     return out
 
 
-def _usage(response) -> tuple[int, int]:
-    usage = getattr(response, "usage_metadata", None)
-    if isinstance(usage, dict):
-        return int(usage.get("input_tokens") or 0), int(usage.get("output_tokens") or 0)
-    return 0, 0
-
-
 def build_prompt(ctx: Context, n: int = GENERATE_N) -> str:
     asked = "\n".join(f"- {q}" for q in ctx.asked[:20]) or "(none yet)"
     return SUGGEST_PROMPT.format(english=ENGLISH_OUTPUT_CONTRACT, context="\n".join(ctx.summary), asked=asked, n=n)
@@ -424,16 +417,12 @@ def build_prompt(ctx: Context, n: int = GENERATE_N) -> str:
 def generated_pool(db: Session, ctx: Context, user: User, n: int = GENERATE_N) -> list[Candidate]:
     """Questions from the generator. Raises on a failed call; the caller
     decides what a failure means (it degrades to the history pool)."""
-    client = get_llm_for(USE_CASE, temperature=0.3, max_tokens=MAX_COMPLETION_TOKENS, tenant_id=user.id, db=db)
-    response = client.invoke([HumanMessage(content=build_prompt(ctx, n))])
-    tokens_in, tokens_out = _usage(response)
-    try:
-        if tokens_in:
-            quota_metering_service.record_usage(db, user.id, "llm_tokens_in", tokens_in)
-        if tokens_out:
-            quota_metering_service.record_usage(db, user.id, "llm_tokens_out", tokens_out)
-    except Exception:  # pragma: no cover - metering never breaks the feature
-        logger.exception("suggestions: token metering failed")
+    # E-5.2: the call is metered against the reader (feature suggestions),
+    # which also writes the daily llm_tokens_in / llm_tokens_out totals this
+    # function used to record itself.
+    with usage_service.metered(db, user.id):
+        client = get_llm_for(USE_CASE, temperature=0.3, max_tokens=MAX_COMPLETION_TOKENS, tenant_id=user.id, db=db)
+        response = client.invoke([HumanMessage(content=build_prompt(ctx, n))])
     items = _parse_suggestions(response_text(response))
     return [Candidate(question=i["question"], rationale=i["rationale"], source="generated") for i in items]
 

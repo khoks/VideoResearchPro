@@ -41,6 +41,7 @@ from app.routers import (
     sessions,
     shelves,
     tags,
+    usage,
     ws,
 )
 from app.services import auth_service, chroma_service, note_index, search_service
@@ -192,4 +193,5 @@ app.include_router(notes.router, prefix="/api/v1")
 app.include_router(admin.router, prefix="/api/v1")
 app.include_router(exports.router, prefix="/api/v1")
 app.include_router(llm_settings.router, prefix="/api/v1")
+app.include_router(usage.router, prefix="/api/v1")
 app.include_router(ws.router)

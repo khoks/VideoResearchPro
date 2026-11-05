@@ -286,6 +286,9 @@ def get_video_details(video_ids: list[str], job_id: str = "") -> dict[str, dict]
                 "url": f"https://www.youtube.com/watch?v={vid}",
                 "view_count": _safe_int(stats.get("viewCount")),
                 "like_count": _safe_int(stats.get("likeCount")),
+                # T-1.11.11.4: free here, in the `snippet` part this call
+                # already pays for. None when the video declares nothing.
+                "default_audio_language": snippet.get("defaultAudioLanguage") or None,
             }
 
     logger.info(f"{tag} get_video_details: resolved {len(details)}/{total} video(s)")
@@ -897,12 +900,13 @@ def plan_caption_track(
     source that has them). The spoken language is the first of these that
     a non-dub track is in (``resolve_spoken_language``):
 
-    1. ``defaultAudioLanguage`` — passed by a caller that looked it up in a
-       batch, or looked up here (1 unit, through ``lookup_audio_language``
-       when given, so ``fetch_transcript`` asks once across its retries),
-       but only when the non-dub tracks span more than one language: with
-       one language the choice cannot change, so the unit would be wasted
-       (35 of 37 measured videos);
+    1. ``defaultAudioLanguage`` — passed by a caller that already has it (a
+       document whose details were read, T-1.11.11.4, or a batch lookup), or
+       looked up here (1 unit, through ``lookup_audio_language`` when given,
+       so ``fetch_transcript`` asks once across its retries), but only when
+       the non-dub tracks span more than one language: with one language the
+       choice cannot change, so the unit would be wasted (35 of 37 measured
+       videos);
     2. the player's original audio track, on a multi-audio video (present
        even when the uploader declared nothing — ``v6CuYULP3tM``);
     3. on a single-audio video, the language of its ASR track.
@@ -977,10 +981,11 @@ def fetch_transcript(
         language: the fallback language (English-first) used only when the
             spoken language is unknown or has no caption track.
         audio_language: the video's ``defaultAudioLanguage`` when the caller
-            already looked it up (batched, 1 unit per 50 ids); None means it
-            looked and the video declares none. Omitted, it is looked up
-            here, only when the caption tracks span more than one language,
-            and at most once per call however many attempts run (1 unit).
+            already has it, from ``get_video_details`` by way of the document
+            (T-1.11.11.4) or a batch lookup; None means it looked and the
+            video declares none. Omitted, it is looked up here, only when the
+            caption tracks span more than one language, and at most once per
+            call however many attempts run (1 unit).
 
     Returns:
         ``TranscriptResult(segments, actual_language, source, track)`` on

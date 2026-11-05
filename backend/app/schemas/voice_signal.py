@@ -11,7 +11,7 @@ SignalType = Literal[
     "trusted_conclusion", "preferred_solution", "recommendation_lens", "apprehension", "methodology",
     "topic_emphasis", "perception_lens", "interest",
 ]
-Language = Literal["en", "hi-Deva", "hi-Latn", "mixed"]
+Language = Literal["en", "hi-Deva", "hi-Latn", "mixed", "other"]
 Register = Literal["intimate", "casual", "professional", "public"]
 
 # `register` is the wire name; the attribute is `register_` because

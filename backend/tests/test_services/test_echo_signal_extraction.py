@@ -31,7 +31,7 @@ from app.models.qa_history_exchange import QAHistoryExchange
 from app.models.saved_search_run import SavedSearchRun
 from app.models.voice_signal import VoiceSignal
 from app.models.voice_signal_input import VoiceSignalInput
-from app.services import auth_service, echo_intake_service, echo_signal_service, note_service
+from app.services import auth_service, code_mixing_service, echo_intake_service, echo_signal_service, note_service
 from app.services import echo_signal_extraction as ex
 from app.services import echo_stylometry as stylo
 
@@ -103,6 +103,74 @@ def test_language_of_sees_romanised_hindi():
     assert ex.language_of("pehle dekho incentive kya hai, phir intention samajh aayega") == "hi-Latn"
     assert ex.language_of("मुझे लगता है कि यह सही है") == "hi-Deva"
     assert ex.language_of("yaar this policy is bilkul bakwas, but the data says otherwise") == "mixed"
+
+
+SPANISH = "Creo que los incentivos importan mas que las intenciones en este caso, y la gente responde a lo que le conviene."
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        SPANISH,
+        "Je pense que les incitations comptent plus que les intentions, et les gens suivent leur propre interet.",
+        "Ich glaube dass die Anreize wichtiger sind als die Absichten und die Menschen folgen ihrem Interesse.",
+        # The tagger files these under its "hi" tag by script; no label here fits them.
+        "আমি মনে করি প্রণোদনা উদ্দেশ্যের চেয়ে বেশি গুরুত্বপূর্ণ",
+        "இது சரியானது என்று நான் நினைக்கிறேன்",
+        "میرا خیال ہے کہ یہ درست ہے",
+    ],
+)
+def test_language_of_never_calls_what_it_cannot_name_hindi(text):
+    assert ex.language_of(text) == "other"
+
+
+def test_the_raw_share_alone_is_what_called_spanish_hindi():
+    """Why the label reads the named figure: `hi_share` still counts abstained
+    words, and dropping them alone would call the same note English."""
+    assert code_mixing_service.profile_text(SPANISH)["hi_share"] >= settings.CODE_MIX_DOMINANT_SHARE
+    profile = code_mixing_service.profile_transcript(SPANISH)
+    assert profile["hi_share"] * (profile["named_share"] or 0.0) <= settings.CODE_MIX_BORROWING_MAX_SHARE
+
+
+def test_language_of_keeps_english_with_stray_names_and_text_with_no_words():
+    assert ex.language_of("I met Krzysztof and Wojciech in Gdansk yesterday to talk about incentives.") == "en"
+    assert ex.language_of("1234 5678") == "en"
+    assert ex.language_of("") == "en"
+
+
+def test_a_spanish_note_is_other_everywhere_the_label_is_kept(db, asha):
+    _note(db, asha, SPANISH)
+    llm = FakeLLM([(r"los incentivos importan[^,]*,", "framing", "Empieza por los incentivos")])
+
+    ex.run(db, asha.id, llm=llm, model="m")
+
+    assert "(note, other)" in llm.prompts[0], "the model is told what the passage is"
+    assert "hi-Latn" not in llm.prompts[0].split("Each passage says")[1]
+    row = db.query(VoiceSignalInput).filter(VoiceSignalInput.tenant_id == asha.id).one()
+    assert row.language == "other"
+    learned = db.query(VoiceSignal).filter(VoiceSignal.tenant_id == asha.id).all()
+    assert [(s.value, s.language) for s in learned if s.signal_type == "framing"] == [
+        ("Empieza por los incentivos", "other"),
+    ]
+    assert {s.language for s in learned if s.signal_type == "cadence"} <= {"other"}
+
+
+def test_a_stored_label_stays_until_its_text_changes(db, asha):
+    """An unchanged input is never re-read, so an old label is not rewritten."""
+    note = _note(db, asha, SPANISH)
+    ex.run(db, asha.id, use_llm=False)
+    row = db.query(VoiceSignalInput).filter(VoiceSignalInput.tenant_id == asha.id).one()
+    row.language = "hi-Latn"
+    db.commit()
+
+    ex.run(db, asha.id, use_llm=False)
+    db.expire_all()
+    assert db.query(VoiceSignalInput).filter(VoiceSignalInput.tenant_id == asha.id).one().language == "hi-Latn"
+
+    note_service.update_note(db, asha.id, note.id, body_md=SPANISH + " Y punto.")
+    ex.run(db, asha.id, use_llm=False)
+    db.expire_all()
+    assert db.query(VoiceSignalInput).filter(VoiceSignalInput.tenant_id == asha.id).one().language == "other"
 
 
 def test_find_verbatim_returns_the_users_own_span():
@@ -488,3 +556,12 @@ def test_signals_endpoint_reports_learning_state(unauthenticated_client, db, ash
     assert body["learning"]["pending"] == 0
     assert body["learning"]["last_learned_at"].endswith(("+00:00", "Z")), "sent as UTC so the browser shows local time"
     assert any(s["value"] == "Checks the base rate before believing a claim" for s in body["items"])
+
+
+def test_signals_endpoint_counts_a_language_it_cannot_name(unauthenticated_client, db, asha):
+    """`by_language` is a dict of strings: None here would be a 500."""
+    token, _ = auth_service.create_access_token(asha.id)
+    h = {"Authorization": f"Bearer {token}"}
+    _note(db, asha, SPANISH)
+    body = unauthenticated_client.get("/api/v1/echo/signals", headers=h).json()
+    assert body["learning"]["by_language"] == {"other": 1}

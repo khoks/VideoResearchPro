@@ -20,6 +20,10 @@ not document-level and stay as they are.
 every later prompt what language a chunk is in; it does not change what a
 question retrieves, and the report says how many chunks that applies to.
 
+A job that reuses a document already adds these fields to its chunks that lack
+them (T-1.16.2.16). This script is still how every other document is reached,
+and the only thing that rewrites a chunk holding a different value.
+
 Nothing is re-embedded: the update is metadata only, each batch's stored
 metadata is re-read and sent back whole with the new fields, and no LLM runs.
 Dry run is the default and writes nothing. ``--write`` is the owner's step.

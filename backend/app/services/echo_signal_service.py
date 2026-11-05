@@ -53,7 +53,11 @@ PERSONALITY_TYPES: tuple[str, ...] = (
     "interest",
 )
 SIGNAL_TYPES: tuple[str, ...] = STYLE_TYPES + PERSONALITY_TYPES
-LANGUAGES: tuple[str, ...] = ("en", "hi-Deva", "hi-Latn", "mixed")
+#: A language the tagger cannot name (T-3.3.2.11). A label on what the user
+#: wrote, not a language to write in: a draft is never asked for it, so
+#: `routers/echo_drafts.py` lists the other four.
+UNNAMED_LANGUAGE = "other"
+LANGUAGES: tuple[str, ...] = ("en", "hi-Deva", "hi-Latn", "mixed", UNNAMED_LANGUAGE)
 REGISTERS: tuple[str, ...] = ("intimate", "casual", "professional", "public")
 ORIGINS: tuple[str, ...] = ("user", "llm", "stylometry")
 

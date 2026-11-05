@@ -26,7 +26,7 @@ from app.models.job_template import JobTemplate, JobTemplateVersion
 from app.models.user import User
 from app.schemas.job import JobCreate
 from app.schemas.job_template import TemplateParameters
-from app.services import job_source_types
+from app.services import job_source_types, llm_service
 from app.services.tier_service import get_user_tier, quota_limit
 
 logger = logging.getLogger(__name__)
@@ -85,7 +85,7 @@ def validate_parameters(params: TemplateParameters) -> TemplateParameters:
     return params.model_copy(update={"source_types": source_types})
 
 
-def problems_for(params: TemplateParameters, user: User) -> list[str]:
+def problems_for(db: Session, params: TemplateParameters, user: User) -> list[str]:
     """What would stop ``user`` from running this template today."""
     problems: list[str] = []
     if params.job_type == "topic":
@@ -105,7 +105,11 @@ def problems_for(params: TemplateParameters, user: User) -> list[str]:
                 f"Searches {', '.join(unavailable)}, which this install has not "
                 "set up. Remove it after loading."
             )
-        gap = job_source_types.transcription_gap(params.source_types or [])
+        sources = params.source_types or []
+        gap = job_source_types.transcription_gap(
+            sources,
+            own_key="podcast_episode" in sources and bool(llm_service.whisper_api_key(user.id, db)),
+        )
         if gap:
             problems.append(gap)
     return problems
@@ -324,7 +328,7 @@ def template_to_dict(db: Session, template: JobTemplate, user: User) -> dict:
         "builtin_key": template.builtin_key,
         "version": template.latest_version,
         "parameters": params,
-        "problems": problems_for(params, user),
+        "problems": problems_for(db, params, user),
         "created_at": template.created_at,
         "updated_at": template.updated_at,
     }

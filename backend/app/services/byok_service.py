@@ -196,16 +196,11 @@ def _validate_provider(provider: str) -> None:
         )
 
 
-def get_credential(
-    db: Session, user_id: str, provider: str
-) -> str | None:
-    """Return the decrypted secret for ``(user_id, provider)``, or
-    ``None`` if no credential is stored. Returns ``None`` rather than
-    raising when the ciphertext is undecryptable (most likely cause:
-    operator rotated ``BYOK_ENCRYPTION_KEY`` without re-encrypting
-    existing rows) — the consumer site should fall back to the
-    install-wide env var key in that case.
-    """
+def stored_secret(db: Session, user_id: str, provider: str) -> str | None:
+    """The decrypted secret, or ``None`` when no credential is stored. For a
+    caller with no install key to fall back to, which must tell "none stored"
+    from "stored and unreadable": the second raises
+    ``StoredSecretUnreadableError``."""
     _validate_provider(provider)
     row = (
         db.query(UserCredential)
@@ -220,6 +215,24 @@ def get_credential(
     try:
         return decrypt_secret(row.encrypted_secret)
     except InvalidToken:
+        raise StoredSecretUnreadableError(
+            "BYOK_ENCRYPTION_KEY cannot read the stored secret"
+        ) from None
+
+
+def get_credential(
+    db: Session, user_id: str, provider: str
+) -> str | None:
+    """Return the decrypted secret for ``(user_id, provider)``, or
+    ``None`` if no credential is stored. Returns ``None`` rather than
+    raising when the ciphertext is undecryptable (most likely cause:
+    operator rotated ``BYOK_ENCRYPTION_KEY`` without re-encrypting
+    existing rows) — the consumer site should fall back to the
+    install-wide env var key in that case.
+    """
+    try:
+        return stored_secret(db, user_id, provider)
+    except StoredSecretUnreadableError:
         logger.warning(
             "BYOK credential for user_id=%s provider=%s is undecryptable "
             "(BYOK_ENCRYPTION_KEY rotated or ciphertext corrupted). "

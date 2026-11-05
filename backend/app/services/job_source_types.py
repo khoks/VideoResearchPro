@@ -77,7 +77,7 @@ def missing_setting(source_type: str) -> str | None:
     return None
 
 
-def transcription_gap(source_types: Iterable[str]) -> str | None:
+def transcription_gap(source_types: Iterable[str], *, own_key: bool = False) -> str | None:
     """Why this install would lose podcast episodes after approval, or None.
 
     Searching podcasts needs no credential, so ``missing_setting`` is right to
@@ -86,11 +86,12 @@ def transcription_gap(source_types: Iterable[str]) -> str | None:
     OpenAI key and a non-zero ``WHISPER_MAX_PER_JOB``, and one past Whisper's
     upload cap has to be split, which takes ffmpeg and ffprobe. Episodes are
     lost one by one only after approval, so a template says so up front. The
-    message is reader-facing.
+    message is reader-facing. ``own_key``: the reader brought an OpenAI key,
+    which Whisper runs on for them (T-5.6.13), so the install needs none.
     """
     if "podcast_episode" not in source_types:
         return None
-    if not settings.OPENAI_API_KEY or settings.WHISPER_MAX_PER_JOB <= 0:
+    if not (settings.OPENAI_API_KEY or own_key) or settings.WHISPER_MAX_PER_JOB <= 0:
         return (
             "Podcasts without a published transcript need Whisper, which this "
             "install has not set up, so only episodes that publish one can be read."

@@ -214,9 +214,9 @@ class Transcript:
 
 
 def _openai_key(tenant_id: str, db: Any) -> str | None:
-    from app.services.llm_service import _resolve_byok_api_key
+    from app.services.llm_service import whisper_api_key
 
-    return _resolve_byok_api_key("openai", tenant_id, db) or settings.OPENAI_API_KEY or None
+    return whisper_api_key(tenant_id, db) or None
 
 
 def _speech_audio(src: Path, workdir: Path) -> Path:

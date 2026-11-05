@@ -40,7 +40,7 @@ from app.agents.state import ReportAgentState
 from app.config import settings
 from app.services import attribution_guard, code_mixing_service, language_service, quote_fidelity
 from app.services.visual_service import strip_annotations
-from app.services.llm_service import get_llm_for, response_text
+from app.services.llm_service import byok_keys_for_pool, get_llm_for, response_text
 from app.services.llm_service import stopped_for_length as _stopped_for_length
 from app.services.llm_routing import (
     context_window_for,
@@ -62,10 +62,12 @@ def _map_in_context(pool: ThreadPoolExecutor, fn, items) -> list:
     model overrides (``byok_context``) and the usage-metering scope (E-5.2)
     set by the task never reached a concurrent map batch: those calls ran on
     the install-wide key and default models and were counted against no one.
-    Results come back in input order; the first failure raises, as with
-    ``pool.map``."""
-    futures = [pool.submit(contextvars.copy_context().run, fn, item) for item in items]
-    return [f.result() for f in futures]
+    The copy must not carry the task's ``Session`` onto those threads, so the
+    keys are read here first (``byok_keys_for_pool``, T-5.6.12). Results come
+    back in input order; the first failure raises, as with ``pool.map``."""
+    with byok_keys_for_pool():
+        futures = [pool.submit(contextvars.copy_context().run, fn, item) for item in items]
+        return [f.result() for f in futures]
 
 
 # S-1.12.5 (context-rot guard): even when the resolved model's window would

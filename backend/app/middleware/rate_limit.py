@@ -31,6 +31,9 @@ Override knobs in ``settings``:
 - ``RATE_LIMIT_RESET_PER_MIN`` — sensitive bucket for
   /auth/password-reset/{request,confirm}.
 - ``RATE_LIMIT_REGISTER_PER_MIN`` — sensitive bucket for /auth/register.
+- ``RATE_LIMIT_VERIFY_KEY_PER_MIN`` — per-user; ``POST
+  /auth/credentials/{provider}/verify`` takes it in the route, after the tier
+  gate, so only a press that can reach a provider counts.
 - ``TRUSTED_PROXY_IPS`` — whose ``X-Forwarded-For`` picks the per-IP
   bucket (``app/utils/client_ip.py``). Unset, the socket peer does.
 """
@@ -137,7 +140,9 @@ def _match_sensitive(path: str) -> tuple[str, RateLimit] | None:
     return None
 
 
-def _too_many(retry_after: int, limit: int) -> Response:
+def too_many(retry_after: int, limit: int) -> Response:
+    """The 429 every rate limit answers with. A route with a limit of its own
+    returns this, so a client reads one shape."""
     body = {
         "detail": "Too many requests. Please retry after the cooldown period.",
         "retry_after_sec": retry_after,
@@ -187,7 +192,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                     count,
                     lim.requests,
                 )
-                return _too_many(retry_after, lim.requests)
+                return too_many(retry_after, lim.requests)
 
         # 2. Per-user (or per-IP fallback) bucket.
         user_id = _user_id_from_jwt(request)
@@ -215,7 +220,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 count,
                 lim.requests,
             )
-            return _too_many(retry_after, lim.requests)
+            return too_many(retry_after, lim.requests)
 
         response = await call_next(request)
         # Annotate every response so well-behaved clients can back off.

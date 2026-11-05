@@ -1681,6 +1681,8 @@ def _run_extraction_and_rag(self, db, job) -> None:
     Shared between ``resume_job_after_approval`` semantics and subscription
     ingest.
     """
+    from app.services import llm_service
+
     job_id = job.id
     # `approved` now lives on the JobVideo link row, not on Document.
     approved_videos = (
@@ -1791,16 +1793,20 @@ def _run_extraction_and_rag(self, db, job) -> None:
                 f"video_id={video.video_id} '{title_preview}'"
             )
             connector = connector_for(video.source_type)
-            extracted = connector.fetch_text(
-                Candidate(
-                    source_type=video.source_type,
-                    source_id=video.source_id,
-                    title=video.title,
-                    source_url=video.source_url or video.url,
-                ),
-                job_id=job_id,
-                query=job.topic or "",
-            )
+            # The subscriber's BYOK context: the Whisper fallback runs on
+            # their key when they brought one (T-5.6.13). The task's own scope
+            # is joined, so the seconds are recorded as before.
+            with llm_service.byok_context(job.tenant_id, db):
+                extracted = connector.fetch_text(
+                    Candidate(
+                        source_type=video.source_type,
+                        source_id=video.source_id,
+                        title=video.title,
+                        source_url=video.source_url or video.url,
+                    ),
+                    job_id=job_id,
+                    query=job.topic or "",
+                )
 
             if extracted:
                 transcript = extracted.segments

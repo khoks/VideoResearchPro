@@ -1,5 +1,5 @@
 import { useState, type CSSProperties, type ReactNode } from 'react';
-import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
+import { Link, NavLink, Outlet } from 'react-router-dom';
 import { useColors } from '../../hooks/useTheme';
 import { useAuth } from '../../contexts/AuthContext';
 import { fonts, fontSize, fontWeight, lineHeight, radius, space, motion } from '../../theme';
@@ -37,7 +37,6 @@ export function MarketingLayout() {
 function MarketingHeader() {
   const c = useColors();
   const { isAuthenticated, user } = useAuth();
-  const location = useLocation();
 
   return (
     <header
@@ -99,7 +98,7 @@ function MarketingHeader() {
           <MarketingNavLink to="/pricing">Pricing</MarketingNavLink>
           {isAuthenticated ? (
             <Link
-              to="/submit"
+              to="/"
               style={{
                 fontFamily: fonts.ui,
                 fontSize: fontSize.sm,
@@ -118,7 +117,6 @@ function MarketingHeader() {
             <>
               <Link
                 to="/login"
-                state={{ from: location }}
                 style={{
                   fontFamily: fonts.ui,
                   fontSize: fontSize.sm,

@@ -151,6 +151,8 @@ for (const scheme of ['light', 'dark'] as const) {
       const [t, c] = await Promise.all([thread.boundingBox(), composer.boundingBox()]);
       expect(c!.y).toBeGreaterThan(t!.y);
       await expectNoHorizontalScroll(page);
+      // The run's sources (T-1.5.13.5) sit above this screenshot.
+      await expect(page.locator('dt', { hasText: /^Sources$/ }).locator('+ dd')).toHaveText('YouTube');
       await expectTargets(page, '.qa-composer button[type="submit"]');
       await expectTargets(page, '.qa-composer input');
       // A field under 16 px makes iOS zoom on focus.

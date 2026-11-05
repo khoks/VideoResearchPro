@@ -11,7 +11,7 @@ import { defineConfig, devices } from '@playwright/test';
 // Emulation is not a device: no real keyboard, no Safari chrome, host CPU.
 // A pass on one real phone is still part of calling a mobile change done.
 const PORT = 5181;
-const DESKTOP_ONLY = /(palette|graph|server)\.spec\.ts/;
+const DESKTOP_ONLY = /(palette|graph|server|shell)\.spec\.ts/;
 
 export default defineConfig({
   testDir: './tests',
@@ -46,8 +46,10 @@ export default defineConfig({
     { name: 'iphone-13', testIgnore: DESKTOP_ONLY, use: { ...devices['iPhone 13'] } },
     { name: 'pixel-7', testIgnore: DESKTOP_ONLY, use: { ...devices['Pixel 7'] } },
     // Desktop: the keyboard-driven command palette (S-8.2.2), the library
-    // map's keyboard model (S-8.9.2), which sets its own narrow viewport, and
-    // the dev server itself, which one project is enough to check.
+    // map's keyboard model (S-8.9.2), which sets its own narrow viewport, the
+    // dev server itself, which one project is enough to check, and sign-in and
+    // the error screen (T-5.4.20, T-4.11.2.3), which have no phone layout of
+    // their own to compare.
     { name: 'desktop-chromium', testMatch: DESKTOP_ONLY, use: { ...devices['Desktop Chrome'], viewport: { width: 1280, height: 800 } } },
     {
       name: 'narrow-320',

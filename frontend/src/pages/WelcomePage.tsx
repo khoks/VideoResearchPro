@@ -7,7 +7,7 @@ import { useJobProgress } from '../hooks/useJobProgress';
 import { useJobTemplates } from '../hooks/useJobTemplates';
 import { Stepper } from '../components/onboarding/Stepper';
 import { ProgressBar } from '../components/common/ProgressBar';
-import { Button, Card, EmptyState, FormField, Input, Skeleton } from '../components/primitives';
+import { Button, Card, EmptyState, FormField, IconButton, Input, Skeleton } from '../components/primitives';
 import { validateChannels } from '../utils/jobForm';
 import { apiErrorMessage } from '../utils/apiError';
 import {
@@ -233,22 +233,18 @@ function ChannelsStep({
               }}
             >
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ch}</span>
-              <button
-                type="button"
-                aria-label={`Remove ${ch}`}
+              <IconButton
+                label={`Remove ${ch}`}
                 onClick={() => setChannels((list) => list.filter((x) => x !== ch))}
                 style={{
                   minWidth: 32,
                   minHeight: 32,
-                  border: 'none',
-                  background: 'none',
                   color: c.textMuted,
-                  cursor: 'pointer',
                   fontSize: fontSize.base,
                 }}
               >
                 ×
-              </button>
+              </IconButton>
             </li>
           ))}
         </ul>

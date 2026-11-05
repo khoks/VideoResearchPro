@@ -112,12 +112,19 @@ def slugger():
     return slug
 
 
+def sanitise(markdown: str) -> str:
+    """``markdown`` as the renderer reads it, without what XML forbids. Its
+    line breaks are untouched. A caller rewriting the source starts from this
+    text, or the lines it edits are not the lines the parser read."""
+    return _XML_INVALID.sub("", markdown or "")
+
+
 def top_level_headings(markdown: str) -> list[SourceHeading]:
     """The headings the renderer will make of ``markdown``, outside any quote
     or list, for a caller rewriting the source. Only the parser can say which
     lines these are: `Text` over `---` is a heading, but `- item` over `---`
     is a list and a rule, and so is anything in a code fence."""
-    tokens = _parser().parse(_XML_INVALID.sub("", markdown or ""), {})
+    tokens = _parser().parse(sanitise(markdown), {})
     return [
         SourceHeading(level=int(t.tag[1]), line=t.map[0], end=t.map[1], setext=t.markup in _SETEXT_MARKUP)
         for t in tokens
@@ -131,7 +138,7 @@ def _normalise_space(text: str) -> str:
 
 def render_book_html(markdown: str, *, title: str) -> BookHtml:
     """Render a book manuscript. Pure function of its inputs."""
-    source = _XML_INVALID.sub("", markdown or "")
+    source = sanitise(markdown)
     parser = _parser()
     env: dict = {}
     tokens = parser.parse(source, env)

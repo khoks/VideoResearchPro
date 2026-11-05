@@ -71,6 +71,17 @@ def _literal(text: str) -> str:
     return _MARKDOWN_PUNCTUATION.sub(r"\\\1", " ".join((text or "").split()))
 
 
+def _without_first_h1(md: str) -> str:
+    """``md`` less its first H1. A blank line takes the heading's place, so
+    the lines either side of it cannot join into one paragraph, or into a
+    Setext heading when the next line is a rule."""
+    h1 = next((h for h in book_html.top_level_headings(md) if h.level == 1), None)
+    if h1 is None:
+        return md
+    lines = _LINE_BREAK.split(md)
+    return "\n".join(lines[: h1.line] + [""] + lines[h1.end :]).strip()
+
+
 def _demote_headings(md: str, offset: int = _CHAPTER_HEADING_OFFSET, *, drop_h1: bool = True) -> str:
     """Push every heading down ``offset`` levels (capped at H6). The report's
     single H1 repeats the job topic the chapter heading already carries, so it
@@ -80,11 +91,18 @@ def _demote_headings(md: str, offset: int = _CHAPTER_HEADING_OFFSET, *, drop_h1:
     a Setext heading are treated alike, and fenced code and a `---` rule are
     left alone. A Setext heading comes out as ATX, the only form that can say
     a level below H2. A heading inside a quote or a list keeps its level: it
-    is not a section of the book (`book_epub._split` reads the top level)."""
+    is not a section of the book (`book_epub._split` reads the top level).
+
+    Each parse reads the text that comes out. Trimming afterwards could make a
+    heading of what the parser called code: `    Title` over `---` is indented
+    code and a rule, until the indent goes. So anything that changes the text
+    around a heading happens before the parse that demotes."""
+    md = book_html.sanitise(md).strip()
+    if drop_h1:
+        md = _without_first_h1(md)
     lines = _LINE_BREAK.split(md)
     headings = {h.line: h for h in book_html.top_level_headings(md)}
     out: list[str] = []
-    dropped_h1 = False
     index = 0
     while index < len(lines):
         heading = headings.get(index)
@@ -93,16 +111,13 @@ def _demote_headings(md: str, offset: int = _CHAPTER_HEADING_OFFSET, *, drop_h1:
             index += 1
             continue
         index = heading.end
-        if heading.level == 1 and drop_h1 and not dropped_h1:
-            dropped_h1 = True
-            continue
         marks = "#" * min(6, heading.level + offset)
         if heading.setext:
             text = " ".join(line.strip() for line in lines[heading.line : heading.end - 1])
             out.append(marks + " " + _CLOSING_HASHES.sub(r"\1\\\2", text))
         else:
             out.append(marks + lines[heading.line].lstrip(" ").lstrip("#"))
-    return "\n".join(out).strip()
+    return "\n".join(out)
 
 
 def _job_report_markdown(job: Job) -> str:

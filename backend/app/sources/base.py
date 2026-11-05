@@ -41,6 +41,10 @@ class BaseConnector(abc.ABC):
 
         Connectors that do not support search (e.g. PDF, where the user
         uploads files directly) raise `NotImplementedError`.
+
+        A service that failed or refused stays raised, never an empty list:
+        an empty list means nothing was found, and the run reports the two
+        differently (T-1.5.14.1). `dispatch_search` catches it.
         """
 
     @abc.abstractmethod

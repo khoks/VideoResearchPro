@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import math
 import os
 import re
 import tempfile
@@ -19,7 +20,9 @@ from typing import Any, Iterator
 import httpx
 
 from app.config import settings
+from app.services.source_failure import SearchFailed
 from app.sources import registry
+from app.sources._topic_terms import term_keys, topic_keys, topic_queries
 from app.sources.base import BaseConnector
 from app.sources.podcast import client as podcast_client
 from app.sources.podcast import flatten as podcast_flatten
@@ -34,6 +37,11 @@ logger = logging.getLogger(__name__)
 
 SOURCE_TYPE = "podcast_episode"
 SOURCE_ID_PREFIX = "podcast:"
+
+# How much of the topic an episode's title and description must name for it
+# to count as on topic: most of it, so "nuclear power" is not met by an
+# episode on boardroom power, and not all of it, so a long topic can match.
+_MATCH_SHARE = 0.6
 
 
 def _strip_prefix(source_id: str) -> str:
@@ -117,16 +125,42 @@ def _entry_published_at(entry: Any) -> datetime | None:
         return None
 
 
+def _entry_summary(entry: Any) -> str:
+    return _entry_field(entry, "summary") or _entry_field(entry, "subtitle") or ""
+
+
+def _select_entries(entries: list[Any], topic: str, count: int) -> list[Any]:
+    """The ``count`` entries a show contributes to ``topic`` (T-1.7.1.3).
+
+    Episodes that name most of the topic come first, those naming it in the
+    title ahead of those that only mention it, and the feed's own order breaks
+    ties. The rest of the count comes from the head of the feed, the newest,
+    so a show with no match contributes exactly what it always did. Reads only
+    what the feed already holds: no LLM and no audio.
+    """
+    head = entries[:count]
+    wanted = topic_keys(topic)
+    if not wanted:
+        return head
+    needed = math.ceil(len(wanted) * _MATCH_SHARE)
+    matches: list[tuple[int, int, int]] = []
+    for index, entry in enumerate(entries):
+        in_title = wanted & term_keys(_entry_field(entry, "title", "") or "")
+        named = in_title | (wanted & term_keys(_entry_summary(entry)))
+        if len(named) >= needed:
+            matches.append((-len(in_title), -len(named), index))
+    chosen = [entries[index] for _, _, index in sorted(matches)[:count]]
+    taken = {id(entry) for entry in chosen}
+    fill = [entry for entry in head if id(entry) not in taken]
+    return chosen + fill[: count - len(chosen)]
+
+
 def _entry_to_candidate(entry: Any, feed_url: str, show_name: str | None) -> Candidate:
     """Convert a feedparser entry into a `Candidate`."""
     guid = _episode_guid(entry)
     title = _entry_field(entry, "title", "") or ""
     enclosure = _enclosure_url(entry)
-    summary = (
-        _entry_field(entry, "summary")
-        or _entry_field(entry, "subtitle")
-        or ""
-    )
+    summary = _entry_summary(entry)
     return Candidate(
         source_type=SOURCE_TYPE,
         source_id=f"{SOURCE_ID_PREFIX}{guid}",
@@ -307,20 +341,6 @@ def _whisper_transcribe_audio(
         )
         return None
 
-    # Download to a temp file. Whisper API accepts a file handle, so
-    # we round-trip through disk rather than holding the bytes in
-    # memory across the full Whisper call.
-    try:
-        audio_bytes = podcast_client.get_client().fetch_audio(audio_url)
-    except (httpx.HTTPError, httpx.InvalidURL) as e:
-        logger.warning(
-            "podcast: audio fetch failed for %s (%s): %s",
-            source_id,
-            audio_url,
-            e,
-        )
-        return None
-
     # Suffix from the URL's path — Whisper uses the file extension to
     # detect format. Default to .mp3 since that's the dominant podcast
     # format and Whisper accepts it readily.
@@ -330,11 +350,28 @@ def _whisper_transcribe_audio(
         if ext in ("mp3", "m4a", "wav", "ogg", "flac", "webm", "mp4"):
             suffix = f".{ext}"
 
-    tmp_path = None
-    try:
-        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
-            tmp.write(audio_bytes)
-            tmp_path = tmp.name
+    # Stream to a temp file: the Whisper API takes a file handle, and a worker
+    # should not hold a 150 MB episode in memory (T-1.7.1.2). The directory
+    # goes on every way out, a failed download's partial file and any
+    # chunks included.
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as work_dir:
+        tmp_path = os.path.join(work_dir, f"episode{suffix}")
+        try:
+            audio_size = podcast_client.get_client().fetch_audio_to_file(
+                audio_url, tmp_path
+            )
+        except (httpx.HTTPError, httpx.InvalidURL, OSError, podcast_client.AudioTooLargeError) as e:
+            logger.warning(
+                "podcast: audio fetch failed for %s (%s): %s",
+                source_id,
+                audio_url,
+                e,
+            )
+            return None
+        if audio_size == 0:
+            logger.warning("podcast: empty audio for %s (%s)", source_id, audio_url)
+            return None
+
         # Reuse the YouTube Whisper helper. Tag is a free-form log
         # prefix; pass the source_id so log lines are correlatable.
         from openai import OpenAI
@@ -344,14 +381,13 @@ def _whisper_transcribe_audio(
 
         client = OpenAI(api_key=api_key)
         tag = f"[job:{job_id}] [podcast]" if job_id else "[podcast]"
-        if len(audio_bytes) > youtube_service.WHISPER_MAX_FILE_BYTES:
-            with tempfile.TemporaryDirectory() as chunk_dir:
-                result = youtube_service._transcribe_in_chunks(
-                    client, tmp_path, chunk_dir, source_id, tag
-                )
+        if audio_size > youtube_service.WHISPER_MAX_FILE_BYTES:
+            result = youtube_service._transcribe_in_chunks(
+                client, tmp_path, work_dir, source_id, tag
+            )
             return result[0] if result else None
 
-        size_mb = len(audio_bytes) / (1024 * 1024)
+        size_mb = audio_size / (1024 * 1024)
         try:
             response = _whisper_transcribe_with_retry(
                 client,
@@ -383,12 +419,6 @@ def _whisper_transcribe_audio(
             elif isinstance(s, dict):
                 normalised.append(s)
         return podcast_flatten.whisper_segments_to_canonical(normalised)
-    finally:
-        if tmp_path and os.path.exists(tmp_path):
-            try:
-                os.unlink(tmp_path)
-            except OSError:
-                logger.warning("podcast: temp-audio cleanup failed for %s", tmp_path)
 
 
 class PodcastConnector(BaseConnector):
@@ -408,29 +438,35 @@ class PodcastConnector(BaseConnector):
         """Two-tier search: iTunes for shows, RSS for episodes.
 
         For each top-N show iTunes returns, fetch the show's RSS feed
-        and take its most-recent K episodes. Up to
+        and take K episodes: those on the topic first, then its most
+        recent (``_select_entries``). Up to
         ``PODCAST_SEARCH_TOP_N_SHOWS * PODCAST_EPISODES_PER_SHOW``
         candidates total, capped at `limit`.
 
         The cap is applied by taking one episode from each show in turn:
         a run's share of the budget is small (D-114), and filling it show
         by show would hand nearly all of it to the first show iTunes ranks.
+
+        A failure stays raised, so the dispatcher can tell it from "nothing
+        found" (T-1.5.14.1): iTunes itself, or every feed it pointed at. One
+        feed failing out of three only costs that show. Feeds fail as
+        ``SearchFailed``: each is some show's own host, and a 403 from one
+        says nothing about the search, which iTunes has already answered.
         """
-        if not query.strip():
-            return []
         client = podcast_client.get_client()
-        try:
+        results: list = []
+        for attempt in topic_queries(query):
             payload = client.itunes_search(
-                query, limit=settings.PODCAST_SEARCH_TOP_N_SHOWS
+                attempt, limit=settings.PODCAST_SEARCH_TOP_N_SHOWS
             )
-        except Exception as e:
-            logger.warning("podcast search failed for %r: %s", query, e)
-            return []
-        results = (
-            payload.get("results") if isinstance(payload, dict) else None
-        ) or []
+            results = (
+                payload.get("results") if isinstance(payload, dict) else None
+            ) or []
+            if results:
+                break
 
         per_show: list[list[Candidate]] = []
+        feed_failure: Exception | None = None
         for show in results[: settings.PODCAST_SEARCH_TOP_N_SHOWS]:
             if not isinstance(show, dict):
                 continue
@@ -444,14 +480,19 @@ class PodcastConnector(BaseConnector):
                 logger.warning(
                     "podcast: feed fetch failed for %s: %s", feed_url, e
                 )
+                feed_failure = e
                 continue
             entries = (feed.get("entries") if isinstance(feed, dict) else None) or []
             per_show.append(
                 [
                     _entry_to_candidate(entry, feed_url, show_name)
-                    for entry in entries[: settings.PODCAST_EPISODES_PER_SHOW]
+                    for entry in _select_entries(
+                        list(entries), query, settings.PODCAST_EPISODES_PER_SHOW
+                    )
                 ]
             )
+        if feed_failure is not None and not per_show:
+            raise SearchFailed("no feed iTunes named could be read") from feed_failure
         in_turn = chain.from_iterable(zip_longest(*per_show))
         return [c for c in in_turn if c is not None][: max(0, limit)]
 

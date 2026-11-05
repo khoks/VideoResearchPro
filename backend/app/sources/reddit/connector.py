@@ -26,8 +26,11 @@ import re
 from datetime import datetime, timezone
 from typing import Iterator
 
+import httpx
+
 from app.config import settings
 from app.services.social_classify import classify
+from app.services.source_failure import SearchFailed
 from app.sources import registry
 from app.sources.base import BaseConnector
 from app.sources.reddit import client as reddit_client
@@ -148,7 +151,15 @@ class RedditConnector(BaseConnector):
         m = _SUBREDDIT_QUERY.match(query)
         if m:
             sub, real_query = m.group(1), m.group(2)
-            listing = client.search_subreddit(sub, real_query, limit=limit)
+            try:
+                listing = client.search_subreddit(sub, real_query, limit=limit)
+            except httpx.HTTPStatusError as e:
+                # A private or quarantined subreddit answers 403, and that is
+                # about the one the topic named, not this install (T-1.5.14.1).
+                # A 401 or a rate limit would be the same anywhere.
+                if e.response.status_code == 403:
+                    raise SearchFailed(f"r/{sub} refused the search") from e
+                raise
         else:
             listing = client.search(query, limit=limit)
         return [_post_to_candidate(p) for p in _children_to_post_dicts(listing)]

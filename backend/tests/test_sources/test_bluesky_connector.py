@@ -150,14 +150,44 @@ def test_search_returns_empty_when_query_blank(bsky, fake_client):
     fake_client.search_posts.assert_not_called()
 
 
-def test_search_returns_empty_when_search_raises(bsky, fake_client):
-    """Connector failures must degrade to empty list, not bubble."""
+def test_search_lets_a_failure_through(bsky, fake_client):
+    """T-1.5.14.1: this is how a 403 from the CDN read as "no results". An
+    empty list means nothing was found, so a failure stays raised for the
+    dispatcher to report."""
     fake_client.search_posts.side_effect = RuntimeError("503")
     with patch.object(
         bluesky_connector_mod.bluesky_client, "get_client", return_value=fake_client
+    ), pytest.raises(RuntimeError):
+        bsky.search("anything")
+
+
+def test_a_sentence_falls_back_to_the_words_that_carry_it(bsky, fake_client):
+    """T-1.5.14.2: measured on 2026-11-04, this sentence found nothing and
+    "Roman Empire fall" found posts."""
+    sentence = "Why did the Roman Empire fall and what can we learn from it today?"
+    post = {"uri": "at://did:plc:a/app.bsky.feed.post/1", "record": {"text": "Gibbon"}}
+    answers = {"Roman Empire fall": {"posts": [post]}}
+    fake_client.search_posts.side_effect = lambda q, limit: answers.get(q, {"posts": []})
+    with patch.object(
+        bluesky_connector_mod.bluesky_client, "get_client", return_value=fake_client
     ):
-        out = bsky.search("anything")
-    assert out == []
+        out = bsky.search(sentence, limit=5)
+
+    assert [c.title for c in out] == ["Gibbon"]
+    assert [call.args[0] for call in fake_client.search_posts.call_args_list] == [
+        sentence,
+        "Roman Empire fall",
+    ]
+
+
+def test_a_topic_that_answers_costs_one_request(bsky, fake_client):
+    post = {"uri": "at://did:plc:a/app.bsky.feed.post/1", "record": {"text": "Hit"}}
+    fake_client.search_posts.return_value = {"posts": [post]}
+    with patch.object(
+        bluesky_connector_mod.bluesky_client, "get_client", return_value=fake_client
+    ):
+        bsky.search("What is the future of nuclear power?")
+    fake_client.search_posts.assert_called_once()
 
 
 def test_search_published_at_is_utc(bsky, fake_client):

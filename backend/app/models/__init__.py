@@ -43,6 +43,7 @@ from app.models.notification import Notification
 from app.models.saved_search import SavedSearch
 from app.models.saved_search_run import SavedSearchRun
 from app.models.shelf_job import ShelfJob
+from app.models.source_refusal import SourceRefusal
 from app.models.suggestion_cache import SuggestionCache
 from app.models.tag import Tag
 from app.models.tagging import Tagging
@@ -104,6 +105,7 @@ __all__ = [
     "SavedSearch",
     "SavedSearchRun",
     "ShelfJob",
+    "SourceRefusal",
     "SuggestionCache",
     "Tag",
     "Tagging",

@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.models.job import Job
 from app.schemas.job import JobCreate
-from app.services import job_source_types, language_mix_service
+from app.services import job_source_types, language_mix_service, run_notes
 
 
 def create_job(
@@ -177,6 +177,7 @@ def job_to_response_dict(job: Job) -> dict:
         "output_length": job.output_length,
         "visual_analysis": bool(job.visual_analysis),
         "source_types": job_source_types.from_column(job.source_types_json, job_id=job.id),
+        "run_notes": run_notes.read(job),
         "published_after_days": job.published_after_days,
         "template_id": job.template_id,
         "template_version": job.template_version,

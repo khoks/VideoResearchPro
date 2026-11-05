@@ -189,9 +189,11 @@ def test_search_carries_public_metrics_in_extra(
     assert out[0].extra["reply_count"] == 7
 
 
-def test_search_returns_empty_on_api_error(
+def test_search_lets_an_api_error_through(
     twitter_conn, fake_client, monkeypatch
 ):
+    """An empty list means nothing was found, so a failure stays raised for
+    the dispatcher to report (T-1.5.14.1)."""
     monkeypatch.setattr(
         twitter_connector_mod.settings, "TWITTER_BEARER_TOKEN", "k"
     )
@@ -200,9 +202,8 @@ def test_search_returns_empty_on_api_error(
         twitter_connector_mod.twitter_client,
         "get_client",
         return_value=fake_client,
-    ):
-        out = twitter_conn.search("anything")
-    assert out == []
+    ), pytest.raises(httpx.ConnectError):
+        twitter_conn.search("anything")
 
 
 def test_search_caps_at_limit(twitter_conn, fake_client, monkeypatch):

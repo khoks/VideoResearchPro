@@ -113,6 +113,7 @@ export function SubmitJobPage() {
   const visualInstallEnabled = useCapability('visual_analysis_enabled');
   // S-1.5.13: which credential-gated sources this install can search.
   const capabilities = useSystemStatusStore((s) => s.capabilities);
+  const sourceHolds = useSystemStatusStore((s) => s.sourceHolds);
   const { tier, numVideosCap } = useTierCapabilities();
 
   const routeState = location.state as { cloneFrom?: Job; fromTemplateId?: string } | null;
@@ -480,6 +481,7 @@ export function SubmitJobPage() {
                     onChange={(next) => update('sourceTypes', next)}
                     capabilities={capabilities}
                     numVideos={form.numVideos}
+                    holds={sourceHolds}
                   />
                 )}
               </FormField>

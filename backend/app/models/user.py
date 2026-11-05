@@ -51,3 +51,11 @@ class User(Base):
     onboarding_state_json: Mapped[str | None] = mapped_column(
         Text, nullable=True, default=None
     )
+    # T-1.15.3.9: the depth this person's pages start from (D-064 values).
+    # NULL is Auto. The server never applies it: the pages read it, preset
+    # their depth control, and a request carries a depth only when that control
+    # shows one. So nothing else reads this column, and it reaches nothing
+    # another account can see.
+    preferred_output_length: Mapped[str | None] = mapped_column(
+        String(16), nullable=True, default=None
+    )

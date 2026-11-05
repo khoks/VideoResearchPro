@@ -764,7 +764,7 @@ class Settings(BaseSettings):
 
     # Knowledge extraction (Unit 4)
     KNOWLEDGE_EXTRACT_BATCH_TOKENS: int = 8000
-    KNOWLEDGE_MAX_TRANSCRIPT_TOKENS: int = 60000
+    KNOWLEDGE_MAX_TRANSCRIPT_TOKENS: int = 20000
 
     # Auth
     JWT_SECRET: str = "dev-insecure-secret-change-me-in-production"

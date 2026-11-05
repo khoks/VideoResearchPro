@@ -18,6 +18,9 @@ import { CitationLink } from '../components/citation';
 import { DockedComposer, QADock, QAThread } from '../components/qa/Composer';
 import { SuggestionCard } from '../components/qa/SuggestionCard';
 import { ComposerDepthNote, DepthSelect } from '../components/common/DepthSelect';
+import { AnswerCutOffNote } from '../components/qa/AnswerCutOffNote';
+import { useDepthChoice } from '../hooks/useDepthChoice';
+import { usePreferredDepth } from '../hooks/useMe';
 import { useExchangeFocus } from '../hooks/useExchangeFocus';
 import { NotesPanel } from '../components/notes';
 import { JobShelfChips, ShelfPicker } from '../components/shelves';
@@ -865,11 +868,15 @@ function QASection({ jobId, jobDepth }: { jobId: string; jobDepth?: string | nul
   const [interpretation, setInterpretation] = useState('');
   const [clarifications, setClarifications] = useState<string[]>([]);
   const [clarificationAnswers, setClarificationAnswers] = useState<string[]>([]);
-  // R4: the next ask's depth, and that ask's only: it clears once the answer
-  // lands. Null sends none, so the run's own depth applies and, with none set
-  // there, the corpus size decides (the router's precedence).
-  const [depth, setDepth] = useState<Depth | null>(null);
+  // R4: the next ask's depth, and that ask's only: once the answer lands it goes
+  // back to where this panel starts. Null sends none, so the run's own depth
+  // applies and, with none set there, the corpus size decides (the router's
+  // precedence). The account's default depth starts a run that has no depth
+  // (T-1.15.3.9); a run's own was chosen on a page, so it wins.
   const runDepth = depthOf(jobDepth);
+  const preferredDepth = usePreferredDepth();
+  const { depth, pick: setDepth, reset: resetDepth } = useDepthChoice(runDepth ? null : preferredDepth);
+  const questionInput = useRef<HTMLInputElement>(null);
 
   // True while an answer is being produced by either path — the SSE stream
   // or the non-streaming mutation it falls back to.
@@ -893,8 +900,16 @@ function QASection({ jobId, jobDepth }: { jobId: string; jobDepth?: string | nul
   // the same ask, so it keeps the depth; a failed ask keeps it for the retry.
   const finishAsk = () => {
     setQuestion('');
-    setDepth(null);
+    resetDepth();
     resetToAsk();
+  };
+
+  // T-1.15.4.5: a cut-off answer's offer; see `AnswerCutOffNote`.
+  const askAtDeep = (q: string) => {
+    resetToAsk();
+    setQuestion(q);
+    setDepth('deep');
+    setTimeout(() => questionInput.current?.focus(), 0);
   };
 
   // Streaming-first ask. Falls back to the classic non-streaming mutation
@@ -1022,6 +1037,7 @@ function QASection({ jobId, jobDepth }: { jobId: string; jobDepth?: string | nul
           <form onSubmit={handleAsk} style={{ display: 'flex', gap: space['2'], marginBottom: space['3'] }}>
             <div style={{ flex: 1 }}>
               <Input
+                ref={questionInput}
                 value={question}
                 onChange={(e) => setQuestion(e.target.value)}
                 placeholder={qaAvailable ? 'Ask a question about the research…' : FEATURE_UNAVAILABLE_MSG}
@@ -1190,7 +1206,12 @@ function QASection({ jobId, jobDepth }: { jobId: string; jobDepth?: string | nul
           }}
         >
           {history.map((qa) => (
-            <QAExchangeCard key={qa.id} qa={qa} />
+            <QAExchangeCard
+              key={qa.id}
+              qa={qa}
+              runDepth={runDepth}
+              onAskAgain={qaAvailable && !answering && !clarifyQuestion.isPending ? askAtDeep : undefined}
+            />
           ))}
         </QAThread>
       )}
@@ -1228,7 +1249,15 @@ function InfoStripe({ text }: { text: string }) {
   );
 }
 
-function QAExchangeCard({ qa }: { qa: QAExchange }) {
+function QAExchangeCard({
+  qa,
+  runDepth,
+  onAskAgain,
+}: {
+  qa: QAExchange;
+  runDepth: Depth | null;
+  onAskAgain?: (question: string) => void;
+}) {
   const c = useColors();
   const [copied, setCopied] = useState(false);
 
@@ -1292,6 +1321,11 @@ function QAExchangeCard({ qa }: { qa: QAExchange }) {
       >
         <Markdown>{qa.answer}</Markdown>
       </div>
+      <AnswerCutOffNote
+        exchangeId={qa.id}
+        inheritedDepth={runDepth}
+        onAskAgain={onAskAgain && (() => onAskAgain(qa.question))}
+      />
       {qa.references.length > 0 && (
         <div
           style={{

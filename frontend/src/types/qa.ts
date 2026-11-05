@@ -88,6 +88,11 @@ export interface QAExchange {
   answer: string;
   references: Reference[];
   created_at: string;
+  /**
+   * T-1.15.4.5: on a fresh answer only. It stopped at its token budget. The
+   * history routes never send this: it is not stored.
+   */
+  answer_cut_off?: boolean;
 }
 
 export interface QARequest {
@@ -134,6 +139,8 @@ export interface LibraryQAExchange {
   answer_language?: string;
   created_at: string;
   scope?: QAScope | null;
+  /** T-1.15.4.5: on a fresh answer only, as on `QAExchange`. */
+  answer_cut_off?: boolean;
 }
 
 /**

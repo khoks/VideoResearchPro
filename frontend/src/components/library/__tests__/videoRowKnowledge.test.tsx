@@ -20,6 +20,7 @@ const extractIds: string[] = [];
 const mutate = vi.fn();
 
 vi.mock('../../../hooks/useFeatureAvailable', () => ({ useFeatureAvailable: () => featureOn }));
+vi.mock('../../../hooks/useMe', () => ({ usePreferredDepth: () => null }));
 vi.mock('../../notes', () => ({ NotesPanel: () => null }));
 vi.mock('../../tags/DocumentTags', () => ({ DocumentTags: () => null }));
 vi.mock('../../qa/SuggestionCard', () => ({ SuggestionCard: () => null }));

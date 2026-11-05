@@ -52,8 +52,9 @@ async function flush() {
   }
 }
 
-async function mount(defaultDepth?: string | null) {
+async function mount(defaultDepth?: string | null, preferred: string | null = null) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+  qc.setQueryData(['auth', 'me'], { preferred_output_length: preferred });
   act(() =>
     root.render(
       <QueryClientProvider client={qc}>
@@ -120,6 +121,31 @@ describe('VideoKnowledgeDrawer: the POST it sends', () => {
     expect(postMock).toHaveBeenCalledWith('/videos/doc-1/extract-knowledge', null, {
       params: { output_length: 'deep' },
     });
+  });
+
+  it("starts from the account's default depth, spending nothing until the click (T-1.15.3.9)", async () => {
+    await mount(undefined, 'brief');
+    expect(host.querySelector<HTMLSelectElement>('select[aria-label="Report depth"]')!.value).toBe('brief');
+    expect(postMock).not.toHaveBeenCalled();
+    await press('Generate report');
+    expect(postMock).toHaveBeenCalledWith('/videos/doc-1/extract-knowledge', null, {
+      params: { output_length: 'brief' },
+    });
+  });
+
+  it("lets a run's own depth win over the account's", async () => {
+    await mount('deep', 'brief');
+    await press('Generate report');
+    expect(postMock).toHaveBeenCalledWith('/videos/doc-1/extract-knowledge', null, {
+      params: { output_length: 'deep' },
+    });
+  });
+
+  it("lets Auto, picked in the drawer, win over the account's", async () => {
+    await mount(undefined, 'brief');
+    pick('');
+    await press('Generate report');
+    expect(postMock).toHaveBeenCalledWith('/videos/doc-1/extract-knowledge', null, { params: undefined });
   });
 
   it('regenerates a stored report with force and the depth, and says which depth it was written at', async () => {

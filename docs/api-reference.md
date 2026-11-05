@@ -121,10 +121,24 @@ Return the current user. Requires bearer token.
 
 ```json
 // response
-{ "id": "...", "email": "...", "created_at": "...", "tier": "free", "onboarded_at": null, "is_operator": true }
+{ "id": "...", "email": "...", "created_at": "...", "tier": "free", "onboarded_at": null, "is_operator": true, "preferred_output_length": null }
 ```
 
 `onboarded_at` (S-8.10.1) is set when the first-run wizard is finished. `is_operator` (T-5.2.8, [D-111](decisions.md#d-111--operator-only-tier-switching-and-an-honest-pricing-page-2026-10-25)) says whether the caller operates this install: their email is in `ADMIN_EMAILS` (comma-separated, case-insensitive), or, when that is empty, theirs is the earliest-registered account. The Subscription page offers the tier switch only when it is true.
+
+`preferred_output_length` (T-1.15.3.9) is the depth the caller's pages start from: `brief`, `standard`, `deep`, or null for Auto. Only this route returns it.
+
+### `PATCH /api/v1/auth/me/preferences`
+Set the caller's default depth (T-1.15.3.9). Open to every tier.
+
+```json
+// request
+{ "output_length": "deep" }
+// response
+{ "output_length": "deep" }
+```
+
+`output_length` is `auto`, `brief`, `standard`, `deep` or null; `auto` and null clear it, and the response is then null. 422 for anything else. The server never applies this value: the submit form's Topic tab, the knowledge drawer and the Q&A panels start from it, and a request carries a depth only when the page's control shows one. So a request that omits `output_length` behaves the same with a preference set or not.
 
 ### `PUT /api/v1/auth/me/tier`
 Switch the caller's tier (mock payment, [D-050](decisions.md#d-050--self-service-tier-flip-with-mock-payment-until-e-53-stripe-ships-2026-05-15)). **Operator only** since T-5.2.8 ([D-111](decisions.md#d-111--operator-only-tier-switching-and-an-honest-pricing-page-2026-10-25)): any other account gets 403 `Only this install's operator can do this.` and nothing changes. Body `{ "tier": "free" | "pro" | "studio", "mock_payment"?: {...} }` (`mock_payment` is accepted and ignored); 422 for another tier. Returns `{ "tier", "message", "mock_payment_mode": true }` and writes a `tier_changed` audit event.
@@ -539,11 +553,14 @@ Ask a question scoped to this job. Runs the Q&A agent (retrieve → refine → a
   "references": [
     { "video_id": "...", "title": "...", "url": "...", "timestamp": 145.3, "quote": "..." }
   ],
-  "created_at": "..."
+  "created_at": "...",
+  "answer_cut_off": false
 }
 ```
 
 Returns 400 if the job is not yet `completed`.
+
+`answer_cut_off` (T-1.15.4.5) is `true` when the answer stopped at its token budget, so its end is missing. The answer is stored and returned all the same, and the server logs a warning naming the use case and the model. It is true of this reply only: nothing stores it, so the history routes return `QAResponse`, which has no such field.
 
 **Streaming.** `POST /api/v1/jobs/{job_id}/qa/stream` takes the same body and makes the same checks (a not-`completed` job, the `qa_exchanges` quota) before any streaming starts. It answers with server-sent events: `{ "type": "stage", "stage": "..." }` while the agent runs, then `{ "type": "complete", "exchange": <the /qa response> }` or `{ "type": "error", "detail": "..." }`, then `data: [DONE]`.
 
@@ -577,9 +594,12 @@ Ask a question across everything the tenant can see (D-063). Runs `run_library_q
   ],
   "answer_language": "English",
   "created_at": "...",
-  "scope": null
+  "scope": null,
+  "answer_cut_off": false
 }
 ```
+
+`answer_cut_off` is as on `POST /jobs/{job_id}/qa`: on this reply only, never on the history.
 
 `document_id` (T-8.4.2.4) asks about that one source: its `document_id` or a video's legacy YouTube id, stored canonical. Retrieval and citations are restricted to exactly that document (every reference carries its `document_id`; `video_id` is empty on a non-YouTube source), the asker's notes to those on it, on its knowledge report, on its channel and on earlier answers about it. A source the caller cannot see, and one that does not exist, are the same **404**, before any quota is checked.
 

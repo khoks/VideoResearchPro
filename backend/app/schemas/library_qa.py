@@ -65,3 +65,11 @@ class LibraryQAResponse(BaseModel):
     scope: QAScope | None = None
 
     model_config = {"from_attributes": True}
+
+
+class LibraryQAAnswerResponse(LibraryQAResponse):
+    """An answer that has just been written (`POST /library/qa` and
+    `POST /shelves/{id}/qa`). `answer_cut_off` as on `QAAnswerResponse`: not
+    stored, so the history routes do not carry it."""
+
+    answer_cut_off: bool = False

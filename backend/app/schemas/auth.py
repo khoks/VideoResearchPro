@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, EmailStr, Field
 
@@ -46,6 +47,21 @@ class MeResponse(UserResponse):
     is unavailable instead of failing on submit."""
 
     is_operator: bool = False
+    # T-1.15.3.9: the depth the caller's pages start from; null is Auto. Here
+    # rather than on `UserResponse`, because this is the only route that answers
+    # the caller alone by design.
+    preferred_output_length: str | None = None
+
+
+class AccountPreferencesRequest(BaseModel):
+    """Body for ``PATCH /auth/me/preferences`` (T-1.15.3.9). ``auto`` or null
+    clears the preference."""
+
+    output_length: Literal["auto", "brief", "standard", "deep"] | None = None
+
+
+class AccountPreferencesResponse(BaseModel):
+    output_length: str | None = None
 
 
 # E-5.2.X self-service tier flip with mock payment (D-050)

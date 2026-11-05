@@ -6,6 +6,7 @@
  * so a duplicated deep, visual run came back shallow and blind (T-8.6.1.0).
  */
 import { featureFlags } from '../config/features';
+import type { Depth } from './depth';
 import type { Job, JobCreate, JobType, OutputLength } from '../types/job';
 import type { TemplateParameters } from '../services/jobTemplatesApi';
 import type { SourceHold } from '../stores/systemStatusStore';
@@ -147,6 +148,13 @@ export interface JobFormState {
   subscriptionChannels: string;
   outputLength: OutputLength;
   /**
+   * T-1.15.3.9: the depth on this form is settled: the reader used the select,
+   * or it came with a duplicated run or a template. Until then the account's
+   * default depth shows in its place (`withPreferredDepth`), and that includes
+   * a choice of Auto, which is otherwise indistinguishable from no choice.
+   */
+  depthChosen: boolean;
+  /**
    * Carried from a duplicated run or a template, never offered as a fresh
    * opt-in: the job-creation toggle is S-1.18.2, deferred by D-071 / D-075.
    */
@@ -167,6 +175,7 @@ export const DEFAULT_FORM: JobFormState = {
   searchInstructions: '',
   numVideos: 10,
   outputLength: 'auto',
+  depthChosen: false,
   minDuration: '',
   maxDuration: '',
   channelFilters: [],
@@ -207,6 +216,25 @@ function outputLengthOf(value: string | null | undefined): OutputLength {
 }
 
 /**
+ * The form as the page shows and submits it: the account's default depth stands
+ * in until the depth is settled. A computed view rather than a write to the form,
+ * because a preference is not something the reader typed: it must not turn an
+ * empty form into a draft, and a saved template must not freeze it. So only the
+ * select and the run read this, and `formToTemplateParameters` reads the form.
+ *
+ * Topic runs only, because that is the tab with the select, and a request carries
+ * a depth only when the page shows one. A depth sent with a run is the run's own
+ * from then on: unseen on a Channels or Subscription form, it would set every
+ * answer and knowledge report on that run, and changing the preference back
+ * would not undo it.
+ */
+export function withPreferredDepth(form: JobFormState, preferred: Depth | null): JobFormState {
+  return preferred && form.jobType === 'topic' && !form.depthChosen && form.outputLength === 'auto'
+    ? { ...form, outputLength: preferred }
+    : form;
+}
+
+/**
  * Whether the form holds anything of the reader's. The research type alone
  * does not count: it is only the tab they are on.
  */
@@ -225,6 +253,7 @@ export function parseDraft(raw: string | null): JobFormState {
       ...DEFAULT_FORM,
       ...parsed,
       outputLength: outputLengthOf(parsed.outputLength),
+      depthChosen: parsed.depthChosen === true,
       visualAnalysis: parsed.visualAnalysis === true,
       channelFilters: Array.isArray(parsed.channelFilters) ? validFilters(parsed.channelFilters) : [],
       sourceTypes: sourceTypesOf(Array.isArray(parsed.sourceTypes) ? parsed.sourceTypes : null),
@@ -248,6 +277,8 @@ export function jobToFormState(job: Job): JobFormState {
     searchInstructions: job.search_instructions ?? '',
     numVideos: job.num_videos ?? 10,
     outputLength: outputLengthOf(job.output_length),
+    // A duplicate copies the run, including a run left on Auto.
+    depthChosen: true,
     visualAnalysis: job.visual_analysis === true,
     sourceTypes: job.job_type === 'topic' ? sourceTypesOf(job.source_types) : [...DEFAULT_SOURCE_TYPES],
     publishedAfterDays: job.job_type === 'topic' ? windowOf(job.published_after_days) : '',
@@ -273,6 +304,8 @@ export function templateToFormState(params: TemplateParameters, keepTopic = ''):
     searchInstructions: params.search_instructions ?? '',
     numVideos: params.num_videos ?? 10,
     outputLength: outputLengthOf(params.output_length),
+    // A recipe with no depth froze none, so the reader's own default applies.
+    depthChosen: params.output_length != null,
     visualAnalysis: params.visual_analysis === true,
     sourceTypes: params.job_type === 'topic' ? sourceTypesOf(params.source_types) : [...DEFAULT_SOURCE_TYPES],
     publishedAfterDays: params.job_type === 'topic' ? windowOf(params.published_after_days) : '',

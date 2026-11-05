@@ -106,6 +106,9 @@ class QAAgentState(TypedDict):
     report_context: str | None
     refined_context: str
     answer: str
+    # T-1.15.4.5: the answer stopped at its token budget, so its end is
+    # missing. Set by `formulate_answer` only.
+    answer_cut_off: bool
     references: list[dict]
     corpus_statistics: dict | None
     output_length: str | None

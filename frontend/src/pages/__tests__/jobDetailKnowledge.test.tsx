@@ -250,3 +250,30 @@ describe('JobDetailPage: knowledge report per source', () => {
     expect(knowledgeButtonFor(THREAD.title)).toBeUndefined();
   });
 });
+
+describe('what the run has to say', () => {
+  it('shows it at the top of the page (S-1.5.14)', () => {
+    videos = [];
+    job = {
+      ...JOB,
+      status: 'awaiting_approval',
+      run_notes: [
+        {
+          kind: 'source_unavailable',
+          source_type: 'bluesky_post',
+          text: 'Bluesky was unavailable: it refused the search (HTTP 403).',
+        },
+      ],
+    };
+    mount();
+    expect(host.querySelector('[data-testid="run-notes"]')?.textContent).toContain(
+      'Bluesky was unavailable: it refused the search (HTTP 403).',
+    );
+  });
+
+  it('renders nothing when a server sends no notes', () => {
+    videos = [];
+    mount();
+    expect(host.querySelector('[data-testid="run-notes"]')).toBeNull();
+  });
+});

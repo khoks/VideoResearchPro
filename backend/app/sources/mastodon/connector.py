@@ -4,9 +4,9 @@
 What it covers:
 
 - Discovery via Mastodon's public hashtag-timeline endpoint
-  (`/api/v1/timelines/tag/<hashtag>`). The query is normalised to a
-  hashtag-friendly form (lowercase, alphanumerics only) since Mastodon
-  hashtags don't tolerate spaces or punctuation.
+  (`/api/v1/timelines/tag/<hashtag>`). The topic becomes a few hashtags
+  (lowercase, alphanumerics only) since Mastodon hashtags don't tolerate
+  spaces or punctuation; see ``_topic_hashtags``.
 - Listing a creator's recent statuses via `/api/v1/accounts/<id>/statuses`
   (after resolving `@user@instance` handles to numeric account IDs
   through `/api/v1/accounts/lookup`).
@@ -25,10 +25,11 @@ Reddit base36 IDs, and HN integer IDs.
 Rationale for hashtag-as-discovery: Mastodon has no global keyword
 search by default (most instances disable full-text search to honour
 user privacy). The hashtag timeline is the only public, federation-
-aware discovery surface that doesn't require an account. We map the
-topic query to a single hashtag rather than splitting into multiple
-words because hashtag conventions are single-token (e.g.
-`#climatechange`, not `#climate #change`).
+aware discovery surface that doesn't require an account. Hashtag
+conventions are single-token (e.g. `#climatechange`, not `#climate
+#change`), so a topic's words are joined, but a whole phrase is rarely
+a tag anyone used: `#rareearthsupplychains` has no posts and
+`#rareearth` and `#supplychains` do (T-1.5.14.2).
 """
 from __future__ import annotations
 
@@ -36,11 +37,13 @@ import logging
 import re
 import unicodedata
 from datetime import datetime
+from itertools import pairwise
 from typing import Iterator
 
 from app.config import settings
 from app.services.social_classify import classify
 from app.sources import registry
+from app.sources._topic_terms import topic_terms
 from app.sources.base import BaseConnector
 from app.sources.mastodon import client as mastodon_client
 from app.sources.mastodon import flatten as mastodon_flatten
@@ -50,6 +53,13 @@ logger = logging.getLogger(__name__)
 
 SOURCE_TYPE = "mastodon_post"
 SOURCE_ID_PREFIX = "mastodon:"
+
+# A joined phrase longer than this is a sentence, not a tag anyone wrote.
+_MAX_PHRASE_TAG_CHARS = 30
+# Requests one search may make, at the client's one a second: phrases first,
+# then single words.
+_MAX_PHRASE_TAGS = 5
+_MAX_WORD_TAGS = 3
 
 # Mastodon's API returns ISO-8601 with `Z` suffix; Python's
 # `datetime.fromisoformat` only learned to parse `Z` in 3.11. We're on
@@ -103,6 +113,27 @@ def _topic_to_hashtag(query: str) -> str:
         if cat[0] in ("L", "N", "M"):
             out.append(ch)
     return "".join(out)
+
+
+def _topic_hashtags(query: str) -> tuple[list[str], list[str]]:
+    """The hashtags to try for a topic: ``(phrases, words)``, best first.
+
+    Phrases are the topic joined whole, as it always was, its carrying words
+    joined, and each neighbouring pair of them ("rare earth supply chains"
+    gives #rareearth and #supplychains). Words are single tags, longest
+    first, and the caller keeps them for when no phrase found anything: on
+    its own a word of a phrase is often about something else (#fall, #chains).
+    """
+    terms = [tag for tag in (_topic_to_hashtag(t) for t in topic_terms(query)) if tag]
+    joined = [_topic_to_hashtag(query), "".join(terms)]
+    phrases = [
+        tag
+        for tag in dict.fromkeys([*joined, *("".join(pair) for pair in pairwise(terms))])
+        if tag and len(tag) <= _MAX_PHRASE_TAG_CHARS
+    ]
+    # A single-word topic is a phrase already; every other word is a fallback.
+    words = sorted((t for t in terms if t not in phrases), key=len, reverse=True)
+    return phrases[:_MAX_PHRASE_TAGS], words[:_MAX_WORD_TAGS]
 
 
 def _status_to_candidate(status: dict) -> Candidate:
@@ -199,26 +230,46 @@ class MastodonConnector(BaseConnector):
         limit: int = 10,
     ) -> list[Candidate]:
         # `instructions` is interpreted upstream by the search agent
-        # when planning query reformulations. The connector just runs
-        # each query as a hashtag.
-        hashtag = _topic_to_hashtag(query)
-        if not hashtag:
+        # when planning query reformulations.
+        phrases, words = _topic_hashtags(query)
+        if not phrases and not words:
             logger.info(
                 "Mastodon search: query %r normalised to empty hashtag, skipping",
                 query,
             )
             return []
         client = mastodon_client.get_client()
+        found: dict[str, dict] = {}
+        for tag in phrases:
+            self._collect(client, tag, limit, found)
+            if len(found) >= limit:
+                break
+        if not found:
+            for tag in words:
+                self._collect(client, tag, limit, found)
+                if len(found) >= limit:
+                    break
+        return [_status_to_candidate(s) for s in list(found.values())[:limit]]
+
+    @staticmethod
+    def _collect(client, tag: str, limit: int, found: dict[str, dict]) -> None:
+        """Add one hashtag's statuses to ``found``, keyed by id.
+
+        A failure stays raised when nothing has been found, so the dispatcher
+        can tell "the instance refused" from "nothing found" (T-1.5.14.1).
+        After a hit the search has something to show, and only logs it.
+        """
         try:
-            statuses = client.timeline_tag(hashtag, limit=limit)
+            statuses = client.timeline_tag(tag, limit=limit)
         except Exception as e:
-            logger.warning(
-                "Mastodon search failed for hashtag %r: %s", hashtag, e
-            )
-            return []
-        if not isinstance(statuses, list):
-            return []
-        return [_status_to_candidate(s) for s in statuses if isinstance(s, dict)]
+            if not found:
+                raise
+            logger.warning("Mastodon search failed for hashtag %r: %s", tag, e)
+            return
+        if isinstance(statuses, list):
+            for status in statuses:
+                if isinstance(status, dict):
+                    found.setdefault(str(status.get("id")), status)
 
     def list_creator_items(
         self,

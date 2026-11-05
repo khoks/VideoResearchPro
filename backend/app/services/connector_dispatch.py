@@ -27,9 +27,11 @@ limit / retry config (T-1.5.11.2) and progress-reporting parity
 established here.
 
 Connector errors are caught and recorded per-source-type — one
-connector's failure must not crash a multi-source job. The orchestrator
-inspects `DispatchResult.errors_by_source_type` to decide whether
-to surface a degraded-mode warning.
+connector's failure must not crash a multi-source job. A connector's
+`search()` raises rather than returning an empty list when the service
+failed (T-1.5.14.1), because an empty list means "nothing found", and
+the run reports the two differently: `failures_by_source_type` says what
+kind of failure it was, in terms a reader can be told.
 """
 from __future__ import annotations
 
@@ -37,6 +39,8 @@ import logging
 from dataclasses import dataclass, field
 from typing import Iterable
 
+from app.services import source_failure
+from app.services.source_failure import SourceFailure
 from app.sources.registry import connector_for
 from app.sources.types import Candidate
 
@@ -54,12 +58,17 @@ class DispatchResult:
 
     `errors_by_source_type` carries a string describing each failure
     (`"<ExceptionType>: <message>"` or a context-specific message
-    like `"No connector registered for 'mastodon_post'"`). Empty when
-    the dispatch ran fully clean.
+    like `"No connector registered for 'mastodon_post'"`), for the log.
+    Empty when the dispatch ran fully clean.
+
+    `failures_by_source_type` has the same keys, as `SourceFailure`, for
+    what the run tells its reader. A source in neither map answered; an
+    empty candidate list there means it found nothing.
     """
 
     candidates_by_source_type: dict[str, list[Candidate]] = field(default_factory=dict)
     errors_by_source_type: dict[str, str] = field(default_factory=dict)
+    failures_by_source_type: dict[str, SourceFailure] = field(default_factory=dict)
 
     def all_candidates(self) -> list[Candidate]:
         """Flatten the per-source-type candidates into a single list,
@@ -86,6 +95,7 @@ def dispatch_search(
     instructions: str = "",
     limit_per_type: int = 10,
     *,
+    limits: dict[str, int] | None = None,
     job_id: str = "",
 ) -> DispatchResult:
     """Run `search()` on every connector for `source_types` and merge.
@@ -105,21 +115,26 @@ def dispatch_search(
         instructions: free-text user instructions forwarded to each
             connector's `search()`.
         limit_per_type: per-source-type candidate cap.
+        limits: a cap for particular source types, in place of
+            ``limit_per_type``.
         job_id: forwarded for log correlation only.
 
     Returns:
         ``DispatchResult`` with per-source-type candidates + errors.
         Always returns a result; never raises (connector failures
-        are captured in ``errors_by_source_type``).
+        are captured in ``errors_by_source_type`` and
+        ``failures_by_source_type``).
     """
     candidates_by_type: dict[str, list[Candidate]] = {}
     errors_by_type: dict[str, str] = {}
+    failures_by_type: dict[str, SourceFailure] = {}
 
     for st in source_types:
         try:
             connector = connector_for(st)
         except KeyError as e:
             errors_by_type[st] = str(e)
+            failures_by_type[st] = SourceFailure(source_failure.FAILED)
             candidates_by_type[st] = []
             logger.warning(
                 "dispatch_search: %s",
@@ -133,7 +148,7 @@ def dispatch_search(
                 connector.search(
                     query=query,
                     instructions=instructions,
-                    limit=limit_per_type,
+                    limit=(limits or {}).get(st, limit_per_type),
                 )
             )
         except NotImplementedError:
@@ -149,6 +164,7 @@ def dispatch_search(
             continue
         except Exception as e:
             errors_by_type[st] = f"{type(e).__name__}: {e}"
+            failures_by_type[st] = source_failure.classify(e)
             candidates_by_type[st] = []
             logger.exception(
                 "dispatch_search: connector %r raised during search()",
@@ -168,4 +184,5 @@ def dispatch_search(
     return DispatchResult(
         candidates_by_source_type=candidates_by_type,
         errors_by_source_type=errors_by_type,
+        failures_by_source_type=failures_by_type,
     )

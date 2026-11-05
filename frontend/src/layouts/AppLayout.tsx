@@ -1,6 +1,5 @@
 import { useState, type CSSProperties, type ReactNode } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { useQueryClient } from '@tanstack/react-query';
 import { useJobStore, type AppTab } from '../stores/jobStore';
 import { useAuth } from '../contexts/AuthContext';
 import { useSystemStatus } from '../hooks/useSystemStatus';
@@ -38,7 +37,6 @@ export function AppLayout() {
   const theme = useJobStore((s) => s.theme);
   const toggleTheme = useJobStore((s) => s.toggleTheme);
   const { user, logout } = useAuth();
-  const queryClient = useQueryClient();
   const { refetch: refetchSystemStatus } = useSystemStatus();
   const { has, tier } = useTierCapabilities();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
@@ -72,10 +70,8 @@ export function AppLayout() {
 
   const handleLogout = async () => {
     // Revokes the session at the server first; a failed call still signs
-    // this browser out. The cache goes too, so the next account to sign in
-    // here never sees this one's data.
+    // this browser out.
     await logout();
-    queryClient.clear();
     navigate('/login', { replace: true });
   };
 

@@ -61,7 +61,7 @@ The protected routes share `<AppLayout>`: a left sidebar, and a top bar with a d
 ## Page-by-page
 
 ### `LoginPage` — `/login`
-**Purpose.** Sign in. Calls `POST /api/v1/auth/login`, stores the JWT in the auth context. `PublicOnlyRoute` then goes to the page that sent the reader here, with its query and fragment, or to `/`, which the onboarding gate resolves. That guard is the only redirect a sign-in makes; a sign-out leaves no page behind. An account with two-step verification gets a five-minute ticket instead of a token, and the page becomes the second step.
+**Purpose.** Sign in. Calls `POST /api/v1/auth/login`, stores the JWT in the auth context. `PublicOnlyRoute` then goes to the protected page that sent the reader here, with its query and fragment, or to `/`, which the onboarding gate resolves. The marketing pages' **Sign in** carries no page, so the gate decides there too. That guard is the only redirect a sign-in makes. A sign-out, in this tab or another, leaves no page behind and empties the query cache, so the next account starts at `/` with nothing of the last one's. An account with two-step verification gets a five-minute ticket instead of a token, and the page becomes the second step.
 
 | State | What renders |
 |-------|--------------|
@@ -95,7 +95,7 @@ The protected routes share `<AppLayout>`: a left sidebar, and a top bar with a d
 **Purpose.** The code, a new password and its confirmation, to `POST /auth/password-reset/confirm`. The code is pasted, never read from the address bar: a secret in a URL lands in history, logs and Referer headers. A used, expired or mistyped code gets its own sentence, and any other refusal shows the server's words (a password that cannot be stored leaves the code good, T-5.4.18). On success: "Your new password works now", that every session was signed out, and **Sign in**.
 
 ### `LandingPage` — `/landing`
-**Purpose.** The landing page inside the app, in `MarketingLayout`: a top bar with **How it works** and **Pricing**, **Sign in** and a sign-up link, or **Open app** for a signed-in reader, and a footer. Linked from the sign-in and register pages. The separate Astro site in `marketing/` is a different build, deployed on its own.
+**Purpose.** The landing page inside the app, in `MarketingLayout`: a top bar with **How it works** and **Pricing**, **Sign in** and a sign-up link, or **Open app** for a signed-in reader, which goes to `/` so the onboarding gate decides, and a footer. Linked from the sign-in and register pages. The separate Astro site in `marketing/` is a different build, deployed on its own.
 
 ### `PricingPage` — `/pricing`
 **Purpose.** The three plans, from the same `TIER_DESCRIPTORS` as the Subscription page. Signed out, every card goes to `/register`, and the paid ones read **Start on Free**, because a sign-up cannot choose a plan (D-111). Signed in, the current plan is marked and the others go to `/account/subscription`, the only place a plan changes.

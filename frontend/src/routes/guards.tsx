@@ -3,12 +3,12 @@ import { useAuth } from '../contexts/AuthContext';
 import { signInDestination } from '../utils/signInReturn';
 
 export function ProtectedRoute() {
-  const { isAuthenticated, signedOutHere } = useAuth();
+  const { isAuthenticated, signedOut } = useAuth();
   const location = useLocation();
   if (!isAuthenticated) {
     // Signing out is not being turned away: the next sign-in, perhaps someone
     // else's, starts at `/` and not on the page this reader left.
-    return <Navigate to="/login" replace state={signedOutHere ? undefined : { from: location }} />;
+    return <Navigate to="/login" replace state={signedOut ? undefined : { from: location }} />;
   }
   return <Outlet />;
 }

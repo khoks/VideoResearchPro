@@ -1,5 +1,6 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import api, { AUTH_TOKEN_KEY } from '../services/api';
 import { clearPendingShares } from '../services/shareTarget';
 import { wsClient } from '../services/wsClient';
@@ -37,10 +38,11 @@ interface AuthContextValue {
   token: string | null;
   isAuthenticated: boolean;
   /**
-   * This tab signed out on purpose and has not signed in since, so the next
-   * sign-in starts at `/` rather than on the page that was left.
+   * A session ended while this tab was open, here or in another tab, and none
+   * has begun since. The next sign-in may be someone else's, so it starts at
+   * `/` rather than on the page that was left.
    */
-  signedOutHere: boolean;
+  signedOut: boolean;
   isLoading: boolean;
   login: (email: string, password: string) => Promise<SignInResult>;
   /** Second step: the code from the authenticator app, or a recovery code. */
@@ -82,17 +84,22 @@ function readStoredUser(): AuthUser | null {
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const queryClient = useQueryClient();
   const [token, setToken] = useState<string | null>(() => localStorage.getItem(AUTH_TOKEN_KEY));
   const [user, setUser] = useState<AuthUser | null>(() => readStoredUser());
   const [isLoading, setIsLoading] = useState(false);
-  const [signedOutHere, setSignedOutHere] = useState(false);
+  const [signedOut, setSignedOut] = useState(false);
 
-  // Keep state in sync with storage if another tab logs out.
+  // Keep state in sync with storage if another tab logs out. A 401 there that
+  // drops the token reads the same from here, and is treated the same.
   useEffect(() => {
     const onStorage = (e: StorageEvent) => {
       if (e.key === AUTH_TOKEN_KEY) {
         setToken(e.newValue);
-        if (!e.newValue) setUser(null);
+        if (!e.newValue) {
+          setUser(null);
+          setSignedOut(true);
+        }
       }
       if (e.key === USER_STORAGE_KEY) {
         setUser(readStoredUser());
@@ -109,13 +116,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!token) wsClient.disconnect();
   }, [token]);
 
+  // The next account to sign in here never sees this one's data, however the
+  // session ended. Only on the change: a page opened signed out has public
+  // queries of its own, and this effect runs after theirs start.
+  const hadToken = useRef(token);
+  useEffect(() => {
+    if (hadToken.current && !token) queryClient.clear();
+    hadToken.current = token;
+  }, [token, queryClient]);
+
   const persistSession = useCallback(async (data: AuthResponse, fallbackEmail: string) => {
     const nextUser: AuthUser = data.user ?? { email: fallbackEmail };
     localStorage.setItem(AUTH_TOKEN_KEY, data.access_token);
     localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(nextUser));
     setToken(data.access_token);
     setUser(nextUser);
-    setSignedOutHere(false);
+    setSignedOut(false);
     if (!nextUser.email) {
       // An OAuth sign-in returns only the token; ask who it is for so the
       // sidebar can name the account. Best-effort: the session stands either way.
@@ -211,7 +227,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       localStorage.removeItem(AUTH_TOKEN_KEY);
       localStorage.removeItem(USER_STORAGE_KEY);
       void clearPendingShares();
-      setSignedOutHere(true);
+      setSignedOut(true);
       setToken(null);
       setUser(null);
     }
@@ -221,14 +237,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     user,
     token,
     isAuthenticated: !!token,
-    signedOutHere,
+    signedOut,
     isLoading,
     login,
     completeMfa,
     completeOAuth,
     register,
     logout,
-  }), [user, token, signedOutHere, isLoading, login, completeMfa, completeOAuth, register, logout]);
+  }), [user, token, signedOut, isLoading, login, completeMfa, completeOAuth, register, logout]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

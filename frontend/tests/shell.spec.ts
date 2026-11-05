@@ -130,6 +130,35 @@ test('signing out leaves no page behind for the next sign-in', async ({ page }) 
   await expect(page).toHaveURL(/\/submit$/);
 });
 
+test('a sign-out in another tab leaves no page behind here either', async ({ page, context }) => {
+  await page.addInitScript(() => {
+    if (!window.sessionStorage.getItem('booted')) {
+      window.sessionStorage.setItem('booted', '1');
+      window.localStorage.setItem('videoresearchpro.authToken', 'fixture-token');
+    }
+  });
+  await boot(page);
+  await page.goto(`/jobs/${JOB}`);
+  await expect(page.getByRole('heading', { level: 1 })).toContainText('pratidhvani smoke test');
+
+  const other = await context.newPage();
+  await boot(other);
+  await other.goto(`/jobs/${JOB}`);
+  await other.getByRole('button', { name: 'Sign out' }).click();
+
+  await expect(page).toHaveURL(/\/login$/);
+  await signIn(page);
+  await expect(page).toHaveURL(/\/submit$/);
+});
+
+test('a sign-in from a marketing page ends at the gate, not back on that page', async ({ page }) => {
+  await boot(page);
+  await page.goto('/landing');
+  await page.getByRole('navigation', { name: 'Marketing' }).getByRole('link', { name: 'Sign in' }).click();
+  await signIn(page);
+  await expect(page).toHaveURL(/\/submit$/);
+});
+
 test('a page that throws lands on the error screen, with a way back and no stack', async ({ page }) => {
   await page.addInitScript(() => window.localStorage.setItem('videoresearchpro.authToken', 'fixture-token'));
   // Text where the page expects a list: rendering it throws.

@@ -78,6 +78,7 @@ const DEEP = '/jobs/run-1?exchange=e7#notes';
 let host: HTMLDivElement;
 let root: Root;
 let router: ReturnType<typeof createMemoryRouter>;
+let client: QueryClient;
 
 async function flush() {
   for (let i = 0; i < 8; i++) {
@@ -88,14 +89,15 @@ async function flush() {
 }
 
 /** One page load: a tab keeps sessionStorage across it, and nothing else. */
-async function load(url: string) {
+async function load(url: string, seed: (qc: QueryClient) => void = () => undefined) {
   act(() => root.unmount());
   root = createRoot(host);
-  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  seed(client);
   router = createMemoryRouter(routes, { initialEntries: [url] });
   await act(async () => {
     root.render(
-      <QueryClientProvider client={qc}>
+      <QueryClientProvider client={client}>
         <AuthProvider>
           <RouterProvider router={router} />
         </AuthProvider>
@@ -115,6 +117,13 @@ const button = (label: string) => {
   if (!b) throw new Error(`no button "${label}" in: ${host.textContent}`);
   return b;
 };
+
+async function followLink(label: string) {
+  const link = Array.from(host.querySelectorAll('a')).find((a) => a.textContent?.trim() === label);
+  if (!link) throw new Error(`no link "${label}" in: ${host.textContent}`);
+  await act(async () => link.click());
+  await flush();
+}
 
 async function type(el: HTMLInputElement, value: string) {
   await act(async () => {
@@ -149,6 +158,15 @@ async function leaveForGoogle() {
   } finally {
     Object.defineProperty(window, 'location', { configurable: true, value: original });
   }
+}
+
+/** All a tab hears when another one ends the session: a storage event. */
+async function sessionEndsInAnotherTab() {
+  localStorage.removeItem(TOKEN_KEY);
+  await act(async () => {
+    window.dispatchEvent(new StorageEvent('storage', { key: TOKEN_KEY, newValue: null }));
+  });
+  await flush();
 }
 
 beforeEach(() => {
@@ -328,9 +346,70 @@ describe('a share made while signed out', () => {
   });
 });
 
+// `/` is the only place the wizard and a waiting share are picked up, so a
+// marketing page must not count as a page to go back to.
+describe('signing in from a marketing page', () => {
+  it.each(['/landing', '/pricing'])('%s leaves the decision to the gate after a password', async (page) => {
+    await load(page);
+    await followLink('Sign in');
+    expect(where()).toBe('/login');
+    await signInWithPassword();
+    expect(where()).toBe('/submit');
+  });
+
+  it('leaves it to the gate after OAuth, and nothing waits in the tab for the trip', async () => {
+    await load('/landing');
+    await followLink('Sign in');
+    await leaveForGoogle();
+    expect(sessionStorage.length).toBe(0);
+    await load('/login/oauth/google/callback?code=abc&state=xyz');
+    expect(where()).toBe('/submit');
+  });
+
+  it('still sends a new account to the wizard', async () => {
+    http.get.mockImplementation(async (url) => {
+      if (url === '/auth/oauth/providers') return { data: { providers: [] } };
+      if (url === '/auth/me/onboarding') return { data: { should_onboard: true } };
+      throw new Error(`unexpected GET ${url}`);
+    });
+    await load('/landing');
+    await followLink('Sign in');
+    await signInWithPassword();
+    expect(where()).toBe('/welcome');
+  });
+
+  it('picks up a share made while signed out, after a password', async () => {
+    pending.share = true;
+    await load('/landing');
+    await followLink('Sign in');
+    await signInWithPassword();
+    expect(where()).toBe('/echo/incoming');
+  });
+
+  it('picks up a share made while signed out, after OAuth', async () => {
+    pending.share = true;
+    await load('/pricing');
+    await followLink('Sign in');
+    await leaveForGoogle();
+    await load('/login/oauth/google/callback?code=abc&state=xyz');
+    expect(where()).toBe('/echo/incoming');
+  });
+
+  it('opens the app through the gate for a reader already signed in', async () => {
+    localStorage.setItem(TOKEN_KEY, 'jwt.old');
+    http.get.mockImplementation(async (url) => {
+      if (url === '/auth/me/onboarding') return { data: { should_onboard: true } };
+      throw new Error(`unexpected GET ${url}`);
+    });
+    await load('/landing');
+    await followLink('Open app →');
+    expect(where()).toBe('/welcome');
+  });
+});
+
 // The race this guards against only shows in a real browser, where the guard's
 // redirect lands after the layout's: `tests/shell.spec.ts` is the check that
-// fails without `signedOutHere`. This one holds the flow together.
+// fails without `signedOut`. This one holds the flow together.
 describe('signing out', () => {
   it('leaves no page behind for the next sign-in, perhaps someone else’s', async () => {
     localStorage.setItem(TOKEN_KEY, 'jwt.old');
@@ -342,6 +421,37 @@ describe('signing out', () => {
     expect(router.state.location.state).toBeNull();
     await signInWithPassword();
     expect(where()).toBe('/submit');
+  });
+
+  it('in another tab leaves no page behind here either', async () => {
+    localStorage.setItem(TOKEN_KEY, 'jwt.old');
+    await load('/jobs/run-1');
+    expect(host.textContent).toContain('the run');
+    await sessionEndsInAnotherTab();
+    expect(where()).toBe('/login');
+    expect(router.state.location.state).toBeNull();
+    await signInWithPassword();
+    expect(where()).toBe('/submit');
+  });
+
+  it('forgets what the account loaded, in this tab', async () => {
+    localStorage.setItem(TOKEN_KEY, 'jwt.old');
+    await load('/jobs/run-1', (qc) => qc.setQueryData(['job', 'run-1'], { title: 'their run' }));
+    await act(async () => button('Sign out').click());
+    await flush();
+    expect(client.getQueryData(['job', 'run-1'])).toBeUndefined();
+  });
+
+  it('forgets what the account loaded, from another tab', async () => {
+    localStorage.setItem(TOKEN_KEY, 'jwt.old');
+    await load('/jobs/run-1', (qc) => qc.setQueryData(['job', 'run-1'], { title: 'their run' }));
+    await sessionEndsInAnotherTab();
+    expect(client.getQueryData(['job', 'run-1'])).toBeUndefined();
+  });
+
+  it('leaves alone the queries of a page opened signed out', async () => {
+    await load('/login', (qc) => qc.setQueryData(['public'], 'kept'));
+    expect(client.getQueryData(['public'])).toBe('kept');
   });
 });
 

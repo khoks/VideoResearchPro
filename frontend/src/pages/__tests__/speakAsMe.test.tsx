@@ -3,14 +3,18 @@
  * the server's words, and offers no composer; once open it drafts, shows the
  * draft with its disclosure, voice score, citations and notes, handles the
  * private-person confirmation, and says when the daily cap is reached. The
- * Echo page mounts it for tiers with the feature.
+ * Echo page mounts it for tiers with the feature. T-3.4.1.11: a first draft in
+ * a register waits for a go-ahead, and a reply with nothing behind it is refused
+ * on screen, in the server's words.
  */
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
+import { AxiosError, AxiosHeaders } from 'axios';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DraftStatus, EchoDraft } from '../../services/echoApi';
 import { useJobStore } from '../../stores/jobStore';
+import { globalErrorToastMessage } from '../../utils/apiError';
 import { citationLabel, draftErrorOf, learnedLine, withDisclosure } from '../../utils/echoDrafts';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -91,6 +95,18 @@ async function mount() {
 
 const buttons = (label: string) =>
   Array.from(document.querySelectorAll('button')).filter((b) => b.textContent?.trim() === label) as HTMLButtonElement[];
+
+function refusedWith(code: string, message: string, extra: object = {}, status = 409) {
+  const headers = new AxiosHeaders();
+  return new AxiosError(`Request failed with status code ${status}`, 'ERR_BAD_REQUEST', undefined, undefined, {
+    status, statusText: 'Conflict', headers, config: { headers }, data: { detail: { code, message, ...extra } },
+  });
+}
+
+function choose(el: HTMLSelectElement, value: string) {
+  Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')!.set!.call(el, value);
+  el.dispatchEvent(new Event('change', { bubbles: true }));
+}
 
 function type(el: HTMLTextAreaElement | HTMLInputElement, value: string) {
   const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
@@ -189,6 +205,172 @@ describe('SpeakAsMePanel', () => {
     expect(result.querySelector('a[href="https://youtube.com/watch?v=x&t=42s"]')?.textContent).toBe('Tariff study — Econ');
     expect(result.textContent).toContain('what Echo knows about you');
     expect(result.querySelector('[data-notes]')?.textContent).toContain('Slightly more formal than you.');
+  });
+
+  describe('a first draft in a register (T-3.4.1.11)', () => {
+    const WORDS = 'You have not approved a casual draft yet, so Echo asks before it speaks in that register.';
+    const askCasual = async () => {
+      api.draftStatus.mockResolvedValue(ON);
+      api.createDraft.mockRejectedValueOnce(refusedWith('register_needs_approval', WORDS, { register: 'casual' }));
+      await mount();
+      act(() => type(host.querySelector('textarea')!, 'Who pays?'));
+      act(() => choose(host.querySelector('select')!, 'casual'));
+      await act(async () => buttons('Draft a reply')[0].click());
+      await flush();
+    };
+
+    it('says so before the first one, in the server’s words, and stays on screen', async () => {
+      await askCasual();
+      expect(host.querySelector('[data-register-stop]')?.textContent).toContain(WORDS);
+      expect(useJobStore.getState().toasts).toHaveLength(0);
+      expect(host.querySelector('[data-result]')).toBeNull();
+      expect(host.textContent).toContain('Echo asks before its first draft in a register. Saving your version approves it.');
+    });
+
+    it('sends the go-ahead for that register, and only when the user gives it', async () => {
+      await askCasual();
+      expect(api.createDraft).toHaveBeenCalledWith({ message: 'Who pays?', register: 'casual' });
+      await act(async () => buttons('Draft in this register')[0].click());
+      await flush();
+      expect(api.createDraft).toHaveBeenLastCalledWith({ message: 'Who pays?', register: 'casual', acknowledge_register: 'casual' });
+      expect(host.querySelector('[data-register-stop]')).toBeNull();
+      expect(host.querySelector('[data-result]')).not.toBeNull();
+    });
+
+    it('keeps the go-ahead through a private name, so the user is not asked twice', async () => {
+      await askCasual();
+      api.createDraft.mockRejectedValueOnce(refusedWith('names_need_confirmation', 'm', { names: ['Priya'] }));
+      await act(async () => buttons('Draft in this register')[0].click());
+      await flush();
+      await act(async () => buttons('Draft anyway')[0].click());
+      await flush();
+      expect(api.createDraft).toHaveBeenLastCalledWith({
+        message: 'Who pays?', register: 'casual', acknowledge_names: ['Priya'], acknowledge_register: 'casual',
+      });
+    });
+
+    it('does not carry a go-ahead to another register or to the next draft', async () => {
+      await askCasual();
+      await act(async () => buttons('Draft in this register')[0].click());
+      await flush();
+      await act(async () => buttons('Draft a reply')[0].click());
+      await flush();
+      expect(api.createDraft).toHaveBeenLastCalledWith({ message: 'Who pays?', register: 'casual' });
+    });
+
+    it('goes away when the register changes or the user cancels', async () => {
+      await askCasual();
+      act(() => choose(host.querySelector('select')!, ''));
+      expect(host.querySelector('[data-register-stop]')).toBeNull();
+      api.createDraft.mockRejectedValueOnce(refusedWith('register_needs_approval', WORDS, { register: 'casual' }));
+      act(() => choose(host.querySelector('select')!, 'casual'));
+      await act(async () => buttons('Draft a reply')[0].click());
+      await flush();
+      act(() => buttons('Cancel')[0].click());
+      expect(host.querySelector('[data-register-stop]')).toBeNull();
+    });
+  });
+
+  it('keeps the stops it shows on screen out of the app’s global error toast, and only those', () => {
+    for (const code of ['names_need_confirmation', 'register_needs_approval', 'ungrounded']) {
+      expect(globalErrorToastMessage(refusedWith(code, 'words'))).toBeNull();
+    }
+    expect(globalErrorToastMessage(refusedWith('install_off', 'Turned off.'))).toBe('Turned off.');
+    expect(globalErrorToastMessage(refusedWith('daily_cap', 'More tomorrow.', {}, 429))).toBe('More tomorrow.');
+    expect(globalErrorToastMessage(refusedWith('ungrounded', 'Not a stop.', {}, 500))).toBe('Not a stop.');
+  });
+
+  it('shows a refused reply in the server’s words, on screen, with nothing to click past it', async () => {
+    const WORDS = 'Echo did not write this reply: nothing in your library backs it. To go ahead, add a source on this.';
+    api.draftStatus.mockResolvedValue(ON);
+    api.createDraft.mockRejectedValueOnce(refusedWith('ungrounded', WORDS));
+    await mount();
+    act(() => type(host.querySelector('textarea')!, 'Who pays?'));
+    await act(async () => buttons('Draft a reply')[0].click());
+    await flush();
+    const box = host.querySelector('[data-refused]')!;
+    expect(box.textContent).toBe(WORDS);
+    expect(box.querySelector('button')).toBeNull();
+    expect(useJobStore.getState().toasts).toHaveLength(0);
+    expect(host.querySelector('[data-result]')).toBeNull();
+
+    await act(async () => buttons('Draft a reply')[0].click());
+    await flush();
+    expect(host.querySelector('[data-refused]')).toBeNull();
+    expect(host.querySelector('[data-result]')).not.toBeNull();
+  });
+
+  it('closes the names stop when the server refuses the draft it let through', async () => {
+    api.draftStatus.mockResolvedValue(ON);
+    api.createDraft
+      .mockRejectedValueOnce(refusedWith('names_need_confirmation', 'm', { names: ['Priya'] }))
+      .mockRejectedValueOnce(refusedWith('ungrounded', 'Echo did not write this reply.'));
+    await mount();
+    act(() => type(host.querySelector('textarea')!, 'Priya asked about dinner'));
+    await act(async () => buttons('Draft a reply')[0].click());
+    await flush();
+    await act(async () => buttons('Draft anyway')[0].click());
+    await flush();
+    expect(host.querySelector('[data-refused]')).not.toBeNull();
+    expect(host.querySelector('[data-names]')).toBeNull();
+    expect(buttons('Draft anyway')).toHaveLength(0);
+  });
+
+  describe('a go-ahead covers one draft', () => {
+    const stopped = () => refusedWith('register_needs_approval', 'Say yes first.', { register: 'intimate' });
+
+    async function wentAhead(next: Error) {
+      api.draftStatus.mockResolvedValue(ON);
+      api.createDraft.mockRejectedValueOnce(stopped()).mockRejectedValueOnce(next);
+      await mount();
+      act(() => type(host.querySelector('textarea')!, 'Thinking of you'));
+      act(() => choose(host.querySelector('select')!, 'intimate'));
+      await act(async () => buttons('Draft a reply')[0].click());
+      await flush();
+      await act(async () => buttons('Draft in this register')[0].click());
+      await flush();
+      expect(api.createDraft).toHaveBeenLastCalledWith(expect.objectContaining({ acknowledge_register: 'intimate' }));
+    }
+
+    const lastBody = () => api.createDraft.mock.lastCall?.[0];
+
+    it.each([
+      ['a refused reply', () => refusedWith('ungrounded', 'Echo did not write this reply.')],
+      ['the daily cap', () => refusedWith('daily_cap', 'More tomorrow.', {}, 429)],
+      ['a failed request', () => new Error('Network Error')],
+    ])('and does not outlive %s', async (_name, next) => {
+      await wentAhead(next());
+      api.createDraft.mockRejectedValueOnce(stopped());
+      await act(async () => buttons('Draft a reply')[0].click());
+      await flush();
+      expect(lastBody()).not.toHaveProperty('acknowledge_register');
+    });
+
+    it('and does not carry over to a different message', async () => {
+      await wentAhead(refusedWith('names_need_confirmation', 'm', { names: ['Priya'] }));
+      act(() => type(host.querySelector('textarea')!, 'A reply to my colleague'));
+      await act(async () => buttons('Draft a reply')[0].click());
+      await flush();
+      expect(lastBody()).toMatchObject({ message: 'A reply to my colleague' });
+      expect(lastBody()).not.toHaveProperty('acknowledge_register');
+    });
+
+    it('and does not carry over a change of register and back', async () => {
+      await wentAhead(refusedWith('names_need_confirmation', 'm', { names: ['Priya'] }));
+      act(() => choose(host.querySelector('select')!, 'casual'));
+      act(() => choose(host.querySelector('select')!, 'intimate'));
+      await act(async () => buttons('Draft a reply')[0].click());
+      await flush();
+      expect(lastBody()).not.toHaveProperty('acknowledge_register');
+    });
+
+    it('and does not survive Cancel on the names stop', async () => {
+      await wentAhead(refusedWith('names_need_confirmation', 'm', { names: ['Priya'] }));
+      act(() => buttons('Cancel')[0].click());
+      await act(async () => buttons('Draft a reply')[0].click());
+      await flush();
+      expect(lastBody()).not.toHaveProperty('acknowledge_register');
+    });
   });
 
   it('opens an uploaded PDF it drew on as a blob fetched with the header, not the route that 401s (T-8.8.1.5)', async () => {

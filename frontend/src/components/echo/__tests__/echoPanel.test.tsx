@@ -385,6 +385,22 @@ describe('drafting through S-3.4.1', () => {
     await flush();
     expect(panel()!.querySelector('[role="alert"]')?.textContent).toBe('You have used today’s 20 drafts. More tomorrow.');
   });
+
+  it('shows a reply with nothing behind it as the server’s refusal, with no way past it (T-3.4.1.11)', async () => {
+    const WORDS = 'Echo did not write this reply: nothing in your library backs it. To go ahead, add a source on this.';
+    draftStatusMock.mockResolvedValue({ enabled: true, state: 'enabled' });
+    draftMock.mockRejectedValue(
+      Object.assign(new Error('409'), { response: { status: 409, data: { detail: { code: 'ungrounded', message: WORDS } } } }),
+    );
+    useEchoPanelStore.setState({ open: true, mode: 'draft' });
+    mount();
+    await flush();
+    await typeInto(panel()!.querySelector('textarea')!, 'Hello?');
+    click(buttonNamed('Draft a reply'));
+    await flush();
+    expect(panel()!.querySelector('[role="alert"]')?.textContent).toBe(WORDS);
+    expect(Array.from(panel()!.querySelectorAll('button')).some((b) => b.textContent === 'Draft anyway')).toBe(false);
+  });
 });
 
 describe('anticipation cards (S-3.8.2)', () => {

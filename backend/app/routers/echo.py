@@ -46,6 +46,7 @@ from app.models.user import User
 from app.services import (
     audit_service,
     auth_service,
+    echo_fact_tombstones,
     echo_share_token_service,
     echo_import_service,
     echo_intake_service,
@@ -150,6 +151,9 @@ class PersonalContextItem(BaseModel):
     confidence: float
     captured_at: datetime
     expires_at: datetime | None = None
+    # Who a delete of this row would keep out (T-3.2.1.14), by display name; the
+    # row then appears under "Kept deleted". None: nothing brings it back.
+    kept_deleted_by: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -201,6 +205,14 @@ def echo_status(
 # ---------------------------------------------------------------------------
 
 
+def _context_item(db: Session, row: Any) -> PersonalContextItem:
+    item = PersonalContextItem.model_validate(row)
+    connector = echo_fact_tombstones.connector_for_fact(db, row)
+    if connector:
+        item.kept_deleted_by = echo_fact_tombstones.connector_label(connector)
+    return item
+
+
 @router.get("/context", response_model=list[PersonalContextItem])
 def list_context_endpoint(
     kind: str | None = Query(None),
@@ -221,7 +233,7 @@ def list_context_endpoint(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
         )
-    return [PersonalContextItem.model_validate(r) for r in rows]
+    return [_context_item(db, r) for r in rows]
 
 
 @router.post("/context", response_model=PersonalContextItem)
@@ -245,7 +257,7 @@ def record_context_endpoint(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
         )
-    return PersonalContextItem.model_validate(row)
+    return _context_item(db, row)
 
 
 @router.delete("/context/{kind}/{key}", response_model=DeleteResponse)

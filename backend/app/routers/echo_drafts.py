@@ -3,8 +3,10 @@
 Every route needs ``echo_speak_as_me`` (Studio); a tier without it is a 403.
 Beyond the tier, a draft needs the install switch, readiness and the user's
 own passed voice test (D-100), and fits under a daily cap; ``GET
-/echo/draft/status`` says which of those is missing, in words. Drafts are
-never sent.
+/echo/draft/status`` says which of those is missing, in words. A request can
+still be stopped: a register the user has not approved, a private name, or a
+reply with nothing behind it, each a 409 whose words say what would let it go
+ahead. Drafts are never sent.
 
 Contract agreed with the Echo bubble (S-3.8.1), which hosts this endpoint.
 """
@@ -35,6 +37,9 @@ class DraftRequest(BaseModel):
     register_: Literal["intimate", "casual", "professional", "public"] | None = Field(default=None, alias="register")
     language: Literal["en", "hi-Deva", "hi-Latn", "mixed"] | None = None
     acknowledge_names: list[str] = Field(default_factory=list, max_length=20)
+    # The go-ahead for a first draft in `register`. Names the register, so a
+    # go-ahead for one is never read as a go-ahead for another.
+    acknowledge_register: Literal["intimate", "casual", "professional", "public"] | None = None
 
 
 class FeedbackRequest(BaseModel):
@@ -63,11 +68,18 @@ def create_draft(body: DraftRequest, db: Session = Depends(get_db), current_user
             register=body.register_,
             language=body.language,
             acknowledge_names=body.acknowledge_names,
+            acknowledge_register=body.acknowledge_register,
         )
     except drafts.DraftBlocked as e:
         raise _blocked(e.code, e.message, e.status)
     except drafts.DraftCapReached as e:
         raise HTTPException(status_code=429, detail={"code": "daily_cap", "message": e.message})
+    except drafts.RegisterNeedsApproval as e:
+        raise HTTPException(status_code=409, detail={
+            "code": "register_needs_approval", "register": e.register, "message": e.message,
+        })
+    except drafts.DraftRefused as e:
+        raise HTTPException(status_code=409, detail={"code": "ungrounded", "message": e.message})
     except drafts.NamesNeedConfirmation as e:
         raise HTTPException(status_code=409, detail={
             "code": "names_need_confirmation",

@@ -211,7 +211,7 @@ Redis pub/sub → WebSocket Manager → Frontend React Query cache update
 | `backend/scripts/regenerate_report.py` | Re-run a completed job's report phase from cached transcripts (before/after measurement) |
 | `backend/scripts/judge_report_sections.py` | Split a report into sections and judge each in full — replaces the 180,000-char judging cap |
 | `backend/scripts/audit_report_intermediates.py` | Read a job's persisted map/reduce intermediates back: batch statuses, item counts, reduce accounting |
-| `backend/app/agents/echo_agent.py` | "Speak as me" LangGraph agent; the verbatim, citation and private-name guards live here in code (S-3.4.1) |
+| `backend/app/agents/echo_agent.py` | "Speak as me" LangGraph agent; the verbatim, citation, private-name and nothing-behind-it guards live here in code (S-3.4.1, T-3.4.1.11) |
 | `backend/app/services/echo_voice_test_service.py` | The D-100 "which of these did you write?" test, one procedure for the app (`/echo/voice-test`) and `scripts/voice_match_harness.py`: hold-out, prompts, pairs, score, and the rolled-back what-if that keeps the live database unchanged (T-3.4.1.8) |
 | `backend/app/services/echo_draft_edits.py` | What the user changed in a draft: only the words they TYPED are theirs, minus 8-word stretches repeated from the incoming message (the provenance guard for S-3.4.2, D-104) |
 | `backend/app/services/echo_imap_service.py` | The email inbox (T-3.7.4.1): polls a dedicated mailbox from the scheduler tick; a message from an allowed sender becomes one context-only text share, once |

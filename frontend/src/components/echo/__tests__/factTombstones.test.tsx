@@ -1,13 +1,14 @@
 /**
  * T-3.2.4.4: deleted derived facts stay deleted. The Echo page lists them
  * under "Kept deleted" and "Allow again" clears one through the API; the
- * delete dialog says a derived fact will be kept deleted.
+ * delete dialog says which rows will be kept deleted, from the server's answer
+ * (T-3.2.1.14), so a row the user wrote that a connector wants is included.
  */
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { FactTombstone } from '../../../services/echoApi';
+import type { FactTombstone, PersonalContextItem } from '../../../services/echoApi';
 import { useJobStore } from '../../../stores/jobStore';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -15,15 +16,17 @@ import { useJobStore } from '../../../stores/jobStore';
 const api = {
   listFactTombstones: vi.fn<() => Promise<{ items: FactTombstone[] }>>(),
   clearFactTombstone: vi.fn(async (_id: string) => ({ cleared: true })),
+  listContext: vi.fn<(p: unknown) => Promise<PersonalContextItem[]>>(),
 };
 vi.mock('../../../services/echoApi', () => ({
   echoApi: {
     listFactTombstones: () => api.listFactTombstones(),
     clearFactTombstone: (id: string) => api.clearFactTombstone(id),
+    listContext: (p: unknown) => api.listContext(p),
   },
 }));
 
-import { FactTombstones, clearedToast, isDerivedSource, keptDeletedNote } from '../FactTombstones';
+import { FactTombstones, RevokeSummary, clearedToast, isDerivedSource, keptDeletedNote, revokedKeptNote } from '../FactTombstones';
 
 const PYTHON: FactTombstone = {
   id: 'tomb-1',
@@ -105,13 +108,96 @@ describe('FactTombstones', () => {
 });
 
 describe('the delete dialog note', () => {
-  it('names connector and import facts as kept deleted, not facts the user typed', () => {
+  it('says a derived fact will be kept deleted, and names who worked it out', () => {
     expect(isDerivedSource('connector:github')).toBe(true);
     expect(isDerivedSource('import:abc')).toBe(true);
     expect(isDerivedSource('manual')).toBe(false);
-    expect(keptDeletedNote('connector:github')).toContain('keep it deleted');
-    expect(keptDeletedNote('manual')).toBeNull();
+    expect(keptDeletedNote({ source: 'connector:github', kept_deleted_by: 'GitHub' })).toBe(
+      'Echo worked this out from GitHub, so it will keep it deleted: later syncs and re-imports skip it. You can allow it again under "Kept deleted".',
+    );
+  });
+
+  it('says so for a row the user wrote that a connector wants: source alone reads manual', () => {
+    expect(keptDeletedNote({ source: 'manual', kept_deleted_by: 'GitHub' })).toBe(
+      'You wrote this, but GitHub works out the same entry, so Echo will keep it deleted: later syncs and re-imports skip it. You can allow it again under "Kept deleted".',
+    );
+  });
+
+  it('says nothing for a row nothing wants, whatever its source claims', () => {
+    expect(keptDeletedNote({ source: 'manual', kept_deleted_by: null })).toBeNull();
+    expect(keptDeletedNote({ source: 'manual' })).toBeNull();
+    expect(keptDeletedNote({ source: 'import:gone', kept_deleted_by: null })).toBeNull();
     expect(keptDeletedNote(undefined)).toBeNull();
+    expect(keptDeletedNote(null)).toBeNull();
+  });
+});
+
+describe('the revoke dialog note', () => {
+  const row = (source: string, kept_deleted_by: string | null): PersonalContextItem => ({
+    id: source + String(kept_deleted_by), kind: 'skill', key: 'python', value: 'x', source, confidence: 1,
+    captured_at: '2026-11-01T09:00:00Z', expires_at: null, kept_deleted_by,
+  });
+
+  it('keeps what it said about a connector', () => {
+    expect(revokedKeptNote('connector:github', [])).toContain('skip these facts from now on');
+  });
+
+  it('counts the rows of this source that will stay deleted, and only those', () => {
+    const rows = [row('manual', 'GitHub'), row('manual', null), row('connector:github', 'GitHub')];
+    expect(revokedKeptNote('manual', rows)).toBe(
+      'One of them is also worked out by a connector or an import, so Echo will keep it deleted (see "Kept deleted").',
+    );
+    expect(revokedKeptNote('manual', [...rows, row('manual', 'Apple Health')])).toBe(
+      '2 of them are also worked out by a connector or an import, so Echo will keep those deleted (see "Kept deleted").',
+    );
+  });
+
+  it('says nothing when nothing wants any of them', () => {
+    expect(revokedKeptNote('manual', [row('manual', null)])).toBeNull();
+    expect(revokedKeptNote(undefined, [])).toBeNull();
+  });
+});
+
+describe('RevokeSummary', () => {
+  const manual = (key: string, kept: string | null): PersonalContextItem => ({
+    id: key, kind: 'skill', key, value: 'x', source: 'manual', confidence: 1,
+    captured_at: '2026-11-01T09:00:00Z', expires_at: null, kept_deleted_by: kept,
+  });
+
+  async function summary(listed: PersonalContextItem[]) {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    act(() =>
+      root.render(
+        <QueryClientProvider client={qc}>
+          <RevokeSummary source="manual" listed={listed} />
+        </QueryClientProvider>,
+      ),
+    );
+    await flush();
+    return host.textContent ?? '';
+  }
+
+  it('reads the rows the revoke takes, expired ones in, not the rows the page lists', async () => {
+    api.listContext.mockReset().mockResolvedValue([manual('rust', null), manual('python', 'GitHub')]);
+    const text = await summary([manual('rust', null)]);
+    expect(api.listContext).toHaveBeenCalledWith({ source: 'manual', include_expired: true });
+    expect(text).toContain('(2, expired ones included)');
+    expect(text).toContain('One of them is also worked out by a connector or an import');
+  });
+
+  it('counts plainly when nothing is hidden', async () => {
+    api.listContext.mockReset().mockResolvedValue([manual('rust', null)]);
+    const text = await summary([manual('rust', null)]);
+    expect(text).toContain('(1) will be deleted');
+    expect(text).not.toContain('expired ones included');
+    expect(text).not.toContain('keep');
+  });
+
+  it('falls back to the page rows if that read fails', async () => {
+    api.listContext.mockReset().mockRejectedValue(new Error('down'));
+    const text = await summary([manual('python', 'GitHub')]);
+    expect(text).toContain('(1) will be deleted');
+    expect(text).toContain('One of them is also worked out by a connector or an import');
   });
 });
 
@@ -121,6 +207,8 @@ describe('wiring', () => {
       import.meta.glob('../../../pages/EchoPage.tsx', { query: '?raw', import: 'default', eager: true }) as Record<string, string>,
     )[0];
     expect(page).toMatch(/<FactTombstones enabled=\{allowed\} \/>/);
-    expect(page).toContain('keptDeletedNote(deleting?.source)');
+    expect(page).toContain('keptDeletedNote(deleting)');
+    expect(page).toContain('<RevokeSummary source={revoking.source} listed={allRows} />');
+    expect(page).toContain('useRevokeScope(revoking?.source ?? null)');
   });
 });

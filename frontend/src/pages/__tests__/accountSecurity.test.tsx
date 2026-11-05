@@ -267,6 +267,26 @@ describe('two-step verification', () => {
     expect(host.querySelector('[data-secret]')).not.toBeNull();
   });
 
+  it('shows two-step as on when another tab confirmed it first', async () => {
+    http.post.mockImplementation(async (url) => {
+      if (url === '/auth/mfa/enroll') return { data: { secret: SECRET, provisioning_uri: URI } };
+      mfaEnabled = true;
+      throw Object.assign(new Error('409'), {
+        isAxiosError: true,
+        response: { status: 409, data: { detail: 'MFA is already enabled. Disable it first before re-enrolling.' } },
+      });
+    });
+    await mount();
+    await click('Set up two-step verification');
+    const form = host.querySelector('form[aria-label="Set up two-step verification"]');
+    await type(form!.querySelector('input')!, '123456');
+    await submit(form);
+
+    expect(host.querySelector('[data-secret]')).toBeNull();
+    expect(host.querySelector('[role="alert"]')).toBeNull();
+    expect(host.textContent).toContain('Turn off two-step verification');
+  });
+
   /** The status query's background refetch fails, e.g. on window focus. */
   async function failStatusRefetch() {
     const ok = http.get.getMockImplementation()!;
@@ -343,6 +363,20 @@ describe('two-step verification', () => {
     await submit(form);
     expect(http.delete).toHaveBeenCalledWith('/auth/mfa', { data: { code: 'AAAA111111' } });
     expect(button('Set up two-step verification')).toBeTruthy();
+  });
+
+  it('says why when too many codes were tried, and stays on the form (T-5.4.16)', async () => {
+    mfaEnabled = true;
+    await mount();
+    const detail = 'Too many codes tried. Two-step verification stays on: try again in up to 15 minutes.';
+    vi.mocked(http.delete).mockImplementationOnce(async () => {
+      throw Object.assign(new Error('429'), { isAxiosError: true, response: { status: 429, data: { detail } } });
+    });
+    await click('Turn off two-step verification');
+    const form = host.querySelector('form[aria-label="Turn off two-step verification"]');
+    await type(form!.querySelector('input')!, 'AAAA111111');
+    await submit(form);
+    expect(form!.querySelector('[role="alert"]')?.textContent).toBe(detail);
   });
 });
 

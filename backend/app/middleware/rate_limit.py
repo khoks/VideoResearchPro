@@ -31,6 +31,8 @@ Override knobs in ``settings``:
 - ``RATE_LIMIT_RESET_PER_MIN`` — sensitive bucket for
   /auth/password-reset/{request,confirm}.
 - ``RATE_LIMIT_REGISTER_PER_MIN`` — sensitive bucket for /auth/register.
+- ``TRUSTED_PROXY_IPS`` — whose ``X-Forwarded-For`` picks the per-IP
+  bucket (``app/utils/client_ip.py``). Unset, the socket peer does.
 """
 from __future__ import annotations
 
@@ -45,6 +47,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.config import settings
 from app.services.rate_limit_service import RateLimit, check_and_consume
+from app.utils.client_ip import client_ip
 
 logger = logging.getLogger(__name__)
 
@@ -66,12 +69,9 @@ _SENSITIVE_PATHS: list[tuple[str, str, str]] = [
 
 
 def _client_ip(request: Request) -> str:
-    fwd = request.headers.get("x-forwarded-for")
-    if fwd:
-        return fwd.split(",")[0].strip()
-    if request.client is not None:
-        return request.client.host
-    return "unknown"
+    """The per-IP bucket's key. ``X-Forwarded-For`` counts only from a proxy
+    named in ``TRUSTED_PROXY_IPS`` (T-5.5.8, ``app.utils.client_ip``)."""
+    return client_ip(request) or "unknown"
 
 
 def _user_id_from_jwt(request: Request) -> str | None:

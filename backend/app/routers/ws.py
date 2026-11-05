@@ -2,6 +2,7 @@ import json
 import logging
 
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect, status
+from starlette.websockets import WebSocketState
 
 from app.services import auth_service
 from app.websocket.manager import manager
@@ -61,8 +62,9 @@ def _owns_job(tenant_id: str, job_id: str, session_factory=None) -> bool:
             db.close()
 
 
-def _authenticate(token: str, session_factory=None) -> str | None:
-    """The tenant id ``token`` signs in as, or None.
+def _authenticate(token: str, session_factory=None) -> tuple[str, str | None] | None:
+    """``(tenant_id, jti)`` of the session ``token`` signs in as, or None.
+    The ``jti`` is None for a token issued before sessions existed.
 
     The same check every HTTP bearer route makes
     (``auth_service.authenticate_access_token``, T-5.4.15): an access token,
@@ -83,7 +85,11 @@ def _authenticate(token: str, session_factory=None) -> str | None:
     try:
         db = session_factory()
         resolved = auth_service.authenticate_access_token(db, token)
-        return resolved[0].id if resolved is not None else None
+        if resolved is None:
+            return None
+        user, payload = resolved
+        jti = payload.get("jti")
+        return user.id, jti if isinstance(jti, str) else None
     except Exception:
         logger.exception("ws: token check failed; refusing the socket")
         return None
@@ -99,9 +105,10 @@ async def job_progress_ws(websocket: WebSocket, token: str | None = Query(defaul
 
     Auth:
         Requires a valid JWT passed as ?token=... query parameter, from a
-        session that is not revoked (checked once, at the handshake: a socket
-        already open stays open if its session is revoked later).
-        Connection is closed with code 1008 (policy violation) if missing/invalid.
+        session that is not revoked. Connection is closed with code 1008
+        (policy violation) if missing/invalid, and with 1008 again when the
+        session is revoked later (T-5.4.19): at once over Redis pub/sub, or
+        within a minute if that message is lost (websocket/manager.py).
         This is the one route that still reads a token from the URL (T-8.8.1.5,
         D-085 addendum): the browser WebSocket API cannot set an Authorization
         header on the handshake. Every HTTP route is header-only.
@@ -126,12 +133,13 @@ async def job_progress_ws(websocket: WebSocket, token: str | None = Query(defaul
     # An access token of a live session (T-5.4.15), checked as the HTTP
     # routes check theirs. The second-factor ticket is signed with the same
     # key and would otherwise open the socket before the code is sent.
-    tenant_id = _authenticate(token)
-    if tenant_id is None:
+    session = _authenticate(token)
+    if session is None:
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Invalid token")
         return
+    tenant_id, jti = session
 
-    await manager.connect(websocket)
+    await manager.connect(websocket, tenant_id=tenant_id, jti=jti)
     try:
         while True:
             raw = await websocket.receive_text()
@@ -172,4 +180,11 @@ async def job_progress_ws(websocket: WebSocket, token: str | None = Query(defaul
             except json.JSONDecodeError:
                 logger.debug("Received non-JSON message on /ws/jobs")
     except WebSocketDisconnect:
+        pass
+    except RuntimeError:
+        # T-5.4.19: the manager closes a revoked session's socket from outside
+        # this loop, so the next send or receive here can find it closed.
+        if websocket.application_state != WebSocketState.DISCONNECTED:
+            raise
+    finally:
         await manager.disconnect(websocket)

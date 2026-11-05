@@ -287,7 +287,7 @@ audit_log (
 
 Layered:
 
-1. **Per-IP** — at the edge / reverse proxy (CDN / load balancer when SaaS launches). Until then, the app middleware does it: 100 req/min unauth.
+1. **Per-IP** — at the edge / reverse proxy (CDN / load balancer when SaaS launches). Until then, the app middleware does it: 100 req/min unauth. Behind any proxy the app sees one address unless `TRUSTED_PROXY_IPS` names it (T-5.5.8; README, "Running behind a reverse proxy").
 2. **Per-tenant** — at the application. Tier-aware. ✅ Shipped: Free 60 req/min, Pro 600 req/min, Studio 6000 req/min. Configurable via `RATE_LIMIT_PER_MIN_{FREE,PRO,STUDIO}`.
 3. **Sensitive endpoints** — ✅ Shipped: `/auth/login` 10 req/min/IP, `/auth/password-reset/*` 5 req/min/IP, `/auth/register` 5 req/min/IP. Applied BEFORE auth so the protections aren't tied to credential validity.
 3. **Per-resource** — for expensive endpoints. Library Q&A: 20/min/tenant. Knowledge extraction: 5/min/tenant. Output generation: 1/min/tenant.

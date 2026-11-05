@@ -20,7 +20,7 @@ Create a new user. **Public.** Returns 201 + `UserResponse`.
 { "id": "...", "email": "...", "created_at": "..." }
 ```
 
-409 when the address already has an account. 403 when the address is listed in `ADMIN_EMAILS` ([D-111](decisions.md#d-111--operator-only-tier-switching-and-an-honest-pricing-page-2026-10-25)): a listed address makes its holder an operator and this route verifies no email, so the detail tells the operator to register the account before listing it. Google or GitHub sign-in with that address, verified by the provider, still creates it (`GET /auth/oauth/{provider}/callback`), and an unverified one is refused there with 403, as every unverified first sign-in is since T-5.4.10.
+409 when the address already has an account. 403 when the address is listed in `ADMIN_EMAILS` ([D-111](decisions.md#d-111--operator-only-tier-switching-and-an-honest-pricing-page-2026-10-25)): a listed address makes its holder an operator and this route verifies no email, so the detail tells the operator to register the account before listing it. Google or GitHub sign-in with that address, verified by the provider, still creates it (`GET /auth/oauth/{provider}/callback`), and an unverified one is refused there with 403, as every unverified first sign-in is since T-5.4.10. 400 when the password has a character that cannot be stored: a NUL character (a lone surrogate is a 422). Neither response quotes the password (T-5.4.18).
 
 ### `POST /api/v1/auth/login`
 Issue a JWT. **Public.** Returns 200 + `TokenResponse`.
@@ -34,12 +34,12 @@ Issue a JWT. **Public.** Returns 200 + `TokenResponse`.
 { "requires_mfa": true, "mfa_token": "...", "expires_in": 300 }
 ```
 
-A wrong email, a wrong password and a locked account all get the same 401 `Invalid email or password`. `LOCKOUT_FAILURE_THRESHOLD` failures lock the account for `LOCKOUT_DURATION_MIN` minutes. With two-step verification on, the password step issues no access token: `mfa_token` is good only at `POST /auth/login/mfa` ([D-121](decisions.md#d-121--reset-codes-never-appear-in-a-response-two-step-verification-guards-every-sign-in-and-tokens-say-what-they-are-2026-11-04)). The same applies to a Google or GitHub sign-in.
+A wrong email, a wrong password and a locked account all get the same 401 `Invalid email or password`, and so does a password with a NUL character, which counts as a wrong one (a lone surrogate is a 422, which counts as nothing). `LOCKOUT_FAILURE_THRESHOLD` failures lock the account for `LOCKOUT_DURATION_MIN` minutes. With two-step verification on, the password step issues no access token: `mfa_token` is good only at `POST /auth/login/mfa` ([D-121](decisions.md#d-121--reset-codes-never-appear-in-a-response-two-step-verification-guards-every-sign-in-and-tokens-say-what-they-are-2026-11-04)). The same applies to a Google or GitHub sign-in.
 
 ### `POST /api/v1/auth/login/mfa`
 The second sign-in step. **Public.** Body `{ "mfa_token": "...", "code": "123456" }`, an authenticator code or a recovery code. Returns `TokenResponse`.
 
-Every code checked counts against the ticket, keyed on its `jti` in `mfa_step_tickets`, never on the caller's address (T-5.4.13). The fifth miss kills the ticket, even for the right code: 401 `Too many codes tried for this sign-in. Start over and sign in again.` A ticket lasts 5 minutes and buys one session; a used or expired one gets 401 `Invalid or expired MFA session`, and a wrong code 401 `Invalid TOTP or recovery code`. 503 when `BYOK_ENCRYPTION_KEY` is malformed, because the authenticator secret cannot be read; a recovery code still works.
+Every code checked counts against the ticket, keyed on its `jti` in `mfa_step_tickets`, never on the caller's address (T-5.4.13). The fifth miss kills the ticket, even for the right code: 401 `Too many codes tried for this sign-in. Start over and sign in again.` A ticket lasts 5 minutes and buys one session; a used or expired one gets 401 `Invalid or expired MFA session`, and a wrong code 401 `Invalid TOTP or recovery code`. 503 when `BYOK_ENCRYPTION_KEY` is malformed, or is well formed but cannot read the authenticator secret, because a code cannot then be checked; a recovery code still works.
 
 ### `POST /api/v1/auth/logout`
 Revokes this request's session on the server: `{ "revoked": true }`. `false` for a token that predates sessions, which has nothing to revoke.
@@ -48,7 +48,7 @@ Revokes this request's session on the server: `{ "revoked": true }`. `false` for
 **Public.** Body `{ "email": "..." }`. Always 200 `{ "message": "If that email is registered, a reset code has been sent." }`, so the response never says which addresses have accounts. The code goes by email, or to the server log when `SMTP_HOST` is unset. It is never in a response ([D-121](decisions.md#d-121--reset-codes-never-appear-in-a-response-two-step-verification-guards-every-sign-in-and-tokens-say-what-they-are-2026-11-04)): until 2026-11-03 it came back as `debug_secret` when SMTP was unset, which let anyone who knew an address reset that account.
 
 ### `POST /api/v1/auth/password-reset/confirm`
-**Public.** Body `{ "token": "...", "new_password": "..." }` (6 to 128 characters). The code is single-use and lasts `PASSWORD_RESET_TOKEN_TTL_MIN` minutes. Sets the password and revokes every session of the account in the same commit (T-5.4.12), so whoever was signed in has to sign in again. 400 `Invalid or expired token`.
+**Public.** Body `{ "token": "...", "new_password": "..." }` (6 to 128 characters). The code is single-use and lasts `PASSWORD_RESET_TOKEN_TTL_MIN` minutes. Sets the password and revokes every session of the account in the same commit (T-5.4.12), so whoever was signed in has to sign in again, and any socket they have open closes (T-5.4.19). 400 `Invalid or expired token`. 400 for a new password with a character that cannot be stored, checked first, so the code is not spent (a lone surrogate is a 422).
 
 ### `POST /api/v1/auth/password/change`
 A signed-in user sets a new password by giving the current one (T-5.4.14). Body `{ "current_password": "...", "new_password": "..." }`. Returns `{ "message": "...", "sessions_revoked": 2 }`: every other session is signed out, this one stays.
@@ -74,7 +74,7 @@ Revokes every active session: `{ "revoked_count": 3 }`. `keep_current=true` keep
 The caller's events, newest first: `[{ id, event, ip_address, user_agent, metadata_json, created_at }]`. `limit` is 100 by default, at most 500. `scope=account` keeps account and security events (`audit_service.ACCOUNT_EVENTS`), which the account security page shows; the default `all` also returns product analytics such as suggestion impressions.
 
 ### Two-step verification (T-5.4.6)
-The authenticator secret is stored encrypted with the install's shared key ([D-043](decisions.md#d-043--single-shared-fernet-key-for-all-encrypted-at-rest-credentials-2026-05-05)). A route that needs it answers 503 when `BYOK_ENCRYPTION_KEY` is malformed. The body of a 503 names the cause, never the key (T-5.6.9).
+The authenticator secret is stored encrypted with the install's shared key ([D-043](decisions.md#d-043--single-shared-fernet-key-for-all-encrypted-at-rest-credentials-2026-05-05)). A route that needs it answers 503 when `BYOK_ENCRYPTION_KEY` is malformed (T-5.6.9), and when a well-formed key cannot read the stored secret, because the key was changed since it was saved or the row is corrupt (T-5.6.11). Neither is a wrong code: the user cannot fix them, so the body of a 503 names the cause, never the key. Restoring the earlier key is the fix; a recovery code works in the meantime.
 
 #### `GET /api/v1/auth/mfa/status`
 `{ "enabled": false }`.
@@ -83,10 +83,10 @@ The authenticator secret is stored encrypted with the install's shared key ([D-0
 Starts enrollment: `{ "secret": "...", "provisioning_uri": "otpauth://..." }`. 409 when it is already on.
 
 #### `POST /api/v1/auth/mfa/verify-enrollment`
-Body `{ "code": "123456" }`, the first authenticator code. Turns it on and returns `{ "enabled": true, "recovery_codes": ["..."] }`. The recovery codes are shown this once and stored hashed. 400 when enrollment was not started or the code is wrong.
+Body `{ "code": "123456" }`, the first authenticator code. Turns it on and returns `{ "enabled": true, "recovery_codes": ["..."] }`. The recovery codes are shown this once and stored hashed. 400 when enrollment was not started or the code is wrong. 409 once it is on, before any code is checked: this route only ever tests a secret still being set up, so it is no way around the cap below, and it cannot replace the recovery codes.
 
 #### `DELETE /api/v1/auth/mfa`
-Body `{ "code": "..." }`, an authenticator or recovery code, so a stolen session token cannot turn it off. `{ "disabled": true }`, also when it was already off. 400 for a wrong code.
+Body `{ "code": "..." }`, an authenticator or recovery code, so a stolen session token cannot turn it off. `{ "disabled": true }`, also when it was already off. 400 for a wrong code. Every code checked counts on the user, in `mfa_step_tickets`, for 15 minutes from the first (T-5.4.16). The fifth miss answers 429, and so does everything after it until the window ends, without checking the code, even the right one. It is a 429, never a 401, so the session stays signed in, and a miss here counts toward nothing at sign-in. A right code clears the count. A wrong code is recorded as `mfa_disable_failed`, up to the cap. While the key cannot read the secret, only recovery codes can be checked: a code that cannot be one answers 503 and costs no attempt, so retrying it leaves the recovery code usable, and a code shaped like one that misses counts as usual and is recorded, answering 503 until the fifth, which is the 429.
 
 ### Your own provider keys (E-5.6)
 Every `/auth/credentials` route needs the `byok_llm_keys` feature (Studio); other tiers get 403. A key is encrypted at rest and never returned ([D-118](decisions.md#d-118--a-provider-key-is-stored-only-for-a-provider-a-call-reads-it-for-the-settings-report-the-encryption-keys-state-never-the-key-2026-11-04)). `GET /settings/llm` reports whether saved keys will last.
@@ -482,7 +482,7 @@ The native reader's payload (S-8.8.1). Splits the stored report back into its pa
 The report's Markdown source (S-6.1.2): the stored HTML converted deterministically (`report_service.report_markdown`), cached beside it at `<report_path>.md`. `text/markdown; charset=utf-8` with `Content-Disposition: inline; filename="report-<job_id>.md"`. Citation links keep their `&t=` timestamps; the statistics grid and per-channel breakdown are Markdown tables. 404 `Job not found` (missing or another tenant's), `Report not generated yet`, `Report file not found`. **Header-bearer auth only** — a `?token=` does not authenticate it (the S-8.8.1 posture for new report routes); browsers download it through a fetch and a blob. The reading room's **Download Markdown** saves it as `<title-slug>.md`. Backend: `routers/reports.py`.
 
 ### `POST /api/v1/jobs/{job_id}/qa/clarify`
-Pre-answer clarification step. Asks the LLM to produce an interpretation and three follow-up clarifying questions. Used by the frontend before running the full Q&A.
+Pre-answer clarification step. Asks the LLM to produce an interpretation and three follow-up clarifying questions. Used by the frontend before running the full Q&A. Runs inside `byok_context` like the ask route (T-5.6.10): a Studio user's own key and any user's model pin apply, a stored key that cannot be read falls back to the install's, and a key the provider refuses fails the call.
 
 ```json
 // request
@@ -533,7 +533,7 @@ Per-job Q&A history. Query params: `limit` (default 50), `offset` (default 0). O
 All `/library` endpoints require auth.
 
 ### `POST /api/v1/library/qa/clarify`
-Pre-answer clarification step for library-scoped questions. Same shape as the per-job clarify endpoint. The shelf panel uses it too (S-8.13.2): only the question reaches the model, so there is nothing of the shelf to scope, and the `POST /shelves/{shelf_id}/qa` that follows checks the shelf. Runs on the asker's BYOK key and model pin, and is metered as `library_qa`.
+Pre-answer clarification step for library-scoped questions. Same shape and same key handling as the per-job clarify endpoint: it runs on the asker's BYOK key and model pin, and is metered as `library_qa`. The shelf panel uses it too (S-8.13.2): only the question reaches the model, so there is nothing of the shelf to scope, and the `POST /shelves/{shelf_id}/qa` that follows checks the shelf.
 
 ### `POST /api/v1/library/qa`
 Ask a question across everything the tenant can see (D-063). Runs `run_library_qa_agent` with corpus statistics for the visible set, so answer length follows the corpus bracket (D-072).
@@ -1457,7 +1457,7 @@ A socket subscribed to notifications also receives one event per new notificatio
 
 It carries no title, body or link, so what a notice says is only ever read over `GET /notifications`, where the session is checked. Delivery is best effort: the bell keeps its one-minute poll as the fallback.
 
-Heartbeats every 30 seconds (server pings, client pongs). Auth is enforced via the `?token=` query string at WS handshake (browsers cannot set `Authorization` headers on WebSocket connections). Since T-8.8.1.5 this is the only route that reads a token from the URL. A missing, invalid or revoked token is closed with code 1008, the revocation check being the one every HTTP route makes. A socket already open is not closed when its session is revoked later.
+Heartbeats every 30 seconds (server pings, client pongs). Auth is enforced via the `?token=` query string at WS handshake (browsers cannot set `Authorization` headers on WebSocket connections). Since T-8.8.1.5 this is the only route that reads a token from the URL. A missing, invalid or revoked token is closed with code 1008, the revocation check being the one every HTTP route makes. A socket already open is closed with 1008 and the reason `Session revoked` when its session is revoked, whichever way it was: one session signed out, sign out everywhere, a password reset or a password change. That happens at once over Redis pub/sub, on whichever API process holds the socket, and within a minute if Redis is down.
 
 ---
 

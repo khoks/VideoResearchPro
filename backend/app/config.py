@@ -794,6 +794,12 @@ class Settings(BaseSettings):
     # addresses with no account.
     ADMIN_EMAILS: str = ""
 
+    # T-5.5.8: the reverse proxies whose X-Forwarded-For counts, as
+    # comma-separated IPs or CIDRs. Empty: the header is ignored and the
+    # caller is the socket peer, so an install behind a proxy that leaves
+    # this unset sees one address for every user. See app/utils/client_ip.py.
+    TRUSTED_PROXY_IPS: str = ""
+
     # T-5.4.5 OAuth — Google + GitHub PKCE. Each provider needs both a
     # client_id and a client_secret. When unset, the corresponding
     # /auth/oauth/<provider>/* endpoints return 503 with a clear message.

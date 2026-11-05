@@ -14,6 +14,11 @@ starts over at the password (or provider) step. ``used_at`` is set when a
 code is accepted, so a ticket buys one session. The row is written at the
 first attempt, not when the ticket is issued, and rows past ``expires_at``
 (the ticket's own ``exp``) are deleted as later attempts come in.
+
+Since T-5.4.16 the same count guards turning two-step verification off,
+which takes a code and no ticket: one row per user, under the id
+``turn-off:{user_id}``, which no ticket's ``jti`` can be
+(``mfa_service.count_disable_attempt``). Its ``expires_at`` ends the window.
 """
 from datetime import datetime, timezone
 

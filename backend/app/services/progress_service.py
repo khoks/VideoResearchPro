@@ -11,8 +11,15 @@ logger = logging.getLogger(__name__)
 # Module-level connection pool + singleton client. Reusing a single pool
 # avoids the overhead of opening a fresh TCP connection on every publish
 # (previously done via `redis.from_url(...)` per call).
+# T-5.4.19: bounded, because a session revocation publishes from inside its
+# request, and an unreachable Redis must not hold that for a TCP timeout. Every
+# publisher here is fail-soft.
+_PUBLISH_TIMEOUT_SECONDS = 2
 _redis_pool: redis.ConnectionPool = redis.ConnectionPool.from_url(
-    settings.REDIS_URL, decode_responses=True
+    settings.REDIS_URL,
+    decode_responses=True,
+    socket_connect_timeout=_PUBLISH_TIMEOUT_SECONDS,
+    socket_timeout=_PUBLISH_TIMEOUT_SECONDS,
 )
 _redis_client: redis.Redis = redis.Redis(connection_pool=_redis_pool)
 
@@ -85,6 +92,10 @@ def publish_error(job_id: str, error: str) -> None:
 # pattern and reads the user from the CHANNEL name, never from the payload.
 NOTIFICATIONS_CHANNEL_PREFIX = "notifications:"
 
+# T-5.4.19: one channel per user, like notifications: the manager reads the
+# user from the CHANNEL, so a payload cannot name another user's sockets.
+SESSION_REVOKED_CHANNEL_PREFIX = "session_revoked:"
+
 
 def publish_notification(tenant_id: str, payload: dict) -> bool:
     """Publish a "you have a new notification" event for ``tenant_id``'s
@@ -97,4 +108,24 @@ def publish_notification(tenant_id: str, payload: dict) -> bool:
         return True
     except Exception as e:
         logger.warning(f"Failed to publish a notification for tenant {tenant_id}: {e}")
+        return False
+
+
+def publish_sessions_revoked(tenant_id: str, jtis: list[str]) -> bool:
+    """Tell every API process that ``jtis`` are revoked, so each closes the
+    sockets it holds on them (T-5.4.19). A publish, as job progress is,
+    because the socket may be open on another process.
+
+    Fail-soft: the revocation is already committed, and the manager's
+    periodic look at the sessions table closes the socket without this.
+    Returns whether the publish reached Redis."""
+    if not tenant_id or not jtis:
+        return False
+    try:
+        _get_redis().publish(
+            f"{SESSION_REVOKED_CHANNEL_PREFIX}{tenant_id}", json.dumps({"jtis": jtis})
+        )
+        return True
+    except Exception as e:
+        logger.warning(f"Failed to publish a session revocation for tenant {tenant_id}: {e}")
         return False

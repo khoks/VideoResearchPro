@@ -15,9 +15,9 @@ from app.services import (
     chroma_service,
     corpus_stats_service,
     job_service,
+    llm_service,
     quota_metering_service,
     report_service,
-    usage_service,
 )
 from app.services.llm_service import get_llm_for
 
@@ -78,12 +78,17 @@ def clarify_question(
         '{"interpretation": "...", "clarifications": ["q1", "q2", "q3"]}'
     )
 
-    # E-5.2: the clarify call is the asker's usage too (feature job_qa).
-    with usage_service.metered(db, current_user.id):
-        # S-1.12.7: clarify returns a tiny JSON blob — cap runaway completions.
-        llm = get_llm_for("qa_clarification", temperature=0.3, max_tokens=400)
+    # T-5.6.10: the asker's own provider key and model pin apply here as on
+    # the ask route. E-5.2: byok_context is also the metering scope, so the
+    # call is the asker's usage (feature job_qa).
+    with llm_service.byok_context(current_user.id, db):
+        llm = get_llm_for(
+            "qa_clarification",
+            temperature=0.3,
+            max_tokens=llm_service.clarify_max_tokens("qa_clarification"),
+        )
         response = llm.invoke(prompt)
-    content = response.content.strip()
+    content = llm_service.response_text(response).strip()
 
     # Strip markdown code fences if the model returns them anyway
     if content.startswith("```"):
@@ -143,7 +148,6 @@ def _run_qa_and_persist(
     # Run Q&A agent. T-5.6.4: enter BYOK context so any get_llm_for call
     # inside the agent uses the user's BYOK credential when available.
     from app.agents.qa_agent import run_qa_agent
-    from app.services import llm_service
 
     # S-1.15.2 / T-1.17.1.4: the length policy and the temporal note need the
     # corpus figures, and the agent cannot derive them from a handful of

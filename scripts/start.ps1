@@ -198,7 +198,7 @@ try {
     # ---- 2. Backend (uvicorn) ----
     Write-Step "Starting backend (uvicorn :8000)..."
     $backend = Start-Process -FilePath $venvPython `
-        -ArgumentList @('-m', 'uvicorn', 'app.main:app', '--host', '127.0.0.1', '--port', '8000') `
+        -ArgumentList @('-m', 'uvicorn', 'app.main:app', '--host', '127.0.0.1', '--port', '8000', '--no-proxy-headers') `
         -WorkingDirectory $backendDir `
         -WindowStyle Hidden `
         -RedirectStandardOutput $backendOut `

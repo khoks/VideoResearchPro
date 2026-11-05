@@ -156,6 +156,10 @@ export function describeAuditEvent(entry: AuditEntryLike): string {
       return 'Two-step verification turned on';
     case 'mfa_disabled':
       return 'Two-step verification turned off';
+    case 'mfa_disable_failed':
+      return meta.reason === 'too_many_attempts'
+        ? 'Turning off two-step verification stopped after too many wrong codes'
+        : 'Turning off two-step verification refused: wrong code';
     case 'mfa_login_success':
       return 'Two-step code accepted';
     case 'mfa_login_failure':
@@ -185,6 +189,7 @@ export function isWarningEvent(event: string): boolean {
     'login_locked_out',
     'account_locked',
     'mfa_login_failure',
+    'mfa_disable_failed',
     'password_reset_invalid_token',
     'password_change_failed',
   ].includes(event);

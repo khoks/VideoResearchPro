@@ -63,7 +63,7 @@ def test_job_clarify_is_charged_to_the_asker(client, db, test_user, metered_llms
 def test_mutation_job_clarify_without_its_scope_records_nothing(client, db, test_user, metered_llms, monkeypatch):
     from app.routers import qa as qa_router
 
-    monkeypatch.setattr(qa_router.usage_service, "metered", lambda *a, **k: nullcontext())
+    monkeypatch.setattr(qa_router.llm_service, "byok_context", lambda *a, **k: nullcontext())
     metered_llms.reply = CLARIFY_JSON
     job = _completed_job(db, test_user.id)
     assert client.post(f"/api/v1/jobs/{job.id}/qa/clarify", json={"question": "who pays?"}).status_code == 200

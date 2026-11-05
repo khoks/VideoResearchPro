@@ -15,6 +15,7 @@ from fastapi import Request
 from sqlalchemy.orm import Session
 
 from app.models.audit_log import AuditLog
+from app.utils.client_ip import client_ip
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +44,9 @@ class Event(str, Enum):
     MFA_ENROLLED = "mfa_enrolled"
     MFA_ENABLED = "mfa_enabled"
     MFA_DISABLED = "mfa_disabled"
+    # T-5.4.16: a code refused on DELETE /auth/mfa. Someone holding the
+    # session is trying to turn the second factor off without it.
+    MFA_DISABLE_FAILED = "mfa_disable_failed"
     MFA_LOGIN_SUCCESS = "mfa_login_success"
     MFA_LOGIN_FAILURE = "mfa_login_failure"
     MFA_RECOVERY_CODE_USED = "mfa_recovery_code_used"
@@ -94,6 +98,7 @@ ACCOUNT_EVENTS: frozenset[Event] = frozenset(
         Event.MFA_ENROLLED,
         Event.MFA_ENABLED,
         Event.MFA_DISABLED,
+        Event.MFA_DISABLE_FAILED,
         Event.MFA_LOGIN_SUCCESS,
         Event.MFA_LOGIN_FAILURE,
         Event.MFA_RECOVERY_CODE_USED,
@@ -107,14 +112,8 @@ ACCOUNT_EVENTS: frozenset[Event] = frozenset(
 def _ip_from_request(request: Request | None) -> str | None:
     if request is None:
         return None
-    # Prefer X-Forwarded-For if behind a proxy; fall back to direct.
-    fwd = request.headers.get("x-forwarded-for")
-    if fwd:
-        # Trust the leftmost entry as the real client IP.
-        return fwd.split(",")[0].strip()
-    if request.client is not None:
-        return request.client.host
-    return None
+    # T-5.5.8: never the caller's own word for it; see app.utils.client_ip.
+    return client_ip(request)
 
 
 def _ua_from_request(request: Request | None) -> str | None:

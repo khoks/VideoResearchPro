@@ -9,6 +9,9 @@ import { apiErrorMessage } from '../utils/apiError';
 import { MIN_PASSWORD } from '../utils/accountSecurity';
 import { fonts, fontSize, fontWeight, lineHeight, space } from '../theme';
 
+/** What the confirm route says about a used, expired or mistyped code. */
+const INVALID_CODE_DETAIL = 'Invalid or expired token';
+
 /**
  * `/reset-password` (T-5.4.3): the code from the email (or the server log)
  * and a new password, to `POST /auth/password-reset/confirm`. The code is
@@ -43,8 +46,13 @@ export function ResetPasswordPage() {
       setPassword('');
       setConfirm('');
     } catch (err) {
+      // Not every 400 is about the code: a password that cannot be stored
+      // (T-5.4.18) is refused first and leaves the code good, so it shows
+      // the server's own sentence.
+      const badCode =
+        isAxiosError(err) && err.response?.status === 400 && err.response.data?.detail === INVALID_CODE_DETAIL;
       setError(
-        isAxiosError(err) && err.response?.status === 400
+        badCode
           ? 'That code is not valid any more: it was used, it expired, or it was mistyped. Request a new one.'
           : apiErrorMessage(err, 'Could not reset the password. Try again.'),
       );

@@ -12,7 +12,7 @@ class FakeWebSocket {
   sent: string[] = [];
   onopen: (() => void) | null = null;
   onmessage: ((e: { data: string }) => void) | null = null;
-  onclose: (() => void) | null = null;
+  onclose: ((e: { code: number }) => void) | null = null;
   onerror: (() => void) | null = null;
 
   url: string;
@@ -30,9 +30,9 @@ class FakeWebSocket {
     this.sent.push(data);
   }
 
-  close() {
+  close(code = 1006) {
     this.readyState = FakeWebSocket.CLOSED;
-    this.onclose?.();
+    this.onclose?.({ code });
   }
 
   open() {
@@ -113,6 +113,24 @@ describe('WSClient (T-6.7.1.6)', () => {
     expect(FakeWebSocket.instances).toHaveLength(2);
     FakeWebSocket.instances[1].open();
     expect(JSON.parse(FakeWebSocket.instances[1].sent[0])).toEqual({ action: 'subscribe', job_id: 'a' });
+  });
+
+  it('does not reconnect a socket the server closed because its session was revoked (T-5.4.19)', async () => {
+    const client = await freshClient();
+    client.subscribe('job-1', () => {});
+    FakeWebSocket.instances[0].open();
+    FakeWebSocket.instances[0].close(1008);
+    vi.advanceTimersByTime(120_000);
+    expect(FakeWebSocket.instances).toHaveLength(1);
+  });
+
+  it('a new subscribe after that opens a socket again, for the next sign-in', async () => {
+    const client = await freshClient();
+    client.subscribe('job-1', () => {});
+    FakeWebSocket.instances[0].open();
+    FakeWebSocket.instances[0].close(1008);
+    client.subscribe('job-2', () => {});
+    expect(FakeWebSocket.instances).toHaveLength(2);
   });
 
   it('disconnect does not schedule a reconnect', async () => {

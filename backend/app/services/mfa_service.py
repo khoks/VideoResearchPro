@@ -23,6 +23,11 @@ Login flow:
 - T-5.4.13: one ticket takes at most ``MFA_TICKET_MAX_ATTEMPTS`` codes,
   counted on its ``jti`` (``mfa_step_tickets``), and buys one session.
   A dead ticket means signing in again from the first step.
+
+Turning it off takes a code too, under the same count keyed on the user
+(T-5.4.16, ``count_disable_attempt``). Those two are the only places a code
+meets a live secret: ``verify_enrollment`` refuses an enabled row before it
+checks anything, or it would be a third, uncounted.
 """
 from __future__ import annotations
 
@@ -30,6 +35,7 @@ import hashlib
 import json
 import logging
 import secrets
+import string
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -68,8 +74,20 @@ def _generate_recovery_codes() -> list[str]:
     ]
 
 
+def _normalise_code(code: str) -> str:
+    return code.upper().strip()
+
+
 def _hash_code(code: str) -> str:
-    return hashlib.sha256(code.upper().strip().encode("utf-8")).hexdigest()
+    return hashlib.sha256(_normalise_code(code).encode("utf-8")).hexdigest()
+
+
+def could_be_recovery_code(code: str) -> bool:
+    """True iff ``code`` has the shape of a recovery code, read the way the
+    hash reads it. Anything else, a six-digit authenticator code above all,
+    cannot match one, so with the key broken nothing can check it."""
+    normalised = _normalise_code(code)
+    return len(normalised) == RECOVERY_CODE_LENGTH and all(c in string.hexdigits for c in normalised)
 
 
 # ---------------------------------------------------------------------------
@@ -146,6 +164,12 @@ def verify_enrollment(
     """Validate the user's first TOTP code, flip ``enabled=True``,
     generate recovery codes, return them. The raw codes are returned
     here exactly once — the database stores only their hashes.
+
+    Raises ``MfaAlreadyEnabledError`` on an enabled row before any code is
+    checked. Only an in-flight secret, which protects nothing yet, is tested
+    here. On a live one this route would be an uncounted way past T-5.4.16's
+    cap: a stolen session could guess the code, and a match would replace
+    the recovery codes with ones the thief holds, which then turn it off.
     """
     row = (
         db.query(MfaSecret).filter(MfaSecret.user_id == user.id).first()
@@ -153,6 +177,10 @@ def verify_enrollment(
     if row is None:
         raise MfaNotEnrolledError(
             "No MFA enrollment in flight. Call /auth/mfa/enroll first."
+        )
+    if row.enabled:
+        raise MfaAlreadyEnabledError(
+            "MFA is already enabled. Disable it first before re-enrolling."
         )
     if not _verify_totp_against_row(row, code):
         raise MfaError("Invalid TOTP code")
@@ -167,14 +195,18 @@ def verify_enrollment(
 
 
 def disable(db: Session, user: User) -> bool:
-    """Remove the MFA enrollment for the user. Returns True if a row
-    was deleted, False if no row existed."""
+    """Remove the MFA enrollment for the user, and the count of codes tried
+    to do it (T-5.4.16). Returns True if a row was deleted, False if no row
+    existed."""
     row = (
         db.query(MfaSecret).filter(MfaSecret.user_id == user.id).first()
     )
     if row is None:
         return False
     db.delete(row)
+    db.query(MfaStepTicket).filter(
+        MfaStepTicket.jti == _turn_off_counter_id(user.id)
+    ).delete(synchronize_session=False)
     db.commit()
     return True
 
@@ -199,21 +231,26 @@ def _verify_totp_against_row(row: MfaSecret, code: str) -> bool:
     a ±1 window (~30 seconds drift) to handle clock skew.
 
     Raises ``byok_service.EncryptionConfigurationError`` when
-    ``BYOK_ENCRYPTION_KEY`` is malformed (T-5.6.9): no code can be checked,
-    and answering "invalid code" would send the user hunting for a clock
-    problem instead of the operator fixing the key. Any other decrypt
-    failure (the key was rotated, the row is corrupt) still reads as a code
-    that does not match, as before."""
+    ``BYOK_ENCRYPTION_KEY`` is malformed (T-5.6.9), and its subclass
+    ``StoredSecretUnreadableError`` when a well-formed key cannot read the
+    secret (T-5.6.11: the key was rotated, or the row is corrupt). Either
+    way no code can be checked, and answering "invalid code" would send the
+    user hunting for a clock problem instead of the operator fixing the key.
+    Nothing from the failure is logged but the account: neither the secret
+    nor the key can reach the log."""
     try:
         secret = byok_service.decrypt_secret(row.secret_encrypted)
     except byok_service.EncryptionConfigurationError:
         raise
     except Exception:
-        logger.exception(
-            "MFA decrypt failed for user_id=%s — likely BYOK key rotation",
+        logger.error(
+            "A stored two-step secret cannot be read for user_id=%s: "
+            "BYOK_ENCRYPTION_KEY changed since it was saved, or the row is corrupt",
             row.user_id,
         )
-        return False
+        raise byok_service.StoredSecretUnreadableError(
+            "BYOK_ENCRYPTION_KEY cannot read the stored secret"
+        ) from None
     totp = pyotp.TOTP(secret)
     return totp.verify(code.strip(), valid_window=1)
 
@@ -250,9 +287,10 @@ def verify_at_login(db: Session, user_id: str, code: str) -> bool:
     - the code matches neither a current TOTP nor a recovery code
 
     Raises ``byok_service.EncryptionConfigurationError`` when
-    ``BYOK_ENCRYPTION_KEY`` is malformed and the code is not a recovery
-    code. Recovery codes are stored hashed, not encrypted, so they still
-    work with a broken key: they are the way in until the operator fixes it.
+    ``BYOK_ENCRYPTION_KEY`` is malformed or cannot read the secret
+    (``StoredSecretUnreadableError``) and the code is not a recovery code.
+    Recovery codes are stored hashed, not encrypted, so they still work with
+    a broken key: they are the way in until the operator fixes it.
     """
     row = (
         db.query(MfaSecret).filter(MfaSecret.user_id == user_id).first()
@@ -400,6 +438,55 @@ def count_ticket_attempt(db: Session, ticket: MfaTicket) -> int:
     if counted == 0:
         raise TicketClosedError("used" if row.used_at is not None else "too_many_attempts")
     return row.attempts
+
+
+# T-5.4.16: `DELETE /auth/mfa` checks a code too, and takes no ticket, so
+# until this only the per-user bucket limited it: a stolen session could guess
+# at up to 6,000 a minute. The count is T-5.4.13's, one row in the same table
+# under an id no ticket can have: `MFA_TICKET_MAX_ATTEMPTS` codes, then none
+# until the row expires. The window starts at the first code and a later one
+# does not extend it. `disable` deletes the row, which is what a right code
+# does; a row that expires is swept as ticket rows are.
+#
+# It counts on the user, in the database, and touches nothing sign-in reads:
+# the caller already holds a session, so a wrong code here locks no one out.
+MFA_DISABLE_WINDOW_MIN = 15
+_TURN_OFF_COUNTER_PREFIX = "turn-off:"
+
+
+def _turn_off_counter_id(user_id: str) -> str:
+    return f"{_TURN_OFF_COUNTER_PREFIX}{user_id}"
+
+
+def count_disable_attempt(db: Session, user_id: str) -> int:
+    """Count one code tried on ``DELETE /auth/mfa`` before it is checked.
+
+    Returns the codes tried in this window, this one included. Raises
+    ``TicketClosedError`` when the window has had its
+    ``MFA_TICKET_MAX_ATTEMPTS``: past that no code is checked."""
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    return count_ticket_attempt(
+        db,
+        MfaTicket(
+            user_id=user_id,
+            jti=_turn_off_counter_id(user_id),
+            expires_at=now + timedelta(minutes=MFA_DISABLE_WINDOW_MIN),
+        ),
+    )
+
+
+def refund_disable_attempt(db: Session, user_id: str) -> None:
+    """Hand back the attempt ``count_disable_attempt`` just took, for a code
+    nothing could check (see ``routers/mfa.py``). Paired with that count, so
+    it can never take the row below what was really checked."""
+    db.query(MfaStepTicket).filter(
+        MfaStepTicket.jti == _turn_off_counter_id(user_id),
+        MfaStepTicket.attempts > 0,
+    ).update(
+        {MfaStepTicket.attempts: MfaStepTicket.attempts - 1},
+        synchronize_session=False,
+    )
+    db.commit()
 
 
 def use_ticket(db: Session, ticket: MfaTicket) -> bool:

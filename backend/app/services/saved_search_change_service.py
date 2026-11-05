@@ -80,7 +80,9 @@ class Verdict:
     jaccard: float | None = None
     distance: float | None = None
     #: none (first run, nothing to compare) | agreed | judged | judge_failed |
-    #: embedding_only (the cited sets could not be compared, ``jaccard`` is None)
+    #: embedding_only (the cited sets could not be compared, ``jaccard`` is None) |
+    #: cut_off (the answer stopped at its token budget, so ``execute`` compared
+    #: nothing, T-1.15.4.9)
     decided_by: str = "none"
     added: list[str] = field(default_factory=list)
     dropped: list[str] = field(default_factory=list)

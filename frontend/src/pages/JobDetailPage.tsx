@@ -1322,6 +1322,7 @@ function QAExchangeCard({
         <Markdown>{qa.answer}</Markdown>
       </div>
       <AnswerCutOffNote
+        cutOff={qa.answer_cut_off}
         exchangeId={qa.id}
         inheritedDepth={runDepth}
         onAskAgain={onAskAgain && (() => onAskAgain(qa.question))}

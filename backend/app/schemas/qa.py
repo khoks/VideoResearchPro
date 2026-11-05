@@ -39,7 +39,19 @@ class QARequest(BaseModel):
     output_length: Literal["auto", "brief", "standard", "deep"] | None = None
 
 
-class QAResponse(BaseModel):
+class StoredCutOff(BaseModel):
+    """T-1.15.4.8: whether a stored answer stopped at its token budget.
+
+    Sent only when it did. A row from before the column is unknown and a checked
+    row may say `false`, but neither reaches the wire: a finished answer's JSON
+    is what it was, and no stored row claims "not cut" (D-145). The fresh shapes
+    below replace this field, so they keep saying `false`.
+    """
+
+    answer_cut_off: bool | None = Field(default=None, exclude_if=lambda cut: cut is not True)
+
+
+class QAResponse(StoredCutOff):
     id: str
     question: str
     answer: str
@@ -53,9 +65,9 @@ class QAAnswerResponse(QAResponse):
     """An answer that has just been written (`POST /qa`, and the stream's
     `complete` event).
 
-    T-1.15.4.5: `answer_cut_off` says it stopped at its token budget. It is
-    known only at the moment of asking: nothing stores it, so the history
-    routes return plain `QAResponse` rather than a `false` that may be untrue.
+    T-1.15.4.5: `answer_cut_off` says whether it stopped at its token budget.
+    This reply is checked by name, so it says `false` too; the history routes
+    return `QAResponse`, which carries the stored flag only when it is true.
     """
 
     answer_cut_off: bool = False

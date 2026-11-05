@@ -49,7 +49,8 @@ export interface SavedSearchRun {
   changed: boolean | null;
   jaccard: number | null;
   embedding_distance: number | null;
-  decided_by: 'none' | 'agreed' | 'judged' | 'judge_failed' | 'embedding_only' | null;
+  /** `cut_off`: the answer stopped at its token budget, so nothing was compared. */
+  decided_by: 'none' | 'agreed' | 'judged' | 'judge_failed' | 'embedding_only' | 'cut_off' | null;
   added_reference_ids: string[];
   dropped_reference_ids: string[];
   diff_summary: string | null;

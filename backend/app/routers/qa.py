@@ -215,6 +215,7 @@ def _run_qa_and_persist(
         tenant_id=current_user.id,
         prompt_tokens=prompt_tokens,
         completion_tokens=completion_tokens,
+        answer_cut_off=bool(usage.get("answer_cut_off")),
     )
     db.add(qa)
     db.commit()
@@ -253,7 +254,7 @@ def _run_qa_and_persist(
         answer=qa.answer,
         references=[Reference(**r) for r in references],
         created_at=qa.created_at,
-        answer_cut_off=bool(usage.get("answer_cut_off")),
+        answer_cut_off=qa.answer_cut_off,
     )
 
 
@@ -377,5 +378,6 @@ def get_qa_history(
             answer=qa.answer,
             references=refs,
             created_at=qa.created_at,
+            answer_cut_off=qa.answer_cut_off,
         ))
     return results

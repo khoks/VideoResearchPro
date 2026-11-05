@@ -4,6 +4,17 @@ The library Q&A agent is a fake, the embedder a bag-of-words stand-in and
 the judge is patched at ``get_llm_for``, so no provider is called. The
 thresholds are the pre-registered priors (J < 0.50, D > 0.15).
 
+T-1.15.4.9 mutation checks, run by hand on 2026-11-05:
+- comparing a cut answer as usual fails
+  ``test_a_cut_answer_is_not_a_change_in_the_sources``;
+- a cut answer moving the embedding, the cited ids or the exchange pointer fails
+  ``test_the_answer_after_a_cut_is_compared_with_the_last_full_one``;
+- a cut answer not taking the empty pointer fails
+  ``test_a_first_answer_that_was_cut_shows_on_the_card_and_sets_no_baseline``;
+- a cut answer leaving ``last_scope_hash`` alone fails
+  ``test_the_gate_holds_after_a_cut_and_run_now_still_asks``;
+- ``decided_by`` staying ``none`` fails the first test and the runs endpoint test.
+
 T-8.3.3.10 mutation checks, run by hand on 2026-11-04:
 - keying ``cited_key`` on ``video_id`` again fails
   ``test_a_pdf_only_citation_counts``;
@@ -72,10 +83,15 @@ class Agent:
 
     def __init__(self, answer="Rates fell twice this year.", refs=(("v1", "Fed minutes"), ("v2", "Bank note"))):
         self.answer, self.refs, self.calls = answer, list(refs), 0
+        self.cut = False
 
     def __call__(self, **_kwargs):
         self.calls += 1
-        return {"answer": self.answer, "references": [{"video_id": k, "video_title": t} for k, t in self.refs]}
+        return {
+            "answer": self.answer,
+            "references": [{"video_id": k, "video_title": t} for k, t in self.refs],
+            "answer_cut_off": self.cut,
+        }
 
 
 def _doc(db, tenant_id, title="Source"):
@@ -111,6 +127,14 @@ def _judge_returning(payload=None, fail=False):
             return AIMessage(content=json.dumps(payload))
 
     return Fake()
+
+
+def _cut(agent: Agent) -> None:
+    """The same question stopped at its budget: the end, and its citations, are gone."""
+    agent.answer, agent.refs, agent.cut = "Rates fell", agent.refs[:1], True
+
+
+FULL_REFS = (("v1", "Fed minutes"), ("v2", "Bank note"), ("v3", "Press conference"))
 
 
 # ---------------------------------------------------------------- the gate
@@ -485,6 +509,169 @@ def test_a_failed_run_keeps_the_baseline_and_notifies_nobody(db, pro):
 
 
 # ---------------------------------------------------------------- REST
+
+
+# ---------------------------------------------------------------- a cut answer
+
+
+def test_a_cut_answer_is_not_a_change_in_the_sources(db, pro, _seams):
+    """T-1.15.4.9. It cites one of the three sources, so both signals would vote."""
+    ss = _search(db, pro)
+    agent = Agent(refs=FULL_REFS)
+    saved_search_service.execute(db, ss.id, trigger="manual", agent=agent)
+    _cut(agent)
+    fake = _judge_returning({"changed": True, "what_changed": "Should never be asked."})
+
+    with patch.object(saved_search_change_service, "get_llm_for", return_value=fake):
+        out = saved_search_service.execute(db, ss.id, trigger="manual", agent=agent)
+
+    assert out["status"] == "ok"
+    assert out["changed"] is None
+    assert type(fake).calls == 0
+    assert _notes(db, pro) == []
+    _seams.assert_not_called()
+    run = _runs(db, ss)[-1]
+    assert (run.changed, run.decided_by, run.jaccard, run.embedding_distance) == (None, "cut_off", None, None)
+    assert run.previous_exchange_id is None
+    assert (run.diff_summary, json.loads(run.dropped_reference_ids_json)) == (None, [])
+    assert db.get(LibraryQAExchange, run.exchange_id).answer_cut_off is True
+
+
+def test_a_cut_run_still_spends_its_question(db, pro):
+    """The model answered, so the quota is charged, as for any answer."""
+    ss = _search(db, pro)
+    agent = Agent()
+    _cut(agent)
+    saved_search_service.execute(db, ss.id, trigger="manual", agent=agent)
+    assert db.query(QuotaUsage).filter_by(user_id=pro.id).one().consumed == 1
+
+
+def test_the_answer_after_a_cut_is_compared_with_the_last_full_one(db, pro, _seams):
+    """The same three sources come back. Against the cut answer they would read
+    as two new sources; against the last full answer nothing moved."""
+    ss = _search(db, pro)
+    agent = Agent(refs=FULL_REFS)
+    saved_search_service.execute(db, ss.id, trigger="manual", agent=agent)
+    full_exchange = _runs(db, ss)[-1].exchange_id
+    full_baseline = (ss.last_answer_hash, ss.last_reference_ids_json, ss.last_answer_embedding_json)
+
+    full_answer = agent.answer
+    _cut(agent)
+    saved_search_service.execute(db, ss.id, trigger="manual", agent=agent)
+    db.refresh(ss)
+    assert ss.last_exchange_id == full_exchange
+    assert (ss.last_answer_hash, ss.last_reference_ids_json, ss.last_answer_embedding_json) == full_baseline
+
+    agent.answer, agent.refs, agent.cut = full_answer, list(FULL_REFS), False
+    out = saved_search_service.execute(db, ss.id, trigger="manual", agent=agent)
+
+    assert out["changed"] is False
+    run = _runs(db, ss)[-1]
+    assert run.previous_exchange_id == full_exchange
+    assert run.decided_by == "agreed"
+    assert _notes(db, pro) == []
+    _seams.assert_not_called()
+
+
+def test_a_real_change_after_a_cut_is_still_found(db, pro):
+    """A cut holds the comparison over; it does not lose what moved."""
+    ss = _search(db, pro)
+    agent = Agent(refs=FULL_REFS)
+    saved_search_service.execute(db, ss.id, trigger="manual", agent=agent)
+    full_exchange = _runs(db, ss)[-1].exchange_id
+    _cut(agent)
+    saved_search_service.execute(db, ss.id, trigger="manual", agent=agent)
+
+    agent.answer, agent.cut = "Rates rose sharply after the October statement.", False
+    agent.refs = [("v8", "October statement"), ("v9", "Treasury note")]
+    out = saved_search_service.execute(db, ss.id, trigger="manual", agent=agent)
+
+    assert out["changed"] is True
+    assert _runs(db, ss)[-1].previous_exchange_id == full_exchange
+    (note,) = _notes(db, pro)
+    assert "October statement" in note.body
+
+
+def test_a_first_answer_that_was_cut_shows_on_the_card_and_sets_no_baseline(db, pro, _seams):
+    ss = _search(db, pro)
+    agent = Agent(refs=FULL_REFS)
+    full_answer = agent.answer
+    _cut(agent)
+    saved_search_service.execute(db, ss.id, trigger="manual", agent=agent)
+    assert saved_search_service.to_dict(db, ss)["last_answer"] == "Rates fell"
+    assert ss.last_answer_embedding_json is None
+
+    # A second cut in a row: the card takes the newest, and still no baseline.
+    agent.answer = "Rates fell twice"
+    saved_search_service.execute(db, ss.id, trigger="manual", agent=agent)
+    assert saved_search_service.to_dict(db, ss)["last_answer"] == "Rates fell twice"
+    assert ss.last_answer_embedding_json is None
+
+    # The first full answer is the baseline, not a change from the cut ones.
+    agent.answer, agent.refs, agent.cut = full_answer, list(FULL_REFS), False
+    out = saved_search_service.execute(db, ss.id, trigger="manual", agent=agent)
+    assert out["changed"] is None
+    assert _runs(db, ss)[-1].decided_by == "none"
+    assert saved_search_service.to_dict(db, ss)["last_answer"] == full_answer
+    assert _notes(db, pro) == []
+    _seams.assert_not_called()
+
+    out = saved_search_service.execute(db, ss.id, trigger="manual", agent=agent)
+    assert out["changed"] is False
+
+
+def test_the_gate_holds_after_a_cut_and_run_now_still_asks(db, pro):
+    """The cut run read a scope that had moved. Re-asking on every tick would spend
+    a question to stop at the same budget, so cost keeps following ingest
+    (S-8.3.3 stage 1)."""
+    ss = _search(db, pro)
+    agent = Agent()
+    saved_search_service.execute(db, ss.id, trigger="manual", agent=agent)
+    _doc(db, pro.id, "A new source")
+    _cut(agent)
+    assert saved_search_service.execute(db, ss.id, trigger="schedule", agent=agent)["status"] == "ok"
+    assert agent.calls == 2
+
+    assert saved_search_service.execute(db, ss.id, trigger="schedule", agent=agent)["status"] == "no_new_sources"
+    assert agent.calls == 2
+
+    saved_search_service.execute(db, ss.id, trigger="manual", agent=agent)
+    assert agent.calls == 3
+
+
+def test_the_next_new_source_reopens_the_gate_after_a_cut(db, pro):
+    """What the cut run could not compare waits for the next full answer."""
+    ss = _search(db, pro)
+    agent = Agent(refs=FULL_REFS)
+    saved_search_service.execute(db, ss.id, trigger="manual", agent=agent)
+    full_answer = agent.answer
+    _cut(agent)
+    saved_search_service.execute(db, ss.id, trigger="manual", agent=agent)
+
+    _doc(db, pro.id, "A new source")
+    agent.answer, agent.refs, agent.cut = full_answer, list(FULL_REFS), False
+    out = saved_search_service.execute(db, ss.id, trigger="schedule", agent=agent)
+    assert out["status"] == "ok"
+    assert out["changed"] is False
+
+
+def test_a_finished_run_is_stored_as_checked(db, pro):
+    ss = _search(db, pro)
+    saved_search_service.execute(db, ss.id, trigger="manual", agent=Agent())
+    assert db.get(LibraryQAExchange, _runs(db, ss)[-1].exchange_id).answer_cut_off is False
+
+
+def test_the_runs_endpoint_says_a_run_was_cut(client, db, pro):
+    ss = _search(db, pro)
+    agent = Agent()
+    saved_search_service.execute(db, ss.id, trigger="manual", agent=agent)
+    _cut(agent)
+    saved_search_service.execute(db, ss.id, trigger="manual", agent=agent)
+
+    newest, first = client.get(f"/api/v1/saved-searches/{ss.id}/runs").json()
+    assert (newest["decided_by"], newest["changed"], newest["status"]) == ("cut_off", None, "ok")
+    assert newest["exchange_id"]
+    assert first["decided_by"] == "none"
 
 
 def test_runs_endpoint_lists_newest_first_and_is_private(client, db, pro):

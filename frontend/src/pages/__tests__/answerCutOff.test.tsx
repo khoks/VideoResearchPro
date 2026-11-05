@@ -2,13 +2,21 @@
  * T-1.15.4.5 on the pages: an answer that stopped at its token budget says so.
  *
  * The real hooks run on the library page and the shelf panel, with only the HTTP
- * layer replaced, so this is the whole path: the reply carries `answer_cut_off`,
- * the history refetch does not, and the card still shows the note because the
- * hook kept it (`qaCutOffStore`). The job page's two ask paths are pinned on its
- * hooks below, and its card in `jobQADepth.test.tsx`.
+ * layer replaced, so this is the whole path: the note comes from the stored row
+ * the history refetch brings (T-1.15.4.8), and the hook keeps the depth of the
+ * ask for the offer (`qaCutOffStore`), which a reload forgets. The job page's two
+ * ask paths are pinned on its hooks below, and its card in `jobQADepth.test.tsx`.
+ *
+ * Mutation checks, run by hand on 2026-11-05 (T-1.15.4.8):
+ * - the note reading the store rather than `cutOff` fails "a stored row with no
+ *   flag" and "on a fresh load";
+ * - the note offering when the depth is unknown fails "on a fresh load" and
+ *   "nothing is known of the ask";
+ * - a card not passing `cutOff` fails its "says so" test.
  *
  * Mutation checks, run by hand on 2026-11-04:
- * - any hook dropping `rememberCutOff` fails its "says so" test;
+ * - any hook dropping `rememberCutOff` fails its offer test, or on the job hooks
+ *   its "says so" test;
  * - `AnswerCutOffNote` keeping the offer at Deep fails "note alone";
  * - the offer sending an ask fails "fills the composer";
  * - `askAtDeep` not picking Deep fails the same test;
@@ -86,6 +94,11 @@ function stored(id: string): LibraryQAExchange {
   return { id, question: QUESTION, answer: 'The RBI cut', references: [], created_at: '2026-11-04T00:00:00Z', scope: null };
 }
 
+/** What the history route sends for an answer stored as cut. */
+function storedCut(id: string): LibraryQAExchange {
+  return { ...stored(id), answer_cut_off: true };
+}
+
 let host: HTMLDivElement;
 let root: Root;
 
@@ -149,15 +162,15 @@ async function submitQuestion() {
   await flush();
 }
 
-/** One card in the history, whose answer this session saw being cut. */
+/** One card in the history, stored as cut and asked in this session. */
 function cutCard(scope: LibraryQAExchange['scope']) {
-  historyMock.mockResolvedValue([{ ...stored('e1'), scope }]);
+  historyMock.mockResolvedValue([{ ...storedCut('e1'), scope }]);
   useQACutOffStore.getState().note('e1', null);
 }
 
-/** Ask on the library page; the reply is `reply`, the refetch a stored row. */
+/** Ask on the library page; the reply is `reply`, the refetch the stored row. */
 async function askLibrary(reply: Partial<LibraryQAExchange>, depth?: string) {
-  historyMock.mockResolvedValueOnce([]).mockResolvedValue([stored('e1')]);
+  historyMock.mockResolvedValueOnce([]).mockResolvedValue([reply.answer_cut_off ? storedCut('e1') : stored('e1')]);
   askMock.mockResolvedValue({ ...stored('e1'), ...reply });
   await render(<LibraryQAPage />);
   if (depth) pickDepth(depth);
@@ -187,11 +200,25 @@ afterEach(() => {
 });
 
 describe('library Q&A', () => {
-  it('says so on the card, though the refetched history knows nothing of it', async () => {
+  it('says so on the card, from the stored row the refetch brings', async () => {
     await askLibrary({ answer_cut_off: true });
     expect(historyMock).toHaveBeenCalledTimes(2);
     expect(host.querySelector('#exchange-e1')!.textContent).toContain(NOTE);
     expect(host.querySelector('#exchange-e1 [data-answer-cut-off]')!.getAttribute('role')).toBe('note');
+  });
+
+  it('still says so on a fresh load, with no offer: the depth of that ask is gone', async () => {
+    historyMock.mockResolvedValue([storedCut('e1')]);
+    await render(<LibraryQAPage />);
+    expect(host.querySelector('#exchange-e1')!.textContent).toContain(NOTE);
+    expect(button(OFFER)).toBeUndefined();
+  });
+
+  it('reads a stored row with no flag as no note, whatever the session kept', async () => {
+    historyMock.mockResolvedValue([stored('e1')]);
+    useQACutOffStore.getState().note('e1', null);
+    await render(<LibraryQAPage />);
+    expect(host.querySelector('[data-answer-cut-off]')).toBeNull();
   });
 
   it('shows nothing for a finished answer', async () => {
@@ -313,7 +340,7 @@ describe('library Q&A', () => {
 
 describe('shelf Q&A', () => {
   async function askShelf() {
-    shelfQuestionsMock.mockResolvedValueOnce([]).mockResolvedValue([stored('e2')]);
+    shelfQuestionsMock.mockResolvedValueOnce([]).mockResolvedValue([storedCut('e2')]);
     shelfAskMock.mockResolvedValue({ ...stored('e2'), answer_cut_off: true });
     await render(<ShelfQAPanel shelfId="s1" shelfName="Rates" />);
     type(host.querySelector('textarea')!, QUESTION);
@@ -324,6 +351,13 @@ describe('shelf Q&A', () => {
   it('says so on the card', async () => {
     await askShelf();
     expect(host.querySelector('#exchange-e2')!.textContent).toContain(NOTE);
+  });
+
+  it('still says so on a fresh load, with no offer', async () => {
+    shelfQuestionsMock.mockResolvedValue([storedCut('e2')]);
+    await render(<ShelfQAPanel shelfId="s1" shelfName="Rates" />);
+    expect(host.querySelector('#exchange-e2')!.textContent).toContain(NOTE);
+    expect(button(OFFER)).toBeUndefined();
   });
 
   it('fills the question at Deep and spends nothing', async () => {
@@ -398,14 +432,26 @@ describe('AnswerCutOffNote', () => {
 
   it("treats an ask that carried no depth as the run's", async () => {
     cut(null);
-    await render(<AnswerCutOffNote exchangeId="x" inheritedDepth="deep" onAskAgain={() => undefined} />);
+    await render(<AnswerCutOffNote cutOff exchangeId="x" inheritedDepth="deep" onAskAgain={() => undefined} />);
     expect(host.textContent).toContain(NOTE);
     expect(button('Ask again at Deep depth')).toBeUndefined();
   });
 
+  it('gives the note alone when nothing is known of the ask: it may have been at Deep', async () => {
+    await render(<AnswerCutOffNote cutOff exchangeId="x" onAskAgain={() => undefined} />);
+    expect(host.textContent).toContain(NOTE);
+    expect(button('Ask again at Deep depth')).toBeUndefined();
+  });
+
+  it('offers Deep to an ask of this session that carried less', async () => {
+    cut('brief');
+    await render(<AnswerCutOffNote cutOff exchangeId="x" onAskAgain={() => undefined} />);
+    expect(button('Ask again at Deep depth')).toBeDefined();
+  });
+
   it('offers nothing while asking is unavailable', async () => {
     cut('brief');
-    await render(<AnswerCutOffNote exchangeId="x" />);
+    await render(<AnswerCutOffNote cutOff exchangeId="x" />);
     expect(host.textContent).toContain(NOTE);
     expect(host.textContent).not.toContain('Asking again');
     expect(host.querySelector('button')).toBeNull();

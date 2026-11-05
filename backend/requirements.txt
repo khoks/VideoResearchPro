@@ -50,6 +50,9 @@ python-pptx>=1.0.2
 
 # Config
 pydantic-settings>=2.9.0
+# Already pulled in by the rest; declared for `Field(exclude_if=...)`, new in 2.12,
+# which older versions take as an unknown extra and ignore (T-1.15.4.8).
+pydantic>=2.12.0
 
 # CORS
 python-dotenv>=1.1.0

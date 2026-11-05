@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, String, Text
+from sqlalchemy import Boolean, DateTime, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -32,6 +32,11 @@ class QAHistoryExchange(Base):
     answer: Mapped[str] = mapped_column(Text)
     references_json: Mapped[str] = mapped_column(Text, default="[]")
     answer_language: Mapped[str] = mapped_column(String(10), default="en")
+    # T-1.15.4.8: whether the answer stopped at its token budget. True and False
+    # are what the check found; False also covers a provider that reports no
+    # stop reason. NULL is a row from before the column, about which nothing is
+    # known: it never reads as "not cut".
+    answer_cut_off: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(timezone.utc)
     )

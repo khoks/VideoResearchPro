@@ -5,6 +5,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from app.schemas.qa import StoredCutOff
+
 
 class QAHistoryReference(BaseModel):
     """A citation surfaced by the Q&A history agent.
@@ -26,7 +28,10 @@ class QAHistoryChatRequest(BaseModel):
     answer_language: str = Field(default="en", min_length=2, max_length=10)
 
 
-class QAHistoryChatResponse(BaseModel):
+class QAHistoryChatResponse(StoredCutOff):
+    """One history chat exchange, fresh or stored. `answer_cut_off` is present
+    only on an answer that stopped at its token budget (T-1.15.4.9)."""
+
     id: str
     question: str
     answer: str

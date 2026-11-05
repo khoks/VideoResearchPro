@@ -198,6 +198,7 @@ def answer_library_question(
         answer_language=request.answer_language,
         tenant_id=current_user.id,
         scope_json=qa_scope_service.dump(scope),
+        answer_cut_off=result.answer_cut_off,
     )
     db.add(exchange)
     db.commit()
@@ -227,10 +228,7 @@ def answer_library_question(
 
     echo_signal_extraction.maybe_queue(db, current_user.id)
 
-    return LibraryQAAnswerResponse(
-        **dict(library_exchange_response(exchange)),
-        answer_cut_off=result.answer_cut_off,
-    )
+    return LibraryQAAnswerResponse(**dict(library_exchange_response(exchange)))
 
 
 @router.get(
@@ -284,6 +282,7 @@ def library_exchange_response(qa: LibraryQAExchange) -> LibraryQAResponse:
         answer_language=qa.answer_language,
         created_at=qa.created_at,
         scope=qa_scope_service.load(qa.scope_json),
+        answer_cut_off=qa.answer_cut_off,
     )
 
 

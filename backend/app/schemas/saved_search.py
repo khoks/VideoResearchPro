@@ -82,8 +82,10 @@ class SavedSearchRunResponse(BaseModel):
     """One run (S-8.3.3). ``changed`` is null on the first run and on runs
     that did not answer; ``decided_by`` says whether the two signals agreed
     or the judge decided, and is ``embedding_only`` (with a null ``jaccard``)
-    when the cited sets could not be compared. The reference id lists hold
-    ``document_id`` values; runs before T-8.3.3.10 hold YouTube ids."""
+    when the cited sets could not be compared. ``cut_off`` (T-1.15.4.9) means
+    the answer stopped at its token budget, so nothing was compared: ``changed``
+    is null there too. The reference id lists hold ``document_id`` values; runs
+    before T-8.3.3.10 hold YouTube ids."""
 
     id: str
     ran_at: datetime

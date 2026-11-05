@@ -213,6 +213,7 @@ describe('JobDetailPage Q&A: a cut-off answer (T-1.15.4.5)', () => {
     answer: 'A lagoon costs',
     references: [],
     created_at: '2026-11-04T00:00:00Z',
+    answer_cut_off: true,
   };
   const NOTE = 'This answer stopped at its length limit';
   const OFFER = 'Ask again at Deep depth';
@@ -249,8 +250,15 @@ describe('JobDetailPage Q&A: a cut-off answer (T-1.15.4.5)', () => {
     expect(buttonLabelled(OFFER)).toBeUndefined();
   });
 
-  it('says nothing of an answer it did not see cut', () => {
+  it('still says so on a fresh load, with no offer: the depth of that ask is gone', () => {
     history = [CUT];
+    mount();
+    expect(host.querySelector('#exchange-q1')!.textContent).toContain(NOTE);
+    expect(buttonLabelled(OFFER)).toBeUndefined();
+  });
+
+  it('says nothing of an answer not stored as cut', () => {
+    history = [{ ...CUT, answer_cut_off: undefined }];
     mount();
     expect(host.querySelector('[data-answer-cut-off]')).toBeNull();
   });

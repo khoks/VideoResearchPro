@@ -1,4 +1,5 @@
-"""T-1.15.4.5: a cut answer is noticed, at the production callers.
+"""T-1.15.4.5, T-1.15.4.8, T-1.15.4.9: a cut answer is noticed and stays noted,
+at the production callers.
 
 `formulate_answer` and the library path did not read the finish reason, so an
 answer that stopped at its token budget was stored silently. Now it is logged
@@ -10,12 +11,23 @@ The real routes and agents run. Only retrieval and the model client are faked,
 and the fake reports each provider's stop in the shape its SDK really uses
 (`test_llm_service_length_stops.py` pins those shapes against the SDKs).
 
-`answer_cut_off` is not stored: that would need a column on both exchange tables,
-and the spec asked for no migration. So the history routes do not carry it, not
-even as `false`.
+`answer_cut_off` is stored on each exchange table, NULL on a row from before the
+column. The history routes carry it only when it is true, so a finished answer's
+history JSON is what it was and a stored row never reads as "not cut".
+
+Mutation checks, run by hand on 2026-11-05 (T-1.15.4.8, T-1.15.4.9):
+- any of the three writers not storing the flag fails
+  `test_a_cut_answer_still_says_so_on_a_fresh_load_of_the_history` or
+  `test_a_cut_history_answer_is_stored_and_says_so_on_a_fresh_load`;
+- any history route not passing the stored value fails the same tests;
+- dropping `exclude_if` fails `test_a_finished_answers_history_is_what_it_was`
+  and `test_a_row_from_before_the_column_claims_nothing`;
+- `QAAnswerResponse` keeping the base field fails `test_a_finished_answer_does_not`;
+- `_formulate_answer` in the history agent not reading the response fails
+  `test_a_cut_history_answer_is_stored_and_says_so_on_a_fresh_load`.
 
 Mutation checks, run by hand on 2026-11-04:
-- `_answer_cut_off` returning False without reading the response fails
+- `answer_cut_off` returning False without reading the response fails
   `test_a_cut_answer_says_so_for_every_provider` and the logging test;
 - removing the `logger.warning` fails `test_a_cut_answer_is_logged_without_its_text`;
 - logging the answer in the warning fails the same test;
@@ -32,13 +44,15 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from app.agents import qa_agent
+from app.agents import qa_agent, qa_history_agent
 from app.models.document import Document
 from app.models.job import Job
 from app.models.job_video import JobVideo
 from app.models.library_qa_exchange import LibraryQAExchange
 from app.models.qa_exchange import QAExchange
-from app.services import shelf_service, visibility_service
+from app.models.qa_history_exchange import QAHistoryExchange
+from app.models.saved_search_run import SavedSearchRun
+from app.services import saved_search_service, shelf_service, visibility_service
 from app.services.llm_routing import UseCaseConfig
 from app.tasks import job_tasks
 from app.utils.chunking import chunk_transcript
@@ -209,17 +223,187 @@ def test_a_cut_answer_is_still_stored_and_returned(client, corpus, route, db):
     assert "SECRET-SENTENCE" in db.get(model, body["id"]).answer
 
 
-def test_the_history_routes_do_not_claim_anything(client, corpus):
-    """The flag is not stored, so a stored row must not read as `false`."""
-    _ask(client, corpus, "job", _CUT["anthropic"])
-    (job_row,) = client.get(f"/api/v1/jobs/{corpus['job'].id}/qa").json()
-    assert "answer_cut_off" not in job_row
+def _history(client, corpus, route: str) -> list[dict]:
+    """A fresh load of the history that route's answers land in."""
+    path = {
+        "job": f"/api/v1/jobs/{corpus['job'].id}/qa",
+        "stream": f"/api/v1/jobs/{corpus['job'].id}/qa",
+        "library": "/api/v1/library/qa",
+        "shelf": f"/api/v1/shelves/{corpus['shelf'].id}/qa",
+    }[route]
+    resp = client.get(path)
+    assert resp.status_code == 200, resp.text
+    return resp.json()
 
+
+@pytest.mark.parametrize("route", _ROUTES)
+@pytest.mark.parametrize("provider", list(_CUT))
+def test_a_cut_answer_still_says_so_on_a_fresh_load_of_the_history(client, corpus, route, provider, db):
+    """T-1.15.4.8: the round trip. The ask is over, and only the row is left."""
+    asked, _ = _ask(client, corpus, route, _CUT[provider])
+    db.expire_all()
+    (row,) = _history(client, corpus, route)
+    assert row["id"] == asked["id"]
+    assert row["answer_cut_off"] is True
+
+
+def test_a_shelf_answer_says_so_on_the_library_history_too(client, corpus):
+    """A shelf's exchange joins the library history, and is read from the same row."""
     _ask(client, corpus, "shelf", _CUT["anthropic"])
-    (shelf_row,) = client.get(f"/api/v1/shelves/{corpus['shelf'].id}/qa").json()
-    assert "answer_cut_off" not in shelf_row
+    (row,) = _history(client, corpus, "library")
+    assert row["answer_cut_off"] is True
+
+
+@pytest.mark.parametrize("route", _ROUTES)
+def test_a_finished_answers_history_is_what_it_was(client, corpus, route, db):
+    """D-145: an uncut answer's response stays byte-identical, on both routes."""
+    asked, _ = _ask(client, corpus, route, _DONE["anthropic"])
+    assert asked.pop("answer_cut_off") is False, "the fresh reply keeps saying false, as #419 shipped"
+    (row,) = _history(client, corpus, route)
+    assert row == asked, "the history row is the fresh reply without the flag"
+    expected = {"id", "question", "answer", "references", "created_at"}
+    if route in ("library", "shelf"):
+        expected |= {"answer_language", "scope"}
+    assert set(row) == expected
+
+    db.expire_all()
+    model = QAExchange if route in ("job", "stream") else LibraryQAExchange
+    assert db.get(model, row["id"]).answer_cut_off is False, "the check ran, and that is stored"
+
+
+@pytest.mark.parametrize("route", _ROUTES)
+def test_a_provider_that_reports_nothing_is_not_a_cut(client, corpus, route):
+    asked, _ = _ask(client, corpus, route, {})
+    (row,) = _history(client, corpus, route)
+    assert row["id"] == asked["id"]
+    assert "answer_cut_off" not in row
+
+
+def test_a_row_from_before_the_column_claims_nothing(client, corpus, db, test_user):
+    """No backfill: NULL is unknown, so it reads as neither cut nor not cut."""
+    job = corpus["job"]
+    db.add_all(
+        [
+            QAExchange(job_id=job.id, question="q", answer="a", tenant_id=test_user.id),
+            LibraryQAExchange(question="q", answer="a", tenant_id=test_user.id),
+            QAHistoryExchange(question="q", answer="a", tenant_id=test_user.id),
+        ]
+    )
+    db.commit()
+    assert db.query(QAExchange).one().answer_cut_off is None
+
+    (job_row,) = client.get(f"/api/v1/jobs/{job.id}/qa").json()
     (library_row,) = client.get("/api/v1/library/qa").json()
-    assert "answer_cut_off" not in library_row
+    (history_row,) = client.get("/api/v1/qa-history/exchanges").json()
+    for row in (job_row, library_row, history_row):
+        assert "answer_cut_off" not in row
+
+
+def _past_exchange() -> dict:
+    return {
+        "text": "Q: How do lagoons store energy?\n\nA: Behind a wall.",
+        "metadata": {"source": "job", "exchange_id": "ex-1", "job_id": "job-1", "created_at_iso": "2026-04-01"},
+        "distance": 0.1,
+    }
+
+
+def _history_models(stop: dict):
+    """Stands in for `get_llm_for` in the history agent."""
+
+    def build(use_case: str, **_kwargs):
+        response = MagicMock()
+        response.response_metadata = {}
+        if use_case == "qa_history_formulate_answer":
+            response.content = "You asked about lagoons, and SECRET-SENTENCE"
+            response.response_metadata = dict(stop)
+        else:
+            response.content = "You asked about lagoons."
+        llm = MagicMock()
+        llm.invoke.return_value = response
+        return llm
+
+    return build
+
+
+def _ask_history(client, stop: dict, *, retrieved: list[dict]) -> tuple[dict, MagicMock]:
+    with (
+        patch.object(qa_history_agent.chroma_service, "query_qa_collection", return_value=retrieved),
+        patch.object(qa_history_agent, "get_llm_for", side_effect=_history_models(stop)),
+        patch.object(qa_agent, "resolve_config", return_value=_CONFIG),
+        patch.object(qa_agent, "logger") as log,
+        patch("app.routers.qa_history.chroma_service.upsert_qa_exchange", return_value=True),
+    ):
+        resp = client.post("/api/v1/qa-history/chat", json={"question": "What did I ask about lagoons?"})
+    assert resp.status_code == 200, resp.text
+    return resp.json(), log
+
+
+@pytest.mark.parametrize("retrieved", [[_past_exchange()], []], ids=["past-exchanges", "nothing-retrieved"])
+@pytest.mark.parametrize("provider", list(_CUT))
+def test_a_cut_history_answer_is_stored_and_says_so_on_a_fresh_load(client, db, provider, retrieved):
+    """T-1.15.4.9: Q&A-history answers are checked the same way."""
+    body, _ = _ask_history(client, _CUT[provider], retrieved=retrieved)
+    assert body["answer_cut_off"] is True
+    assert "SECRET-SENTENCE" in body["answer"]
+
+    db.expire_all()
+    assert db.get(QAHistoryExchange, body["id"]).answer_cut_off is True
+    (row,) = client.get("/api/v1/qa-history/exchanges").json()
+    assert row["id"] == body["id"]
+    assert row["answer_cut_off"] is True
+
+
+def test_a_cut_history_answer_is_logged_without_its_text(client):
+    _, log = _ask_history(client, _CUT["anthropic"], retrieved=[_past_exchange()])
+    log.warning.assert_called_once()
+    args = log.warning.call_args.args
+    rendered = args[0] % args[1:]
+    assert "qa_history_formulate_answer" in rendered
+    assert _CONFIG.model in rendered
+    assert "SECRET-SENTENCE" not in rendered
+
+
+@pytest.mark.parametrize("stop", [_DONE["anthropic"], {}], ids=["finished", "no-metadata"])
+def test_a_finished_history_answers_response_is_what_it_was(client, db, stop):
+    """No key at all, on the reply and on the list, as before the check existed."""
+    body, log = _ask_history(client, stop, retrieved=[_past_exchange()])
+    log.warning.assert_not_called()
+    expected = {"id", "question", "answer", "references", "answer_language", "created_at"}
+    assert set(body) == expected
+    (row,) = client.get("/api/v1/qa-history/exchanges").json()
+    assert row == body
+
+    db.expire_all()
+    assert db.get(QAHistoryExchange, body["id"]).answer_cut_off is False
+
+
+def test_a_real_cut_reaches_a_saved_searchs_run(client, corpus, db, test_user):
+    """T-1.15.4.9: the real library agent, through the real run, to the history."""
+    test_user.tier = "pro"
+    db.commit()
+    ss = saved_search_service.create(
+        db,
+        test_user,
+        question="How do lagoons store energy?",
+        cadence={"cadence": "weekly", "hour": 9, "weekday": 0, "timezone": "UTC"},
+    )
+    with (
+        patch.object(qa_agent.chroma_service, "query_collection", return_value=_chunks(corpus["doc"])),
+        patch.object(qa_agent, "get_llm_for", side_effect=_models(_CUT["anthropic"])),
+        patch.object(qa_agent, "resolve_config", return_value=_CONFIG),
+        patch("app.services.chroma_service.upsert_qa_exchange", return_value=True),
+    ):
+        outcome = saved_search_service.execute(db, ss.id, trigger="manual")
+    assert outcome["status"] == "ok"
+
+    (run,) = db.query(SavedSearchRun).filter_by(saved_search_id=ss.id).all()
+    assert run.decided_by == "cut_off"
+    assert db.get(LibraryQAExchange, run.exchange_id).answer_cut_off is True
+    (row,) = _history(client, corpus, "library")
+    assert row["answer_cut_off"] is True
+    (listed,) = client.get(f"/api/v1/saved-searches/{ss.id}/runs").json()
+    assert listed["decided_by"] == "cut_off"
+    assert listed["changed"] is None
 
 
 @pytest.mark.parametrize("route", ["library", "shelf"])

@@ -216,6 +216,23 @@ describe('run history (S-8.3.3)', () => {
     expect(items[2].textContent).toContain('Run now');
   });
 
+  it('says a run was cut, not that it was the first answer or that nothing changed (T-1.15.4.9)', async () => {
+    api.runs.mockResolvedValue([
+      { ...RUN, id: 'r2', ran_at: '2026-10-26T09:00:00', status: 'ok', exchange_id: 'ex2', changed: null, decided_by: 'cut_off' },
+      { ...RUN, id: 'r1', ran_at: '2026-10-19T10:01:00', status: 'ok', exchange_id: 'ex1', changed: null },
+    ]);
+    await mount(<SavedSearchesPage />, '/saved-searches?search=ss1&run=r2');
+    const items = Array.from(host.querySelectorAll('ol[aria-label="Run history"] li'));
+    expect(items.map((li) => li.querySelector('span')?.textContent)).toEqual(['Cut off', 'First answer']);
+
+    const note = items[0].querySelector('[data-answer-cut-off]')!;
+    expect(note.textContent).toContain('This answer stopped at its length limit');
+    expect(note.querySelector('button')).toBeNull();
+    expect(items[0].textContent).toContain('no alert went out');
+    expect(items[0].querySelector('a[href="/library/qa?exchange=ex2"]')?.textContent).toBe('This answer');
+    expect(items[1].querySelector('[data-answer-cut-off]')).toBeNull();
+  });
+
   it('stays closed until asked, and History opens it', async () => {
     await mount(<SavedSearchesPage />);
     expect(host.querySelector('ol[aria-label="Run history"]')).toBeNull();

@@ -66,7 +66,7 @@ loses what it counted since its last write, never more.
 What is not counted: local models that report no usage (their calls are
 counted, their tokens are not), a Whisper request that got no response (OpenAI
 may still bill one that timed out), embeddings (local), and the startup probes
-(``probe_config`` builds its own clients).
+and "Verify key" checks (``probe_config`` builds its own clients).
 """
 from __future__ import annotations
 

@@ -9,6 +9,7 @@ import {
   credentialsApi,
   parseServerTime,
   type CredentialMetadata,
+  type KeyCheckResult,
 } from '../../services/credentialsApi';
 import { apiErrorMessage } from '../../utils/apiError';
 import { formatDate } from '../../utils/formatters';
@@ -31,6 +32,11 @@ import { fonts, fontSize, fontWeight, lineHeight, radius, space } from '../../th
  * `keysPersist` false means the install has no valid BYOK_ENCRYPTION_KEY;
  * `keyInvalid` tells "set but malformed" (no save can work, so saving is
  * off) apart from "unset" (saves work until the server restarts).
+ *
+ * "Verify key" (T-5.6.8) is a paid request on the user's own key, so it fires
+ * on the press and nowhere else: not on load, and not after a save. The answer
+ * is one word from the server, and it stands only for the key it was asked
+ * about, so replacing the key clears it.
  */
 
 const PROVIDER_NAMES: Record<string, string> = {
@@ -199,8 +205,13 @@ function KeysPanel({
         <PanelHeading>Your API keys</PanelHeading>
         <Prose>
           A key you add here is used for your own calls to that provider, in place of the
-          install's key, and bills to your account. It is stored encrypted and never shown
-          again, not even to you. Remove it to go back to the install's key.
+          install's key, and bills to your account. An OpenAI key also transcribes your audio:
+          videos with no captions, podcasts and recordings. A key is stored encrypted and never
+          shown again, not even to you. Remove it to go back to the install's key.
+        </Prose>
+        <Prose muted>
+          Verify key sends the provider one very small request on your key, billed to you, and
+          only when you press it.
         </Prose>
         {keyInvalid ? (
           <Notice data-byok-invalid>
@@ -316,6 +327,47 @@ function lastChanged(k: CredentialMetadata): string {
   return formatDate(parseServerTime(k.updated_at).toISOString());
 }
 
+const KEY_CHECK_COPY: Record<
+  KeyCheckResult,
+  { label: string; tone: 'success' | 'error' | 'warn'; text: string }
+> = {
+  valid: { label: 'Valid', tone: 'success', text: 'The provider accepted this key.' },
+  refused: {
+    label: 'Refused',
+    tone: 'error',
+    text: 'The provider refused this key. It may be wrong, revoked, out of credit, or over its rate limit.',
+  },
+  unreachable: {
+    label: 'Not checked',
+    tone: 'warn',
+    text: 'Could not reach the provider, or it gave no answer about this key, so nothing is known about it. Try again in a moment. A key limited to certain models stays here, and can still work.',
+  },
+};
+
+/** The answer to a press, tied to the key version it was asked about. */
+type KeyCheck = { updatedAt: string; result?: KeyCheckResult; error?: string };
+
+function KeyCheckLine({ check }: { check: KeyCheck }) {
+  const c = useColors();
+  const copy = check.result ? KEY_CHECK_COPY[check.result] : null;
+  return (
+    <div
+      role="status"
+      data-byok-check={check.result ?? 'error'}
+      style={{ display: 'flex', alignItems: 'center', gap: space['2'], flexWrap: 'wrap' }}
+    >
+      {copy && (
+        <Badge tone={copy.tone} size="sm">
+          {copy.label}
+        </Badge>
+      )}
+      <span style={{ fontFamily: fonts.ui, fontSize: fontSize.xs, color: c.textSecondary, maxWidth: '75ch' }}>
+        {copy ? copy.text : check.error}
+      </span>
+    </div>
+  );
+}
+
 function ProviderRow({
   provider,
   stored,
@@ -339,6 +391,23 @@ function ProviderRow({
 }) {
   const c = useColors();
   const isSet = !!stored?.has_secret;
+  const [checking, setChecking] = useState(false);
+  const [check, setCheck] = useState<KeyCheck | null>(null);
+
+  const verify = async () => {
+    if (checking || !stored) return;
+    const updatedAt = stored.updated_at;
+    setChecking(true);
+    try {
+      const { result } = await credentialsApi.verify(provider);
+      setCheck({ updatedAt, result });
+    } catch (err) {
+      setCheck({ updatedAt, error: apiErrorMessage(err, 'The key could not be checked. Try again.') });
+    } finally {
+      setChecking(false);
+    }
+  };
+
   return (
     <div data-byok-provider={provider} style={rowStyle(c.border, isLast)}>
       <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: space['3'] }}>
@@ -372,6 +441,17 @@ function ProviderRow({
             <Button variant="secondary" size="sm" onClick={onEdit} disabled={!canSave}>
               {isSet ? 'Replace key' : 'Add key'}
             </Button>
+            {isSet && (
+              <Button
+                variant="secondary"
+                size="sm"
+                loading={checking}
+                onClick={() => void verify()}
+                disabled={!canSave}
+              >
+                Verify key
+              </Button>
+            )}
             {stored && (
               <Button variant="tertiary" size="sm" onClick={onRemove}>
                 Remove
@@ -380,6 +460,7 @@ function ProviderRow({
           </div>
         )}
       </div>
+      {stored && check?.updatedAt === stored.updated_at && <KeyCheckLine check={check} />}
       {editing && (
         <KeyForm
           provider={provider}

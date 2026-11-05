@@ -27,6 +27,7 @@ SOURCE_EMPTY = "source_empty"
 BUDGET_MOVED = "budget_moved"
 TOP_UP_SKIPPED = "top_up_skipped"
 WHISPER_MINUTES_SPENT = "whisper_minutes_spent"
+WHISPER_BUDGET_SPENT = "whisper_budget_spent"
 
 
 def _label(source_type: str) -> str:
@@ -103,6 +104,24 @@ def whisper_minutes_spent(used_seconds: float, cap_minutes: int, skipped: int) -
             f"Whisper stopped after {round(used_seconds / 60)} minutes of audio, past "
             f"the {cap_minutes}-minute limit (WHISPER_MAX_MINUTES_PER_JOB), so "
             f"{skipped} {'source' if skipped == 1 else 'sources'} could not be read."
+        ),
+    }
+
+
+def whisper_budget_spent(cap: int, skipped: int) -> dict:
+    """A sync's loss to ``WHISPER_MAX_PER_JOB``. It has no approval step, and
+    its progress line ends in "completed", so this is all its reader gets."""
+    stopped = (
+        f"Whisper stopped at this run's limit of {cap} {'recording' if cap == 1 else 'recordings'}"
+        if cap
+        else "Whisper is off on this install"
+    )
+    return {
+        "kind": WHISPER_BUDGET_SPENT,
+        "text": (
+            f"{stopped} (WHISPER_MAX_PER_JOB), so {skipped} "
+            f"{'source' if skipped == 1 else 'sources'} could not be read. "
+            "A later sync tries them again."
         ),
     }
 

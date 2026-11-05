@@ -29,8 +29,9 @@ plumbing without core changes.
   ``app.services.youtube_service``. Per [OQ-4
   resolution](../../../docs/decisions.md#d-033--whisper-as-service-for-podcasts-reuse-existing-openai-whisper-path-2026-05-03),
   we reuse the OpenAI Whisper path rather than spinning up a separate
-  service. Gated on ``OPENAI_API_KEY`` just like the YouTube fallback;
-  fail-soft to ``None`` (document marked unavailable) when unset.
+  service. Runs on the tenant's own OpenAI key when they brought one, else
+  ``OPENAI_API_KEY``, just like the YouTube fallback; fail-soft to ``None``
+  (document marked unavailable) when there is neither.
 
 **Identity.**
 

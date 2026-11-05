@@ -23,14 +23,20 @@ def create_job(
     Default ``None`` preserves the legacy single-tenant behaviour
     so service-layer callers that haven't updated yet keep working.
     """
-    # Check concurrent job limit
+    # T-5.2.14: the limit is each user's own, so one user's jobs never use up
+    # another's room. Nothing is refused on the install's total: a job past
+    # what the worker can run waits in the queue.
+    limit = settings.MAX_CONCURRENT_JOBS
     active_count = (
         db.query(Job)
-        .filter(Job.status.notin_(["completed", "cancelled", "failed"]))
+        .filter(Job.tenant_id == tenant_id, Job.status.notin_(["completed", "cancelled", "failed"]))
         .count()
     )
-    if active_count >= settings.MAX_CONCURRENT_JOBS:
-        raise ValueError(f"Maximum concurrent jobs ({settings.MAX_CONCURRENT_JOBS}) reached")
+    if active_count >= limit:
+        raise ValueError(
+            f"You have {active_count} active jobs, and your limit is {limit} at once. "
+            "Other people's jobs do not count toward it. Wait for one to finish, or cancel one."
+        )
 
     job = Job(
         job_type=job_data.job_type,

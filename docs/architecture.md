@@ -378,7 +378,7 @@ Subscription jobs ingest *everything* from each subscribed channel's uploads pla
 
 - No `awaiting_approval`.
 - No report generation.
-- Whisper transcript fallback for videos lacking captions.
+- Whisper transcript fallback for videos lacking captions, on the user's own OpenAI key when they brought one, else the install's (T-5.6.13). Podcast audio and Echo recordings follow the same rule, `llm_service.whisper_api_key`.
 - Idempotent: re-running a subscription job over the same channel skips already-ingested videos.
 - Transitions: `pending → extracting → building_rag → completed`.
 

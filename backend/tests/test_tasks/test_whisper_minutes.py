@@ -264,8 +264,8 @@ def test_a_split_file_counts_its_whole_length_once(
 
 
 def test_a_subscription_walk_honours_the_cap_too(db, tasks, monkeypatch):
-    """Its extraction loop is its own, it never had a recording cap, and a
-    channel's history is the longest audio a job can reach."""
+    """Its extraction loop is its own, and a channel's history is the longest
+    audio a job can reach."""
     monkeypatch.setattr(settings, "WHISPER_MAX_MINUTES_PER_JOB", 5)
     fake = _Videos()
     job_id = _approved(db, [6 * MINUTE] * 2, videos=True)
@@ -316,3 +316,51 @@ def test_a_subscription_with_no_cap_calls_the_connector_as_before(db, tasks):
     db.expire_all()
     assert db.get(Job, job_id).status == "failed"
     assert _notes(db, job_id) == []
+
+
+def _walk(db, job_id: str, fake: BaseConnector) -> None:
+    db.expire_all()
+    job = db.get(Job, job_id)
+    job.job_type = "subscription"
+    db.commit()
+
+    snapshot = registry.all_connectors()
+    registry._reset_for_tests()
+    registry.register(fake)
+    try:
+        with patch.object(job_tasks, "chroma_service") as chroma:
+            chroma.insert_chunks = MagicMock(return_value=1)
+            job_tasks._run_extraction_and_rag(SimpleNamespace(request=SimpleNamespace(id="t")), db, job)
+    finally:
+        registry._reset_for_tests()
+        for connector in snapshot.values():
+            registry.register(connector)
+
+
+def test_a_subscription_walk_honours_the_recording_count_too(db, tasks, monkeypatch):
+    """Both limits apply to it, as to an approved run, and the note names the
+    one that stopped it."""
+    monkeypatch.setattr(settings, "WHISPER_MAX_MINUTES_PER_JOB", 600)
+    monkeypatch.setattr(settings, "WHISPER_MAX_PER_JOB", 1)
+    fake = _Videos()
+    job_id = _approved(db, [MINUTE] * 3, videos=True)
+
+    _walk(db, job_id, fake)
+
+    assert [allowed for _, allowed in fake.calls] == [True, False, False]
+    assert any("Whisper budget exhausted" in m for m in tasks)
+    assert [n["kind"] for n in _notes(db, job_id)] == ["whisper_budget_spent"]
+
+
+def test_when_both_limits_are_spent_the_run_says_so_once(db, tasks, monkeypatch):
+    """Minutes first, as the progress line does: one reason for one lost source."""
+    monkeypatch.setattr(settings, "WHISPER_MAX_MINUTES_PER_JOB", 5)
+    monkeypatch.setattr(settings, "WHISPER_MAX_PER_JOB", 1)
+    fake = _Videos()
+    job_id = _approved(db, [6 * MINUTE] * 2, videos=True)
+
+    _walk(db, job_id, fake)
+
+    assert [allowed for _, allowed in fake.calls] == [True, False]
+    assert any("Whisper minutes spent" in m for m in tasks)
+    assert [n["kind"] for n in _notes(db, job_id)] == ["whisper_minutes_spent"]

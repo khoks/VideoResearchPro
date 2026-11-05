@@ -1921,6 +1921,8 @@ def _run_extraction_and_rag(self, db, job) -> None:
     Shared between ``resume_job_after_approval`` semantics and subscription
     ingest.
     """
+    from app.services import llm_service
+
     job_id = job.id
     # `approved` now lives on the JobVideo link row, not on Document.
     approved_videos = (
@@ -1961,6 +1963,14 @@ def _run_extraction_and_rag(self, db, job) -> None:
         settings, "CHROMA_GLOBAL_COLLECTION_NAME", "pratidhvani_global"
     )
     visual_budget = VisualBudget(settings.VISUAL_MAX_FRAMES_PER_JOB)
+    # Both Whisper limits, as after an approval. Nobody reviewed this list, and
+    # a channel's history is the longest audio a job can reach, so they are all
+    # that bounds what a sync spends, on the subscriber's own key if they
+    # brought one. What they stop stays unavailable, and the next sync tries it.
+    whisper_used = 0
+    whisper_budget = max(0, settings.WHISPER_MAX_PER_JOB)
+    whisper_budget_announced = False
+    whisper_budget_skipped = 0
     whisper_minutes = WhisperMinutes()
 
     for i, video in enumerate(approved_videos):
@@ -2033,29 +2043,46 @@ def _run_extraction_and_rag(self, db, job) -> None:
                 f"video_id={video.video_id} '{title_preview}'"
             )
             connector = connector_for(video.source_type)
-            # WHISPER_MAX_PER_JOB has never bounded a subscription walk, and a
-            # channel's history is the longest audio a job can reach, so the
-            # minute limit applies here when one is set.
             fetch_kwargs: dict = {}
-            whisper_barred = whisper_minutes.spent and video.source_type in _WHISPER_FALLBACK_SOURCE_TYPES
+            whisper_barred = (
+                whisper_used >= whisper_budget or whisper_minutes.spent
+            ) and video.source_type in _WHISPER_FALLBACK_SOURCE_TYPES
             if whisper_barred:
                 fetch_kwargs["allow_whisper"] = False
-            extracted = connector.fetch_text(
-                Candidate(
-                    source_type=video.source_type,
-                    source_id=video.source_id,
-                    title=video.title,
-                    source_url=video.source_url or video.url,
-                    extra=_known_audio_language(video),
-                ),
-                job_id=job_id,
-                query=job.topic or "",
-                **fetch_kwargs,
-            )
+                if not whisper_budget_announced:
+                    whisper_budget_announced = True
+                    logger.warning(
+                        f"[job:{job_id}] Whisper budget exhausted "
+                        f"({whisper_used}/{whisper_budget} recordings, "
+                        f"{whisper_minutes.used_seconds / 60:.0f}/"
+                        f"{whisper_minutes.cap_minutes or 'unlimited'} minutes); "
+                        "remaining videos use caption-fetch only "
+                        "(WHISPER_MAX_PER_JOB, WHISPER_MAX_MINUTES_PER_JOB)"
+                    )
+            # The subscriber's BYOK context: the Whisper fallback runs on
+            # their key when they brought one (T-5.6.13). The task's own scope
+            # is joined, so the seconds are recorded as before.
+            with llm_service.byok_context(job.tenant_id, db):
+                extracted = connector.fetch_text(
+                    Candidate(
+                        source_type=video.source_type,
+                        source_id=video.source_id,
+                        title=video.title,
+                        source_url=video.source_url or video.url,
+                        extra=_known_audio_language(video),
+                    ),
+                    job_id=job_id,
+                    query=job.topic or "",
+                    **fetch_kwargs,
+                )
             if extracted is not None and extracted.text_source in _WHISPER_TEXT_SOURCES:
+                whisper_used += 1
                 whisper_minutes.charge(video, extracted)
             if extracted is None and whisper_barred:
-                whisper_minutes.skipped += 1
+                if whisper_minutes.spent:
+                    whisper_minutes.skipped += 1
+                else:
+                    whisper_budget_skipped += 1
 
             if extracted:
                 transcript = extracted.segments
@@ -2104,10 +2131,15 @@ def _run_extraction_and_rag(self, db, job) -> None:
         progress_pct = 30 + int(25 * ((i + 1) / total)) if total else 55
         attempted = i + 1
         unavailable_so_far = attempted - fetched_count
+        budget_suffix = (
+            " · Whisper minutes spent" if whisper_minutes.spent
+            else " · Whisper budget exhausted" if whisper_budget_announced
+            else ""
+        )
         progress_message = (
             f"Video {attempted}/{total}: "
             f"{fetched_count} fetched, {unavailable_so_far} unavailable "
-            f"(reused {reused_count}, new {newly_processed_count})..."
+            f"(reused {reused_count}, new {newly_processed_count})...{budget_suffix}"
         )
         progress_service.publish_progress(
             job_id, "extracting", progress_pct, progress_message,
@@ -2135,7 +2167,9 @@ def _run_extraction_and_rag(self, db, job) -> None:
     )
     if whisper_note := whisper_minutes.note():
         run_notes.add(job, [whisper_note])
-        db.commit()
+    if whisper_budget_skipped:
+        run_notes.add(job, [run_notes.whisper_budget_spent(whisper_budget, whisper_budget_skipped)])
+    db.commit()
 
     if fetched_count == 0:
         logger.error(

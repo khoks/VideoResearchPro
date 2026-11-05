@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import logging
 import time
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
@@ -54,6 +55,12 @@ logger = logging.getLogger(__name__)
 # avoids threading kwargs through every agent / LangGraph node.
 _byok_context: ContextVar[tuple[str | None, Any | None]] = ContextVar(
     "_byok_context", default=(None, None)
+)
+
+# T-5.6.12: the tenant's keys by provider, read once for work on a pool. Set
+# by ``byok_keys_for_pool``, which takes the session out of ``_byok_context``.
+_byok_keys: ContextVar[dict[str, str | None] | None] = ContextVar(
+    "_byok_keys", default=None
 )
 
 
@@ -108,6 +115,41 @@ def byok_context(
         if override_token is not None:
             llm_routing.user_override_context.reset(override_token)
         _byok_context.reset(token)
+
+
+@contextmanager
+def byok_keys_for_pool() -> Iterator[None]:
+    """Read the open ``byok_context``'s keys now, on this thread, for threads
+    that start inside the with-block (T-5.6.12).
+
+    A pool thread runs in a copy of the caller's context, so it would look a
+    key up through the caller's ``Session``, which belongs to one thread. On a
+    connection that enforces that, the read raises, and
+    ``_resolve_byok_api_key`` answers an exception with the install's key: the
+    tenant's work would run, without a word, on someone else's bill.
+
+    So every provider's key is read here, once, and the session leaves the
+    context for the length of the block. The tenant stays, for the meter. A
+    thread that reaches for a key finds it already read, and a thread that
+    reached for the session would find None. Every provider, not the one the
+    pool's use case resolves to: a provider left out would read as "no key"
+    and fall back just the same.
+    """
+    tenant_id, db = _byok_context.get()
+    if tenant_id is None or db is None:  # no tenant, or already handed over
+        yield
+        return
+    from app.services.byok_service import RESOLVED_PROVIDERS
+
+    keys_token = _byok_keys.set(
+        {p: _resolve_byok_api_key(p, tenant_id, db) for p in RESOLVED_PROVIDERS}
+    )
+    context_token = _byok_context.set((tenant_id, None))
+    try:
+        yield
+    finally:
+        _byok_context.reset(context_token)
+        _byok_keys.reset(keys_token)
 
 
 def _load_user_overrides(user_id: str, db: Any) -> dict | None:
@@ -577,6 +619,29 @@ def _resolve_byok_api_key(
         return None
 
 
+def _byok_key(provider: str, tenant_id: str | None, db: Any | None) -> str | None:
+    """The tenant's key for ``provider``: read through ``db``, or, on a pool
+    thread (``byok_keys_for_pool``), the one already read for it."""
+    keys = _byok_keys.get()
+    if keys is not None and db is None:
+        return keys.get(provider)
+    return _resolve_byok_api_key(provider, tenant_id, db)
+
+
+def whisper_api_key(tenant_id: str | None = None, db: Any | None = None) -> str:
+    """The OpenAI key hosted Whisper runs on, by the rule ``get_llm_for``
+    follows for a model call (T-5.6.13): the tenant's own key when they brought
+    one, else the install's. Empty when there is neither.
+
+    With no arguments it reads the open ``byok_context``, so a connector needs
+    no tenant passed down to it. Outside one it is the install's key, which is
+    what an operator script gets.
+    """
+    if tenant_id is None and db is None:
+        tenant_id, db = _byok_context.get()
+    return _byok_key("openai", tenant_id, db) or settings.OPENAI_API_KEY
+
+
 # ---------------------------------------------------------------------------
 # Back-compat: purpose-level builders (primary/fast binary)
 # ---------------------------------------------------------------------------
@@ -719,7 +784,7 @@ def get_llm_for(
             "byok_context(...) at the call-site boundary)."
         )
 
-    byok_api_key = _resolve_byok_api_key(cfg.provider, tenant_id, db)
+    byok_api_key = _byok_key(cfg.provider, tenant_id, db)
     llm = _build_from_config(
         cfg, temperature, max_tokens, byok_api_key=byok_api_key
     )
@@ -792,12 +857,18 @@ class ProbeResult:
     ``ok=True`` means the provider responded with any non-empty content
     within the timeout. ``ok=False`` means it either raised, timed out,
     or returned empty.
+
+    ``error`` is provider text and can carry the key (an OpenAI 401 quotes
+    part of it). ``status_code`` is the same answer as a number, for anything
+    that must not repeat that text: the HTTP status of a provider's error, 200
+    for an empty answer, None when no answer came back (``_provider_status``).
     """
 
     config: UseCaseConfig
     ok: bool
     latency_ms: int
     error: str | None = None
+    status_code: int | None = None
 
 
 # A 16x16 solid-grey PNG, base64. The payload for vision probes: the only
@@ -815,11 +886,46 @@ _PROBE_IMAGE_B64 = (
 )
 
 
+# A 400 that is about the key, not the request: Google answers a bad key this
+# way, and Anthropic an account with no credit.
+_KEY_TROUBLE_IN_A_400 = ("api_key_invalid", "api key not valid", "api key expired", "credit balance")
+
+# A 403 that is about the model, not the key: OpenAI answers a project key
+# limited to other models this way, and that key works for what it was given.
+_MODEL_TROUBLE_IN_A_403 = ("model_not_found", "access to model")
+
+
+def _provider_status(exc: BaseException) -> int | None:
+    """The HTTP status a provider answered with, or None if it never answered.
+
+    OpenAI and Anthropic errors carry ``status_code``. ``langchain_google_genai``
+    raises its own type from the SDK's, whose ``code`` holds it, so the chain
+    is followed. A 400 about the key reads as 401, and a 403 about the model as
+    404: that is what each means. The text is only searched here, never kept.
+    """
+    seen: BaseException | None = exc
+    for _ in range(5):  # a chain is short, and can loop
+        if seen is None:
+            return None
+        for attr in ("status_code", "code"):
+            status = getattr(seen, attr, None)
+            if isinstance(status, int) and 400 <= status < 600:
+                said = str(seen).lower()
+                if status == 400 and any(m in said for m in _KEY_TROUBLE_IN_A_400):
+                    return 401
+                if status == 403 and any(m in said for m in _MODEL_TROUBLE_IN_A_403):
+                    return 404
+                return status
+        seen = seen.__cause__ or seen.__context__
+    return None
+
+
 def probe_config(
     cfg: UseCaseConfig,
     *,
     timeout_seconds: float = 10.0,
     vision: bool = False,
+    byok_api_key: str | None = None,
 ) -> ProbeResult:
     """Fire a one-token probe against ``cfg`` and return the outcome.
 
@@ -839,6 +945,10 @@ def probe_config(
     succeeds, so without this a `visual_describe_frame` misconfigured onto
     a non-vision model would report healthy at startup and fail on the
     first real frame.
+
+    ``byok_api_key`` (T-5.6.8) sends the probe on that key instead of the
+    install's. Report such a probe through ``check_api_key``, never its
+    ``error``, which is provider text.
     """
     # Reasoning configs need a much larger budget — the internal-
     # thinking phase consumes tokens before any visible output.
@@ -848,7 +958,9 @@ def probe_config(
     # Build the client first — build errors (missing API key, missing
     # pip package) are a legitimate probe failure reason.
     try:
-        llm = _build_from_config(cfg, temperature=0.0, max_tokens=probe_max_tokens)
+        llm = _build_from_config(
+            cfg, temperature=0.0, max_tokens=probe_max_tokens, byok_api_key=byok_api_key
+        )
     except Exception as e:
         return ProbeResult(
             config=cfg, ok=False, latency_ms=0, error=f"build: {e}"
@@ -875,7 +987,8 @@ def probe_config(
     except Exception as e:
         elapsed_ms = int((time.monotonic() - start) * 1000)
         return ProbeResult(
-            config=cfg, ok=False, latency_ms=elapsed_ms, error=str(e)[:300]
+            config=cfg, ok=False, latency_ms=elapsed_ms, error=str(e)[:300],
+            status_code=_provider_status(e),
         )
     elapsed_ms = int((time.monotonic() - start) * 1000)
     # `response_text` rather than `.content` — reasoning configs return a
@@ -888,8 +1001,64 @@ def probe_config(
             ok=False,
             latency_ms=elapsed_ms,
             error="empty response content",
+            status_code=200,
         )
     return ProbeResult(config=cfg, ok=True, latency_ms=elapsed_ms, error=None)
+
+
+# ---------------------------------------------------------------------------
+# Checking a user's own key (T-5.6.8).
+# ---------------------------------------------------------------------------
+KeyCheck = Literal["valid", "refused", "unreachable"]
+
+# What a key check asks for: each provider's small, cheap model, with no
+# reasoning, so ``probe_config`` keeps to its 16-token budget. Claude 5 models
+# refuse the temperature a probe sends with reasoning off, so Claude's is the
+# Haiku before them. ``byok_service.RESOLVED_PROVIDERS`` is the same set of
+# keys, and a test holds both to it and to the model lists.
+KEY_CHECK_MODELS: dict[str, str] = {
+    "openai": "gpt-5.6-luna",
+    "anthropic": "claude-haiku-4-5",
+    "google": "gemini-3.1-flash-lite",
+}
+
+# The wall clock on a check. The SDKs' own timeouts run to minutes, and
+# ``probe_config`` leaves the limit to its caller.
+KEY_CHECK_TIMEOUT_SECONDS = 30.0
+
+# The provider answered, and what it said was about this key: 401 not a key,
+# 402 and 429 no credit or over a limit, 403 not allowed.
+_KEY_REFUSED_STATUSES = frozenset({401, 402, 403, 429})
+
+
+def check_api_key(provider: str, api_key: str) -> KeyCheck:
+    """Try ``api_key`` on ``provider`` with one very small request.
+
+    * ``valid``: the provider answered the request, even with nothing to say.
+    * ``refused``: it answered that this key may not be used.
+    * ``unreachable``: anything else. No answer, the wall clock, a 5xx, or a
+      refusal of the request and not the key (a retired model, or one this key
+      was not given): a check says a key is good or bad only when the provider
+      said so.
+
+    One of three words is all that leaves here. The probe's ``error`` is
+    provider text, which can quote the key, so it is neither returned nor
+    logged. The call is not metered: it is on the user's own key, and like
+    every probe it builds its own client.
+    """
+    cfg = UseCaseConfig(provider, KEY_CHECK_MODELS[provider], "off")
+    pool = ThreadPoolExecutor(max_workers=1)
+    try:
+        probe = pool.submit(probe_config, cfg, byok_api_key=api_key).result(
+            timeout=KEY_CHECK_TIMEOUT_SECONDS
+        )
+    except TimeoutError:
+        return "unreachable"
+    finally:
+        pool.shutdown(wait=False)  # a thread past the clock finishes alone
+    if probe.ok or probe.status_code == 200:
+        return "valid"
+    return "refused" if probe.status_code in _KEY_REFUSED_STATUSES else "unreachable"
 
 
 # Keep resolve_route importable from here for any external caller.
@@ -899,5 +1068,6 @@ __all__ = [
     "get_llm_for",
     "probe_config",
     "ProbeResult",
+    "check_api_key",
     "resolve_route",
 ]

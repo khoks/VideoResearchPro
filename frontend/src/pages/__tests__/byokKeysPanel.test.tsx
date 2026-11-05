@@ -9,7 +9,9 @@
  * manager: `autocomplete="one-time-code"` and no <form> to submit. Other
  * tiers see the plan note and never call `/auth/credentials`. The "keys do
  * not last" note follows `byok.keys_persist`; a malformed key
- * (`byok.key_invalid`) turns saving off and says so instead.
+ * (`byok.key_invalid`) turns saving off and says so instead. "Verify key" is a
+ * paid request on the user's key, so it fires on the press alone, and its
+ * answer stands only for the key it asked about.
  *
  * The "key" below is a placeholder, not key material.
  */
@@ -78,10 +80,14 @@ const get = vi.fn(async (url: string) => {
   if (url === '/auth/credentials') return { data: stored.map((k) => ({ ...k })) };
   throw new Error(`unexpected GET ${url}`);
 });
+let verifyAnswer: () => Promise<{ data: { provider: string; result: string } }> = async () => ({
+  data: { provider: 'openai', result: 'valid' },
+});
 const post = vi.fn(async (url: string) => {
   if (url === '/settings/llm/estimate') {
     return { data: { benchmark: null, per_use_case: [], totals: { cost_usd: 0, unknown_pricing_models: [] } } };
   }
+  if (url.endsWith('/verify')) return verifyAnswer();
   throw new Error(`unexpected POST ${url}`);
 });
 const put = vi.fn(async (url: string, body: { secret: string; label: string | null }) => {
@@ -206,6 +212,7 @@ beforeEach(() => {
       has_secret: true,
     },
   ];
+  verifyAnswer = async () => ({ data: { provider: 'openai', result: 'valid' } });
   useJobStore.setState({ toasts: [] });
   consoleSpies = (['log', 'info', 'warn', 'error', 'debug'] as const).map((m) =>
     vi.spyOn(console, m).mockImplementation(() => undefined),
@@ -222,6 +229,86 @@ afterEach(() => {
 function consoleSawPlaceholder(): boolean {
   return consoleSpies.some((s) => s.mock.calls.some((args: unknown[]) => JSON.stringify(args).includes(PLACEHOLDER)));
 }
+
+const verifyCalls = () => post.mock.calls.filter(([url]) => url.endsWith('/verify'));
+const checkLine = (provider: string) => row(provider)!.querySelector('[data-byok-check]');
+
+describe('verifying a stored key', () => {
+  it('sends nothing to a provider until the button is pressed, and then once', async () => {
+    await mount();
+    expect(verifyCalls()).toEqual([]);
+    await act(async () => rowButton('openai', 'Verify key')!.click());
+    await flush();
+    expect(verifyCalls()).toEqual([['/auth/credentials/openai/verify']]);
+    expect(checkLine('openai')!.getAttribute('data-byok-check')).toBe('valid');
+    expect(checkLine('openai')!.textContent).toContain('The provider accepted this key.');
+  });
+
+  it('does not check a key on saving it', async () => {
+    await mount();
+    act(() => rowButton('anthropic', 'Add key')!.click());
+    await typeInto(keyField()!, PLACEHOLDER);
+    await submitForm();
+    await flush();
+    expect(rowButton('anthropic', 'Verify key')).toBeDefined();
+    expect(verifyCalls()).toEqual([]);
+  });
+
+  it('offers no check for a provider with no key stored', async () => {
+    await mount();
+    expect(rowButton('anthropic', 'Verify key')).toBeUndefined();
+  });
+
+  it.each([
+    ['refused', 'Refused', 'The provider refused this key.'],
+    ['unreachable', 'Not checked', 'nothing is known about it'],
+    ['unreachable', 'Not checked', 'A key limited to certain models stays here'],
+  ] as const)('says what a %s answer means', async (result, badge, words) => {
+    verifyAnswer = async () => ({ data: { provider: 'openai', result } });
+    await mount();
+    await act(async () => rowButton('openai', 'Verify key')!.click());
+    await flush();
+    expect(checkLine('openai')!.getAttribute('data-byok-check')).toBe(result);
+    expect(checkLine('openai')!.textContent).toContain(badge);
+    expect(checkLine('openai')!.textContent).toContain(words);
+  });
+
+  it("shows the server's words when the check itself is refused", async () => {
+    const refusal = new AxiosError('429', 'ERR_BAD_REQUEST', undefined, undefined, {
+      status: 429,
+      statusText: 'Too Many Requests',
+      data: { detail: 'Too many requests. Please retry after the cooldown period.' },
+      headers: {},
+      config: { headers: new AxiosHeaders() },
+    });
+    verifyAnswer = async () => {
+      throw refusal;
+    };
+    await mount();
+    await act(async () => rowButton('openai', 'Verify key')!.click());
+    await flush();
+    expect(checkLine('openai')!.getAttribute('data-byok-check')).toBe('error');
+    expect(checkLine('openai')!.textContent).toContain('Too many requests');
+  });
+
+  it('drops the answer once the key it was about has been replaced', async () => {
+    await mount();
+    await act(async () => rowButton('openai', 'Verify key')!.click());
+    await flush();
+    expect(checkLine('openai')).not.toBeNull();
+    act(() => rowButton('openai', 'Replace key')!.click());
+    await typeInto(keyField()!, PLACEHOLDER);
+    await submitForm();
+    await flush();
+    expect(checkLine('openai')).toBeNull();
+  });
+
+  it('turns the check off while a malformed key means no stored key can be read', async () => {
+    byok.current = { providers: ['anthropic', 'google', 'openai'], keys_persist: false, key_invalid: true };
+    await mount();
+    expect(rowButton('openai', 'Verify key')!.disabled).toBe(true);
+  });
+});
 
 describe('keys panel for a Studio account', () => {
   it('lists each provider a key is used for, with whether it is set and when it changed', async () => {

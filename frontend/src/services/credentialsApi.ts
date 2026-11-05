@@ -15,6 +15,13 @@ export interface CredentialMetadata {
   has_secret: boolean;
 }
 
+/**
+ * What a "Verify key" press found (T-5.6.8): `unreachable` means the provider
+ * gave no answer about the key, so nothing is known about it. The server
+ * sends this word and nothing from the provider.
+ */
+export type KeyCheckResult = 'valid' | 'refused' | 'unreachable';
+
 export const CREDENTIALS_QUERY_KEY = ['auth', 'credentials'] as const;
 
 export const credentialsApi = {
@@ -29,6 +36,12 @@ export const credentialsApi = {
   remove: (provider: string) =>
     api
       .delete<{ deleted: boolean }>(`/auth/credentials/${encodeURIComponent(provider)}`)
+      .then((r) => r.data),
+  verify: (provider: string) =>
+    api
+      .post<{ provider: string; result: KeyCheckResult }>(
+        `/auth/credentials/${encodeURIComponent(provider)}/verify`,
+      )
       .then((r) => r.data),
 };
 

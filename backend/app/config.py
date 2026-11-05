@@ -175,8 +175,9 @@ class Settings(BaseSettings):
     #
     # Whisper-as-service decision (resolves OQ-4): we reuse the existing
     # OpenAI Whisper integration (same path used as YouTube fallback)
-    # rather than introducing a separate service. Gated on
-    # `OPENAI_API_KEY` like the YouTube fallback. A future PR may add
+    # rather than introducing a separate service. Runs on the tenant's own
+    # OpenAI key when they brought one, else `OPENAI_API_KEY`, like the
+    # YouTube fallback (T-5.6.13). A future PR may add
     # a local-Whisper-via-faster-whisper opt-in for self-hosters who
     # don't want OpenAI in the loop, but that's not on the critical
     # path for M-1.7.
@@ -725,6 +726,9 @@ class Settings(BaseSettings):
     LLM_USE_CASE_CONFIG: str = ""
 
     # Jobs
+    # T-5.2.14: active jobs ONE user may hold at once, each user counted alone.
+    # Also sizes a prefork worker's pool (`worker_concurrency`), which is
+    # shared; `--pool=solo` runs one task at a time whatever this says.
     MAX_CONCURRENT_JOBS: int = 5
     DEFAULT_TRANSCRIPT_LANGUAGE: str = "en"
 
@@ -859,6 +863,9 @@ class Settings(BaseSettings):
     RATE_LIMIT_LOGIN_PER_MIN: int = 10
     RATE_LIMIT_RESET_PER_MIN: int = 5
     RATE_LIMIT_REGISTER_PER_MIN: int = 5
+    # T-5.6.8: "Verify key" presses per user per minute. Each one is a paid
+    # request on the user's own key.
+    RATE_LIMIT_VERIFY_KEY_PER_MIN: int = 5
 
     model_config = {"env_file": ".env", "extra": "ignore"}
 

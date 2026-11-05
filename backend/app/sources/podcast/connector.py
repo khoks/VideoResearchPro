@@ -328,9 +328,15 @@ def _whisper_transcribe_audio(
     """
     if not audio_url:
         return None
-    if not settings.OPENAI_API_KEY:
+    from app.services import llm_service
+
+    # T-5.6.13: the tenant's key when they brought one, as Echo recordings, so
+    # an install with no key of its own can still read their episodes.
+    api_key = llm_service.whisper_api_key()
+    if not api_key:
         logger.warning(
-            "podcast: OPENAI_API_KEY unset; cannot Whisper-transcribe %s",
+            "podcast: no OpenAI key, yours or the install's; cannot "
+            "Whisper-transcribe %s",
             source_id,
         )
         return None
@@ -373,7 +379,7 @@ def _whisper_transcribe_audio(
         from app.services import youtube_service
         from app.services.youtube_service import _whisper_transcribe_with_retry
 
-        client = OpenAI(api_key=settings.OPENAI_API_KEY)
+        client = OpenAI(api_key=api_key)
         tag = f"[job:{job_id}] [podcast]" if job_id else "[podcast]"
         if audio_size > youtube_service.WHISPER_MAX_FILE_BYTES:
             result = youtube_service._transcribe_in_chunks(
@@ -394,7 +400,7 @@ def _whisper_transcribe_audio(
             logger.warning(
                 "podcast: Whisper transcription failed for %s: %s",
                 source_id,
-                e,
+                youtube_service.whisper_error_text(e),
             )
             return None
 

@@ -103,6 +103,19 @@ Body `{ "secret": "...", "label": "..." }`, replacing any stored key. Returns th
 #### `DELETE /api/v1/auth/credentials/{provider}`
 `{ "deleted": true }`. Takes `local` too, so a row stored before that rule can go.
 
+#### `POST /api/v1/auth/credentials/{provider}/verify`
+Try the stored key on its provider with one very small request (T-5.6.8): the provider's cheap model, reasoning off, 16 tokens at most. That request is billed to the user's key, so it runs only on this call, never on a save or a page load, and it is not recorded as usage.
+
+Returns `{ "provider": "openai", "result": "valid" }`. `result` is one of three words, and nothing from the provider is passed on:
+
+| `result` | Means |
+|---|---|
+| `valid` | The provider answered the request. |
+| `refused` | The provider answered that this key may not be used: 401, 402, 403 (unless it is about the model), 429, or a 400 about the key, which is how Google answers a bad key and Anthropic an account with no credit. |
+| `unreachable` | No answer about the key: no response within 30 seconds, a 5xx, or a refusal of the request itself: a retired model, or a 403 saying this key was not given the check model, as OpenAI answers a project key limited to others. Nothing is known about the key. |
+
+400 for an unknown provider and for `local`. 404 when no key is stored. 429 past `RATE_LIMIT_VERIFY_KEY_PER_MIN` presses a minute, counted per user. 503 when `BYOK_ENCRYPTION_KEY` is malformed, or cannot read the stored key because it changed since the key was saved.
+
 ### `GET /api/v1/auth/me`
 Return the current user. Requires bearer token.
 
@@ -453,6 +466,8 @@ Optional fields accepted on every job type:
 
 Returns 201 + `JobResponse`. Both fields are echoed back on `JobResponse`.
 
+429 when the caller already holds `MAX_CONCURRENT_JOBS` active jobs. The limit is each user's own (T-5.2.14), and the `detail` says so. Another user's jobs never count toward it.
+
 **From a template** (E-8.6): `POST /api/v1/jobs?template_id=<id>[&template_version=<n>]` records which template version the run started from; `template_version` defaults to the latest. The body is still a full `JobCreate`, validated as any submission. A foreign, deleted or unknown template or version is a 404; a body whose `job_type` differs from the template's is a 422. `JobResponse` carries `template_id` and `template_version` (null otherwise). `{{topic}}` in `search_instructions` is filled with the topic on every topic run, template or not.
 
 ### `GET /api/v1/jobs`
@@ -461,7 +476,7 @@ List the current user's jobs. Returns `list[JobResponse]`.
 ### `GET /api/v1/jobs/{job_id}`
 Fetch a single job. Returns `JobResponse` or 404.
 
-`run_notes` (S-1.5.14) is what the run has to say about its sources and limits, oldest first, and empty on a run with nothing to say. Each note is `{ "kind", "text" }`, and `source_type` when it is about one source; `text` is written for the reader. The kinds are `source_unavailable` (the service refused, rate-limited or failed the search), `source_empty` (it answered and found nothing), `budget_moved` (a share went to other sources), `top_up_skipped` (YouTube could not take it within the day's quota) and `whisper_minutes_spent`.
+`run_notes` (S-1.5.14) is what the run has to say about its sources and limits, oldest first, and empty on a run with nothing to say. Each note is `{ "kind", "text" }`, and `source_type` when it is about one source; `text` is written for the reader. The kinds are `source_unavailable` (the service refused, rate-limited or failed the search), `source_empty` (it answered and found nothing), `budget_moved` (a share went to other sources), `top_up_skipped` (YouTube could not take it within the day's quota), `whisper_minutes_spent` and `whisper_budget_spent` (on a subscription job, `WHISPER_MAX_PER_JOB` stopped it).
 
 ### `PUT /api/v1/jobs/{job_id}/approve`
 Approve a subset of the searched documents and resume the job. Body: `{ "approved_video_ids": ["...", "..."] }`. The name is legacy: each value is a YouTube `video_id`, or a `document_id` for a source without one. Dispatches `resume_job_after_approval`. Topic jobs only — channel and subscription jobs do not have an approval phase. Returns updated `JobResponse`.
@@ -905,7 +920,7 @@ Named, reusable research recipes (E-8.6 / M6; plan: [`docs/plans/m6-job-template
 Parameters are validated the way a submission is (`JobCreate`, with a placeholder topic, and placeholder channels when a channel or subscription recipe leaves `channel_list` empty, meaning "add the channels each run"); a recipe that would fail is a **422**, and unknown fields are refused rather than dropped. Names are unique per reader among live templates, case-insensitively (409). `{{topic}}` in `search_instructions` is replaced by the run's topic at submission.
 
 ### `GET /api/v1/job-templates`
-The caller's templates A→Z, then the built-ins A→Z. The seven starters (S-8.6.2, S-8.6.4) have stable `builtin_key`s: `topic-scan`, `deep-dive`, `quick-brief`, `channel-deep-dive`, `subscription-follow`, `podcast-digest`, `mixed-source-debate`. A starter names only sources that need no search credential. Reading a podcast can need more: an episode with no published transcript goes to Whisper after approval, so a template that reads podcasts lists a `problems` entry on an install with no `OPENAI_API_KEY`, with `WHISPER_MAX_PER_JOB=0`, or without ffmpeg (long episodes are split for Whisper).
+The caller's templates A→Z, then the built-ins A→Z. The seven starters (S-8.6.2, S-8.6.4) have stable `builtin_key`s: `topic-scan`, `deep-dive`, `quick-brief`, `channel-deep-dive`, `subscription-follow`, `podcast-digest`, `mixed-source-debate`. A starter names only sources that need no search credential. Reading a podcast can need more: an episode with no published transcript goes to Whisper after approval, so a template that reads podcasts lists a `problems` entry when neither the install's `OPENAI_API_KEY` nor the reader's own OpenAI key is there to transcribe it, with `WHISPER_MAX_PER_JOB=0`, or without ffmpeg (long episodes are split for Whisper).
 
 ### `POST /api/v1/job-templates`
 Body `{ "name", "description"?, "parameters" }`. 201.
@@ -1500,7 +1515,7 @@ Heartbeats every 30 seconds (server pings, client pongs). Auth is enforced via t
 - **IDs** are UUIDs except `video_id` (YouTube native ID, 11 chars) and `channel_id` (YouTube channel ID, 24 chars).
 - **Pagination** uses `limit` + `offset` (no cursor pagination today). Defaults vary per endpoint and are noted inline.
 - **Empty lists** return `[]`, not `null`.
-- **Errors** return `{ "detail": "..." }` with the appropriate HTTP status. 401 means missing/invalid token; 403 means valid token but insufficient privileges (a tier without the feature, or an operator-only route); 404 means resource not found; 409 means conflict (e.g. knowledge already extracted); 422 is FastAPI's request-body validation error; 502 wraps a downstream LLM error. 429 means one of the install's own limits was hit, each with its own body: a rate limit (`{ detail, retry_after_sec }` plus `Retry-After`), a per-user quota or the document cap (`QuotaExceededError`, whose `detail` is an object: `error`, `resource`, `consumed`, `limit`, `retry_after_sec`, `retry_at`, and for the cap `requested`, `available`, `message`), the concurrent jobs limit on `POST /jobs` (a plain string), the daily draft cap (`detail.code` is `daily_cap`), and a locked account on `POST /auth/password/change`.
+- **Errors** return `{ "detail": "..." }` with the appropriate HTTP status. 401 means missing/invalid token; 403 means valid token but insufficient privileges (a tier without the feature, or an operator-only route); 404 means resource not found; 409 means conflict (e.g. knowledge already extracted); 422 is FastAPI's request-body validation error; 502 wraps a downstream LLM error. 429 means one of the install's own limits was hit, each with its own body: a rate limit (`{ detail, retry_after_sec }` plus `Retry-After`), a per-user quota or the document cap (`QuotaExceededError`, whose `detail` is an object: `error`, `resource`, `consumed`, `limit`, `retry_after_sec`, `retry_at`, and for the cap `requested`, `available`, `message`), a user's own concurrent jobs limit on `POST /jobs` (a plain string), the daily draft cap (`detail.code` is `daily_cap`), and a locked account on `POST /auth/password/change`.
 
 ## Forward-compat
 

@@ -45,7 +45,11 @@ from app.models.job_video import JobVideo  # noqa: E402
 from app.services import chroma_service, language_mix_service  # noqa: E402
 from app.sources import connector_for  # noqa: E402
 from app.sources.types import Candidate  # noqa: E402
-from app.tasks.job_tasks import _build_video_metadata, _record_caption_track  # noqa: E402
+from app.tasks.job_tasks import (  # noqa: E402
+    _build_video_metadata,
+    _known_audio_language,
+    _record_caption_track,
+)
 from app.utils.chunking import chunk_transcript  # noqa: E402
 
 
@@ -101,6 +105,7 @@ def main(argv: list[str] | None = None) -> int:
                         source_id=doc.source_id,
                         title=doc.title,
                         source_url=doc.source_url or doc.url,
+                        extra=_known_audio_language(doc),
                     ),
                     job_id=args.job,
                     query=job.topic or "",

@@ -114,6 +114,24 @@ def test_closed_vocabularies_are_enforced(unauthenticated_client, two):
         assert unauthenticated_client.post(SIGNALS, json=body, headers=ha).status_code == 422, body
 
 
+def test_a_signal_in_a_language_echo_cannot_name_can_be_edited(unauthenticated_client, db, two):
+    """`update` re-checks the row's language, so a learned `other` signal would
+    refuse every edit if the vocabulary did not hold it."""
+    a, ha, _, _ = two
+    row = echo_signal_service.create(
+        db, tenant_id=a.id, user_id=a.id, signal_type="framing", value="Empieza por los incentivos",
+        language="other",
+    )
+    db.commit()
+
+    got = unauthenticated_client.get(f"{SIGNALS}?language=other", headers=ha).json()
+    assert [s["language"] for s in got["items"]] == ["other"]
+
+    r = unauthenticated_client.patch(f"{SIGNALS}/{row.id}", json={"value": "Primero los incentivos"}, headers=ha)
+    assert r.status_code == 200, r.text
+    assert r.json()["language"] == "other"
+
+
 def test_another_tenant_cannot_see_or_touch_a_signal(unauthenticated_client, two):
     a, ha, b, hb = two
     sid = unauthenticated_client.post(SIGNALS, json={"signal_type": "apprehension", "value": "lock-in"}, headers=ha).json()["id"]

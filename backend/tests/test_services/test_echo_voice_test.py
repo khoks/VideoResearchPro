@@ -40,6 +40,7 @@ from app.models.voice_signal_input import VoiceSignalInput
 from app.services import auth_service, note_service
 from app.services import echo_personal_vectors as pv
 from app.services import echo_signal_extraction as ex
+from app.services import echo_signal_service as signals
 from app.services import echo_voice_test_service as vt
 from app.services.llm_routing import UseCaseConfig, resolve_config
 from tests.usage_helpers import MeteredFakeChat
@@ -145,6 +146,43 @@ def test_build_pairs_is_the_harness_procedure():
     assert cards == [f"topic: {own[:30]}" for _, own in held], "the card is built for the note's topic"
     assert (built.tokens_in, built.tokens_out) == (3 * 940, 3 * 66)
     assert "- style · vocabulary: plain words" in model.prompts[1] and "[5] " in model.prompts[1]
+
+
+def test_a_held_out_note_in_another_language_gets_a_pair():
+    """The label indexes the prompt's language, so `other` must have a name,
+    and until T-3.3.2.11 a Spanish note was drafted as romanised Hindi."""
+    spanish = "Creo que los incentivos importan mas que las intenciones en este caso, y la gente responde a lo que le conviene."
+    assert ex.language_of(spanish) == "other"
+    model = FakeModel()
+
+    built = vt.build_pairs([("n1", spanish)], NOTES, ask=model, trait_card=lambda topic: [], rng=random.Random(3))
+
+    assert len(built.pairs) == 1
+    instruction = model.prompts[-1].split("Write a short note", 1)[1]
+    assert "the language of the situation above" in instruction and "Hindi" not in instruction
+    assert set(vt.LANGUAGE_NAMES) == set(signals.LANGUAGES)
+
+
+def test_the_other_wording_relies_on_the_topic_call_a_known_gap():
+    """A gap, pinned. FakeModel echoes the note, so the test above cannot show
+    it: TOPIC_PROMPT names no language and the drafter never sees the note, so
+    an English topic leaves an `other` draft with only English to go on. Only a
+    live run can say how often that happens; the comment on LANGUAGE_NAMES says
+    what to do then."""
+    spanish = "Creo que los incentivos importan mas que las intenciones en este caso, y la gente responde a lo que le conviene."
+    assert "language" not in vt.TOPIC_PROMPT.lower()
+    prompts: list[str] = []
+
+    def answers_in_english(prompt: str) -> tuple[str, int, int]:
+        prompts.append(prompt)
+        return "Whether incentives outweigh intentions" if len(prompts) == 1 else "Un borrador", 1, 1
+
+    vt.build_pairs([("n1", spanish)], NOTES, ask=answers_in_english, trait_card=lambda topic: [], rng=random.Random(3))
+
+    draft_prompt = prompts[1]
+    assert "Situation:\nWhether incentives outweigh intentions\n" in draft_prompt
+    assert "in the language of the situation above reacting to this" in draft_prompt
+    assert spanish not in draft_prompt
 
 
 def test_score_picks_is_the_pre_registered_rule():

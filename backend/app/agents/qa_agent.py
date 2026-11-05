@@ -1282,8 +1282,8 @@ def run_qa_agent(
     "retrieving", "refining", "formulating", "extracting_references".
     ``usage_out``, when given a dict, is populated with "prompt_tokens" /
     "completion_tokens" summed across every LLM call in the run (None when
-    no provider reported usage metadata), and "answer_cut_off", whether the
-    answer stopped at its token budget.
+    no provider reported usage metadata). "answer_cut_off": True joins them
+    only when the answer stopped at its token budget.
 
     Returns:
         (answer_text, references_list)
@@ -1334,7 +1334,8 @@ def run_qa_agent(
     if usage_out is not None:
         usage_out["prompt_tokens"] = tally.prompt_tokens
         usage_out["completion_tokens"] = tally.completion_tokens
-        usage_out["answer_cut_off"] = state["answer_cut_off"]
+        if state["answer_cut_off"]:
+            usage_out["answer_cut_off"] = True
     return state.get("answer", ""), state.get("references", [])
 
 

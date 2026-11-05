@@ -4,7 +4,8 @@
       -> retrieve_relevant_knowledge -> retrieve_voice_signals
       -> retrieve_personal_context -> [nothing usable behind a claim? stop]
       -> draft -> self_critique_against_voice
-      -> (revise -> self_critique, up to ECHO_DRAFT_CRITIQUE_ROUNDS; keep the best)
+      -> (revise -> self_critique, up to ECHO_DRAFT_CRITIQUE_ROUNDS; keep the best;
+          a reply that must stand on something and cites nothing is always revised)
       -> finalize -> [still nothing behind it? stop]
 
 Mode A, as D-100's gate ran it: the user's signals as a trait card plus five
@@ -36,8 +37,13 @@ What code guarantees, not the prompt:
 - **A reply with nothing behind it is refused, not delivered with a warning.**
   A question, opinion or recommendation must cite something usable (T-3.4.1.11,
   superseding D-102's ``ungrounded`` flag). If retrieval found nothing usable
-  the run stops before the draft model; if the draft cites nothing usable it
-  stops at finalize. Either way ``refused`` is set and there is no ``result``.
+  the run stops before the draft model; if the draft cites nothing usable, a
+  revise round asks it to, and if it still does not it stops at finalize. Either
+  way ``refused`` is set and there is no ``result``. The reason says which
+  happened, because each needs a different remedy: more to stand on
+  (``REFUSED_NOTHING``, ``REFUSED_MAIL_ONLY``), another try at the draft
+  (``REFUSED_UNCITED``), or simply another try (``REFUSED_UNREAD``,
+  ``REFUSED_UNREACHABLE``).
 """
 from __future__ import annotations
 
@@ -73,9 +79,21 @@ LANGUAGE_NAMES = {
 INTENTS = ("question", "opinion", "recommendation", "request", "social", "other")
 #: Replies to these say something in the user's name, so something must back them.
 CLAIMING_INTENTS = ("question", "opinion", "recommendation")
-#: Why a run was refused: nothing usable at all, or only unverified mail.
+#: Why a run was refused. Before the draft model: retrieval found nothing, or only
+#: unverified mail, or the stores did not answer, so "nothing" would mean nothing.
 REFUSED_NOTHING = "nothing"
 REFUSED_MAIL_ONLY = "mail_only"
+REFUSED_UNREACHABLE = "unreachable"
+#: At finalize, usable items were retrieved (the stop above saw to that) and the
+#: text as delivered cites none of them.
+REFUSED_UNCITED = "uncited"
+#: Either place: the classifier failed, so it is not known that the reply needed backing.
+REFUSED_UNREAD = "unread"
+#: What a revise round is told when a reply that needs backing cites nothing usable.
+CITE_OR_DROP = (
+    "Nothing in this draft cites an item it can stand on. Put an item's marker after each "
+    "point that comes from it, and drop every claim no item supports."
+)
 LLMCall = Callable[[str], tuple[str, int, int]]
 
 
@@ -110,6 +128,8 @@ class DraftDeps:
     #: text -> en | hi-Deva | hi-Latn | mixed
     language_of: Callable[[str], str]
     models: dict[str, str] = field(default_factory=dict)
+    #: Whether the stores answer: retrieval swallows their failures and returns nothing.
+    store_ok: Callable[[], bool] = lambda: True
 
 
 class DraftState(TypedDict, total=False):
@@ -134,7 +154,7 @@ class DraftState(TypedDict, total=False):
     tokens_in: int
     tokens_out: int
     result: dict
-    #: REFUSED_NOTHING or REFUSED_MAIL_ONLY: no ``result``, and nothing to deliver.
+    #: One of the REFUSED_ reasons: no ``result``, and nothing to deliver.
     refused: str
 
 
@@ -227,6 +247,14 @@ def build_graph(deps: DraftDeps):
         read may well ask for a claim, and asking again costs the user little."""
         return not state.get("classified") or state.get("intent") in CLAIMING_INTENTS
 
+    def cites_usable(state: DraftState, candidate: dict) -> bool:
+        items = {i.marker: i for i in (state.get("knowledge") or []) + (state.get("facts") or [])}
+        return any(m in items and not items[m].unverified for m in cited_markers(candidate["draft"]))
+
+    def unbacked(state: DraftState) -> bool:
+        """It must stand on something, and no round so far has."""
+        return needs_backing(state) and not any(cites_usable(state, c) for c in state["candidates"])
+
     def classify_intent(state: DraftState) -> dict:
         message = state["message"]
         update: dict[str, Any] = {"intent": "other", "classified": False, "topic": message[:300], "people": []}
@@ -273,7 +301,13 @@ def build_graph(deps: DraftDeps):
         found = (state.get("knowledge") or []) + facts
         if needs_backing(state) and all(i.unverified for i in found):
             # Nothing a draft could stand on, so stop before paying for one.
-            return {"facts": facts, "refused": REFUSED_MAIL_ONLY if found else REFUSED_NOTHING}
+            if not state.get("classified"):
+                refused = REFUSED_UNREAD
+            elif found:
+                refused = REFUSED_MAIL_ONLY
+            else:
+                refused = REFUSED_NOTHING if deps.store_ok() else REFUSED_UNREACHABLE
+            return {"facts": facts, "refused": refused}
         return {"facts": facts}
 
     def route_after_retrieval(state: DraftState) -> str:
@@ -322,19 +356,25 @@ def build_graph(deps: DraftDeps):
         return (s["tone"] + s["vocabulary"] + s["structure"] + s["topicality"]) / 4 if s else 0.0
 
     def route_after_critique(state: DraftState) -> str:
+        rounds_left = state.get("rounds", 0) < settings.ECHO_DRAFT_CRITIQUE_ROUNDS
+        if rounds_left and unbacked(state):
+            # A refusal is final, so it comes after the rounds, whatever the critic scored.
+            return "revise"
         latest = state["candidates"][-1]
         s = latest.get("scores")
         if s is None:
             return "finalize"
         good = _voice(latest) >= settings.ECHO_DRAFT_CRITIQUE_TARGET and s["grounded"] >= 4
-        if good or state.get("rounds", 0) >= settings.ECHO_DRAFT_CRITIQUE_ROUNDS:
-            return "finalize"
-        return "revise"
+        return "finalize" if good or not rounds_left else "revise"
 
     def revise(state: DraftState) -> dict:
         latest = state["candidates"][-1]
+        # With no scores the only note is the one telling the user the check did not run.
+        notes = list(latest.get("notes") or []) if latest.get("scores") else []
+        if unbacked(state):
+            notes.insert(0, CITE_OR_DROP)
         raw, t_in, t_out = deps.draft(REVISE_PROMPT.format(
-            draft_prompt=state["draft_prompt"], draft=latest["draft"], notes=_bullets(latest.get("notes") or []),
+            draft_prompt=state["draft_prompt"], draft=latest["draft"], notes=_bullets(notes),
         ))
         return {"candidates": state["candidates"] + [{"draft": raw.strip()}], **charge(state, t_in, t_out)}
 
@@ -343,8 +383,7 @@ def build_graph(deps: DraftDeps):
         candidates = state["candidates"]
         if needs_backing(state):
             # A better-sounding round must not lose the one that cited something.
-            backed = [c for c in candidates if any(m in items and not items[m].unverified for m in cited_markers(c["draft"]))]
-            candidates = backed or candidates
+            candidates = [c for c in candidates if cites_usable(state, c)] or candidates
         # Knockout: the best-scored candidate, the latest on a tie.
         best = max(enumerate(candidates), key=lambda ic: (_voice(ic[1]), ic[1].get("scores", {}) and ic[1]["scores"]["grounded"] or 0, ic[0]))[1]
         text = best["draft"]
@@ -373,7 +412,7 @@ def build_graph(deps: DraftDeps):
             flags.append("unverified_source")
             notes.append("Part of this draft comes from an email, and nothing proves who wrote it. Check it before sending.")
         if needs_backing(state) and all(items[c["ref"]].unverified for c in citations):
-            return {"refused": REFUSED_MAIL_ONLY if citations else REFUSED_NOTHING, **spent}
+            return {"refused": REFUSED_UNCITED if state.get("classified") else REFUSED_UNREAD, **spent}
         s = best.get("scores")
         return {
             "result": {

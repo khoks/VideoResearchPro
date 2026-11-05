@@ -142,11 +142,23 @@ def test_a_refused_reply_says_what_would_let_it_go_ahead(unauthenticated_client,
     assert r.status_code == 409
     detail = r.json()["detail"]
     assert detail["code"] == "ungrounded"
-    assert detail["message"].startswith("Echo did not write this reply: nothing in your library")
-    assert "add a source on this to your library or write a note" in detail["message"]
+    assert detail["message"].startswith("Echo did not write this reply: it found material on this")
+    assert "draft again, or narrow the message" in detail["message"]
     assert "draft" not in detail, "the text is not delivered"
     assert unauthenticated_client.get("/api/v1/echo/drafts", headers=h).json()["items"] == []
     assert unauthenticated_client.get(f"{DRAFT}/status", headers=h).json()["drafts_today"] == 1
+
+
+def test_a_reply_with_nothing_found_says_what_to_add(unauthenticated_client, db, fake, monkeypatch):
+    user, h = _user(db)
+    _enable(db, user, monkeypatch)
+    fake["kw"] = {"knowledge": [], "facts": []}
+
+    detail = unauthenticated_client.post(DRAFT, json={"message": "Who pays?"}, headers=h).json()["detail"]
+
+    assert detail["code"] == "ungrounded"
+    assert detail["message"].startswith("Echo did not write this reply: it found nothing in your library")
+    assert "add a source on this to your library or write a note" in detail["message"]
 
 
 def test_there_is_no_go_ahead_past_a_refused_reply(unauthenticated_client, db, fake, monkeypatch):

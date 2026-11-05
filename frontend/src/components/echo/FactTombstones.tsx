@@ -1,4 +1,4 @@
-import { useClearFactTombstone, useFactTombstones } from '../../hooks/useEcho';
+import { useClearFactTombstone, useEchoContext, useFactTombstones } from '../../hooks/useEcho';
 import { useJobStore } from '../../stores/jobStore';
 import type { FactTombstone, PersonalContextItem } from '../../services/echoApi';
 import { Button, Card } from '../primitives';
@@ -40,6 +40,30 @@ export function revokedKeptNote(source: string | null | undefined, rows: Persona
   return kept === 1
     ? 'One of them is also worked out by a connector or an import, so Echo will keep it deleted (see "Kept deleted").'
     : `${kept} of them are also worked out by a connector or an import, so Echo will keep those deleted (see "Kept deleted").`;
+}
+
+/** The rows a revoke will delete: the server's list for that source with the
+ * expired ones in, which is what `revoke_source` takes. The page's own list leaves
+ * them out by default, and an expired manual row can still be wanted (T-3.2.1.14). */
+export function useRevokeScope(source: string | null) {
+  return useEchoContext({ source: source ?? undefined, include_expired: true }, source !== null);
+}
+
+/** The revoke dialog's body. `listed` is the page's rows, used only until the
+ * scope arrives, or if it cannot be read. */
+export function RevokeSummary({ source, listed }: { source: string; listed: PersonalContextItem[] }) {
+  const scope = useRevokeScope(source);
+  const shown = listed.filter((r) => r.source === source).length;
+  const count = scope.data?.length ?? shown;
+  const note = revokedKeptNote(source, scope.data ?? listed);
+  return (
+    <>
+      Every entry attributed to <strong>{source}</strong> ({count}
+      {count > shown ? ', expired ones included' : ''}) will be deleted. This is the opt-out path for a connector; for
+      manual entries it clears everything you typed under that source.
+      {note ? ` ${note}` : ''}
+    </>
+  );
 }
 
 export function clearedToast(t: Pick<FactTombstone, 'key' | 'connector_display_name'>): string {

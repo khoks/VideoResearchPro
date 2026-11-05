@@ -1205,7 +1205,7 @@ Body `{ "kind": "...", "key": "...", "value": "...", "confidence": 1.0, "expires
 Deletes one row; 404 if absent. The key is a path segment and Starlette decodes `%2F` before routing, so a key containing `/` cannot be addressed; the frontend refuses such keys at entry.
 
 ### `DELETE /api/v1/echo/sources/{source}`
-Revoke a source: deletes every row attributed to it for the caller. `{ "deleted_count": n }`, idempotent.
+Revoke a source: deletes every row attributed to it for the caller, expired rows included. `GET /echo/context?source=...&include_expired=true` lists exactly those rows, which is how the Echo page says what a revoke will do (T-3.2.1.14). `{ "deleted_count": n }`, idempotent.
 
 ### `GET /api/v1/echo/connectors`
 Every connector this install offers, with the caller's grant (S-3.2.1, [#336](https://github.com/khoks/VideoResearchPro/pull/336)). `connectors` (names) and `supported_kinds` are kept from v1.
@@ -1336,7 +1336,7 @@ Backend: `backend/app/routers/echo_drafts.py`, service `services/echo_draft_serv
   - 409 `{code, message, status}` for a closed gate.
   - 409 `{code: "names_need_confirmation", names, message}` when the message names a private person. Send the request again with those names in `acknowledge_names`.
   - 409 `{code: "register_needs_approval", register, message}` when `register` is one the caller has not approved, meaning no draft in it has a saved version (`POST /echo/drafts/{id}/feedback`). Checked before any model call. Send the request again with that register in `acknowledge_register`. The go-ahead covers that one request and only the register it names; the saved version is what approves the register, and deleting that draft withdraws the approval.
-  - 409 `{code: "ungrounded", message}` when a question, opinion or recommendation, or a message the classifier could not read, has nothing behind it: nothing usable was retrieved, or the draft cites nothing usable. An email does not count. No request field gets past it; `message` says what would let the draft go ahead. Nothing is stored. Audited as `echo_draft_refused` with counts only.
+  - 409 `{code: "ungrounded", message}` when a question, opinion or recommendation, or a message the classifier could not read, has nothing behind it: nothing usable was retrieved, or the draft still cites nothing usable after a revise round. An email does not count, and neither does a fact, share or past answer past `RAG_DISTANCE_THRESHOLD`. No request field gets past it. `message` says what stopped it and what would let the draft go ahead: a source or a note when nothing (or only an email) was found, another draft or a narrower message when the draft did not rest on what was found, another try when the message could not be read or the library did not answer. Nothing is stored. Audited as `echo_draft_refused` with counts only and a `reason` of `nothing`, `mail_only`, `uncited`, `unread` or `unreachable`.
   - 429 `{code: "daily_cap"}`.
 
   A draft stopped before the draft model is not counted against the cap. A refusal the model wrote is counted, because it cost what a draft costs.

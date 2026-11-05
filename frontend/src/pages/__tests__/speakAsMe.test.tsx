@@ -300,6 +300,79 @@ describe('SpeakAsMePanel', () => {
     expect(host.querySelector('[data-result]')).not.toBeNull();
   });
 
+  it('closes the names stop when the server refuses the draft it let through', async () => {
+    api.draftStatus.mockResolvedValue(ON);
+    api.createDraft
+      .mockRejectedValueOnce(refusedWith('names_need_confirmation', 'm', { names: ['Priya'] }))
+      .mockRejectedValueOnce(refusedWith('ungrounded', 'Echo did not write this reply.'));
+    await mount();
+    act(() => type(host.querySelector('textarea')!, 'Priya asked about dinner'));
+    await act(async () => buttons('Draft a reply')[0].click());
+    await flush();
+    await act(async () => buttons('Draft anyway')[0].click());
+    await flush();
+    expect(host.querySelector('[data-refused]')).not.toBeNull();
+    expect(host.querySelector('[data-names]')).toBeNull();
+    expect(buttons('Draft anyway')).toHaveLength(0);
+  });
+
+  describe('a go-ahead covers one draft', () => {
+    const stopped = () => refusedWith('register_needs_approval', 'Say yes first.', { register: 'intimate' });
+
+    async function wentAhead(next: Error) {
+      api.draftStatus.mockResolvedValue(ON);
+      api.createDraft.mockRejectedValueOnce(stopped()).mockRejectedValueOnce(next);
+      await mount();
+      act(() => type(host.querySelector('textarea')!, 'Thinking of you'));
+      act(() => choose(host.querySelector('select')!, 'intimate'));
+      await act(async () => buttons('Draft a reply')[0].click());
+      await flush();
+      await act(async () => buttons('Draft in this register')[0].click());
+      await flush();
+      expect(api.createDraft).toHaveBeenLastCalledWith(expect.objectContaining({ acknowledge_register: 'intimate' }));
+    }
+
+    const lastBody = () => api.createDraft.mock.lastCall?.[0];
+
+    it.each([
+      ['a refused reply', () => refusedWith('ungrounded', 'Echo did not write this reply.')],
+      ['the daily cap', () => refusedWith('daily_cap', 'More tomorrow.', {}, 429)],
+      ['a failed request', () => new Error('Network Error')],
+    ])('and does not outlive %s', async (_name, next) => {
+      await wentAhead(next());
+      api.createDraft.mockRejectedValueOnce(stopped());
+      await act(async () => buttons('Draft a reply')[0].click());
+      await flush();
+      expect(lastBody()).not.toHaveProperty('acknowledge_register');
+    });
+
+    it('and does not carry over to a different message', async () => {
+      await wentAhead(refusedWith('names_need_confirmation', 'm', { names: ['Priya'] }));
+      act(() => type(host.querySelector('textarea')!, 'A reply to my colleague'));
+      await act(async () => buttons('Draft a reply')[0].click());
+      await flush();
+      expect(lastBody()).toMatchObject({ message: 'A reply to my colleague' });
+      expect(lastBody()).not.toHaveProperty('acknowledge_register');
+    });
+
+    it('and does not carry over a change of register and back', async () => {
+      await wentAhead(refusedWith('names_need_confirmation', 'm', { names: ['Priya'] }));
+      act(() => choose(host.querySelector('select')!, 'casual'));
+      act(() => choose(host.querySelector('select')!, 'intimate'));
+      await act(async () => buttons('Draft a reply')[0].click());
+      await flush();
+      expect(lastBody()).not.toHaveProperty('acknowledge_register');
+    });
+
+    it('and does not survive Cancel on the names stop', async () => {
+      await wentAhead(refusedWith('names_need_confirmation', 'm', { names: ['Priya'] }));
+      act(() => buttons('Cancel')[0].click());
+      await act(async () => buttons('Draft a reply')[0].click());
+      await flush();
+      expect(lastBody()).not.toHaveProperty('acknowledge_register');
+    });
+  });
+
   it('opens an uploaded PDF it drew on as a blob fetched with the header, not the route that 401s (T-8.8.1.5)', async () => {
     api.draftStatus.mockResolvedValue(ON);
     api.createDraft.mockResolvedValue({

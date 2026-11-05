@@ -18,8 +18,10 @@ run and gives it the user's material. Gates, in order (``status``):
    so it spends nothing. "Whatever fits" names no register and is not gated.
 
 The agent adds one more, after retrieval or after drafting: a reply with nothing
-behind it is refused (``DraftRefused``), with no go-ahead to get past it. Only
-more to stand on lets it through: a source or a note on the subject.
+behind it is refused (``DraftRefused``), with no go-ahead to get past it. Each
+reason has its own words (``REFUSALS``), because each has its own remedy. Facts,
+shares and past answers meet the same distance cut as sources and notes, or a
+ready user's unrelated facts would pass for something behind every reply.
 
 **Feedback (S-3.4.2).** ``feedback`` stores the text the user actually used
 and whether they kept the disclosure line. The words they typed into it (not
@@ -61,14 +63,30 @@ VOICE_TEST_MAX_OWN_SHARE = 0.80
 VOICE_TEST_RULE_VERSION = "2026-10-19"
 #: The prompts name this label, and the user reads it under a draft.
 UNVERIFIED_MAIL_LABEL = "an unverified email, not your view"
-_GO_AHEAD = "To go ahead, add a source on this to your library or write a note saying what you think, then draft again."
+_ADD_SOMETHING = "To go ahead, add a source on this to your library or write a note saying what you think, then draft again."
+_TRY_AGAIN = "To go ahead, try again in a moment."
 #: The agent's reasons, in the words the user reads: what stopped it, and what would let it go ahead.
 REFUSALS = {
     "nothing": (
-        "Echo did not write this reply: nothing in your library, your notes or what it knows about you backs it, "
-        f"and it will not make claims in your name with nothing behind them. {_GO_AHEAD}"
+        "Echo did not write this reply: it found nothing in your library, your notes or what it knows about you on "
+        f"this, and it will not make claims in your name with nothing behind them. {_ADD_SOMETHING}"
     ),
-    "mail_only": f"Echo did not write this reply: the only thing behind it is an email, and nothing proves who wrote that. {_GO_AHEAD}",
+    "mail_only": (
+        "Echo did not write this reply: the only thing it found on this is an email, and nothing proves who wrote "
+        f"that. {_ADD_SOMETHING}"
+    ),
+    "uncited": (
+        "Echo did not write this reply: it found material on this, but the draft it wrote did not rest on any of it "
+        "that Echo can rely on. To go ahead, draft again, or narrow the message to what your library and notes cover."
+    ),
+    "unread": (
+        "Echo did not write this reply: it could not read the message, so it cannot tell whether the reply needs "
+        f"something behind it. {_TRY_AGAIN}"
+    ),
+    "unreachable": (
+        "Echo did not write this reply: it could not reach your library just now, so it cannot tell what is behind "
+        f"it. {_TRY_AGAIN}"
+    ),
 }
 
 
@@ -323,6 +341,9 @@ def _real_deps(db: Session, user: User):
     from app.services.llm_routing import resolve_config
 
     tenant = user.id
+    #: ``query_collection`` and ``query_notes`` apply this themselves; shares, past
+    #: answers and facts do not, and a nearest-n always fills up.
+    cut = settings.RAG_DISTANCE_THRESHOLD
 
     def knowledge(topic: str) -> list[ContextItem]:
         items: list[ContextItem] = []
@@ -336,7 +357,9 @@ def _real_deps(db: Session, user: User):
             items.append(ContextItem(f"S{n}", "source", hit["text"][:1500], label, url, third_party=True))
         for n, hit in enumerate(note_index.query_notes(topic, tenant, n_results=4), 1):
             items.append(ContextItem(f"N{n}", "note", hit["text"][:1200], "your note", None, third_party=False))
-        for n, hit in enumerate(echo_vectors.query_share_vectors(tenant, topic, n=3), 1):
+        for hit in echo_vectors.query_share_vectors(tenant, topic, n=3):
+            if hit["distance"] > cut:
+                continue
             md = hit.get("metadata") or {}
             # A context-only share may ground the draft but is never quoted
             # (D-089 item 1); the user's own share is their own words. Mail
@@ -346,15 +369,17 @@ def _real_deps(db: Session, user: User):
             label = UNVERIFIED_MAIL_LABEL if mail else "something you wrote and shared" if own else "something you shared"
             items.append(ContextItem(f"S{len(items) + 1}", "share", hit["text"][:1200], label,
                                      None, third_party=not own, unverified=mail))
-        for n, hit in enumerate(chroma_service.query_qa_collection(topic, top_k=3, tenant_id=tenant), 1):
+        past = [h for h in chroma_service.query_qa_collection(topic, top_k=3, tenant_id=tenant) if h["distance"] <= cut]
+        for n, hit in enumerate(past, 1):
             # A past answer is the model's words over third-party sources.
             items.append(ContextItem(f"Q{n}", "qa", hit["text"][:1200], "a question you asked before", None, third_party=True))
         return items
 
     def facts(topic: str) -> list[ContextItem]:
+        near = [h for h in echo_personal_vectors.query_personal_context(tenant, topic, n=6, kinds=["fact"]) if h.distance <= cut]
         return [
             ContextItem(f"F{n}", "fact", h.text[:600], "what Echo knows about you", None, third_party=False)
-            for n, h in enumerate(echo_personal_vectors.query_personal_context(tenant, topic, n=6, kinds=["fact"]), 1)
+            for n, h in enumerate(near, 1)
         ]
 
     def signals(topic: str, language: str) -> list[str]:
@@ -368,6 +393,14 @@ def _real_deps(db: Session, user: User):
                 lines.append(line)
         return lines
 
+    def store_ok() -> bool:
+        try:
+            chroma_service.get_global_collection().count()
+        except Exception:  # noqa: BLE001 — retrieval swallows this too; here it changes the words
+            logger.exception("echo draft: the library store did not answer")
+            return False
+        return True
+
     texts = own_texts(db, tenant)
     return DraftDeps(
         classify=_llm("echo_classify_intent", tenant, db, 600),
@@ -379,6 +412,7 @@ def _real_deps(db: Session, user: User):
         exemplars=lambda language: exemplars(texts, language, extraction.language_of),
         language_of=extraction.language_of,
         models={u: resolve_config(u).model for u in ("echo_classify_intent", "echo_draft", "echo_critique")},
+        store_ok=store_ok,
     )
 
 

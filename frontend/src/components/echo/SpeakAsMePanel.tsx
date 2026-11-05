@@ -22,8 +22,8 @@ import { citationLabel, draftErrorOf } from '../../utils/echoDrafts';
  *
  * Two refusals stay on screen rather than passing as a toast, each in the
  * server's words, which say what would let the draft go ahead (T-3.4.1.11). A
- * register the user has not approved asks for a go-ahead. A reply with nothing
- * behind it has none to give: it needs a source or a note.
+ * register the user has not approved asks for a go-ahead, which covers one
+ * draft. A reply with nothing behind it has no go-ahead to give.
  */
 export function SpeakAsMePanel() {
   const c = useColors();
@@ -38,7 +38,8 @@ export function SpeakAsMePanel() {
   const [names, setNames] = useState<string[] | null>(null);
   // The server's words while a first draft in this register waits for a go-ahead.
   const [registerStop, setRegisterStop] = useState<string | null>(null);
-  // Which register the user said to go ahead with; kept through a names stop.
+  // Which register the user said to go ahead with, for this one draft: only a
+  // names stop is still that draft, so anything else clears it.
   const [goAhead, setGoAhead] = useState<string | null>(null);
   const [refusal, setRefusal] = useState<string | null>(null);
   const [result, setResult] = useState<EchoDraft | null>(null);
@@ -62,10 +63,17 @@ export function SpeakAsMePanel() {
       },
       onError: (err) => {
         const e = draftErrorOf(err);
-        if (e.code === 'names_need_confirmation') setNames(e.names);
-        else if (e.code === 'register_needs_approval') setRegisterStop(e.message);
-        else if (e.code === 'ungrounded') setRefusal(e.message);
-        else pushToast('error', e.message);
+        if (e.code === 'names_need_confirmation') {
+          setNames(e.names);
+          return;
+        }
+        setGoAhead(null);
+        if (e.code === 'register_needs_approval') setRegisterStop(e.message);
+        else if (e.code === 'ungrounded') {
+          // No button goes past a refusal, so the names stop's goes too.
+          setNames(null);
+          setRefusal(e.message);
+        } else pushToast('error', e.message);
       },
     });
   };
@@ -118,7 +126,18 @@ export function SpeakAsMePanel() {
           style={{ marginTop: space['3'], display: 'flex', flexDirection: 'column', gap: space['3'] }}
         >
           <FormField label="The message you're replying to" required>
-            {(id) => <Textarea id={id} rows={4} maxLength={8000} value={message} onChange={(e) => setMessage(e.target.value)} />}
+            {(id) => (
+              <Textarea
+                id={id}
+                rows={4}
+                maxLength={8000}
+                value={message}
+                onChange={(e) => {
+                  setMessage(e.target.value);
+                  setGoAhead(null);
+                }}
+              />
+            )}
           </FormField>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: space['3'] }}>
             <FormField label="Who it's for" optional>
@@ -132,6 +151,7 @@ export function SpeakAsMePanel() {
                   onChange={(e) => {
                     setRegister(e.target.value);
                     setRegisterStop(null);
+                    setGoAhead(null);
                   }}
                 >
                   <option value="">Whatever fits</option>
@@ -152,7 +172,15 @@ export function SpeakAsMePanel() {
                 <Button type="button" size="sm" onClick={() => submit(names)} loading={create.isPending}>
                   Draft anyway
                 </Button>
-                <Button type="button" size="sm" variant="tertiary" onClick={() => setNames(null)}>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="tertiary"
+                  onClick={() => {
+                    setNames(null);
+                    setGoAhead(null);
+                  }}
+                >
                   Cancel
                 </Button>
               </div>

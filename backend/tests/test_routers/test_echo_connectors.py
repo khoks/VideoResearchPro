@@ -765,6 +765,26 @@ def test_the_list_says_who_a_delete_keeps_out_and_the_delete_agrees(unauthentica
     assert [t["connector_display_name"] for t in listed] == [row["kept_deleted_by"]] == ["Fake service"]
 
 
+def test_the_revoke_dialogs_read_covers_the_expired_rows_the_revoke_tombstones(unauthenticated_client, db, inline_db, fake, two):
+    """T-3.2.1.14: ``revoke_source`` takes expired rows too, and an expired manual
+    row keeps ``wanted_by`` until a source next writes its key, which never comes
+    once that connector is gone. The page's list hides it by default, so the
+    dialog reads ``include_expired=true``, and that read must match the delete."""
+    _connect(unauthenticated_client, two["ha"])
+    _edit_python(unauthenticated_client, two["ha"], expires_at=datetime.now(timezone.utc) - timedelta(days=1))
+
+    listed = unauthenticated_client.get("/api/v1/echo/context?source=manual", headers=two["ha"]).json()
+    assert listed == [], "hidden from the page's default list, which is why the count came out short"
+    scope = unauthenticated_client.get("/api/v1/echo/context?source=manual&include_expired=true", headers=two["ha"]).json()
+    assert [(r["key"], r["kept_deleted_by"]) for r in scope] == [("python", "Fake service")]
+
+    revoked = unauthenticated_client.delete("/api/v1/echo/sources/manual", headers=two["ha"]).json()
+
+    assert revoked["deleted_count"] == len(scope)
+    kept = unauthenticated_client.get(TOMBSTONES, headers=two["ha"]).json()["items"]
+    assert [(t["key"], t["connector_display_name"]) for t in kept] == [("python", "Fake service")]
+
+
 def test_a_row_nothing_wants_says_nothing_and_gets_no_tombstone(unauthenticated_client, db, inline_db, fake, two):
     _connect(unauthenticated_client, two["ha"])
     created = unauthenticated_client.post(

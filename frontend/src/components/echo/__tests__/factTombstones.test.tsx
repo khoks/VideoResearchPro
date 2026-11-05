@@ -16,15 +16,17 @@ import { useJobStore } from '../../../stores/jobStore';
 const api = {
   listFactTombstones: vi.fn<() => Promise<{ items: FactTombstone[] }>>(),
   clearFactTombstone: vi.fn(async (_id: string) => ({ cleared: true })),
+  listContext: vi.fn<(p: unknown) => Promise<PersonalContextItem[]>>(),
 };
 vi.mock('../../../services/echoApi', () => ({
   echoApi: {
     listFactTombstones: () => api.listFactTombstones(),
     clearFactTombstone: (id: string) => api.clearFactTombstone(id),
+    listContext: (p: unknown) => api.listContext(p),
   },
 }));
 
-import { FactTombstones, clearedToast, isDerivedSource, keptDeletedNote, revokedKeptNote } from '../FactTombstones';
+import { FactTombstones, RevokeSummary, clearedToast, isDerivedSource, keptDeletedNote, revokedKeptNote } from '../FactTombstones';
 
 const PYTHON: FactTombstone = {
   id: 'tomb-1',
@@ -156,6 +158,49 @@ describe('the revoke dialog note', () => {
   });
 });
 
+describe('RevokeSummary', () => {
+  const manual = (key: string, kept: string | null): PersonalContextItem => ({
+    id: key, kind: 'skill', key, value: 'x', source: 'manual', confidence: 1,
+    captured_at: '2026-11-01T09:00:00Z', expires_at: null, kept_deleted_by: kept,
+  });
+
+  async function summary(listed: PersonalContextItem[]) {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    act(() =>
+      root.render(
+        <QueryClientProvider client={qc}>
+          <RevokeSummary source="manual" listed={listed} />
+        </QueryClientProvider>,
+      ),
+    );
+    await flush();
+    return host.textContent ?? '';
+  }
+
+  it('reads the rows the revoke takes, expired ones in, not the rows the page lists', async () => {
+    api.listContext.mockReset().mockResolvedValue([manual('rust', null), manual('python', 'GitHub')]);
+    const text = await summary([manual('rust', null)]);
+    expect(api.listContext).toHaveBeenCalledWith({ source: 'manual', include_expired: true });
+    expect(text).toContain('(2, expired ones included)');
+    expect(text).toContain('One of them is also worked out by a connector or an import');
+  });
+
+  it('counts plainly when nothing is hidden', async () => {
+    api.listContext.mockReset().mockResolvedValue([manual('rust', null)]);
+    const text = await summary([manual('rust', null)]);
+    expect(text).toContain('(1) will be deleted');
+    expect(text).not.toContain('expired ones included');
+    expect(text).not.toContain('keep');
+  });
+
+  it('falls back to the page rows if that read fails', async () => {
+    api.listContext.mockReset().mockRejectedValue(new Error('down'));
+    const text = await summary([manual('python', 'GitHub')]);
+    expect(text).toContain('(1) will be deleted');
+    expect(text).toContain('One of them is also worked out by a connector or an import');
+  });
+});
+
 describe('wiring', () => {
   it('the Echo page mounts the list and adds the note to its delete dialog', () => {
     const page = Object.values(
@@ -163,6 +208,7 @@ describe('wiring', () => {
     )[0];
     expect(page).toMatch(/<FactTombstones enabled=\{allowed\} \/>/);
     expect(page).toContain('keptDeletedNote(deleting)');
-    expect(page).toContain('revokedKeptNote(revoking?.source, allRows)');
+    expect(page).toContain('<RevokeSummary source={revoking.source} listed={allRows} />');
+    expect(page).toContain('useRevokeScope(revoking?.source ?? null)');
   });
 });

@@ -48,6 +48,8 @@ ENDNOTES_HEADING = "Endnotes"
 # is not well-formed, so they are dropped before parsing.
 _XML_INVALID = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f￾￿]")
 _FOOTNOTE_CAPTION = re.compile(r"^\[(\d+)\]$")
+# What the parser records as a Setext heading's markup, where ATX has its `#`s.
+_SETEXT_MARKUP = ("=", "-")
 
 
 @dataclass(frozen=True)
@@ -57,6 +59,17 @@ class Heading:
     text: str
     # 0-based line of the Markdown this heading starts on.
     line: int
+
+
+@dataclass(frozen=True)
+class SourceHeading:
+    """A heading outside any quote or list, by where it sits in the Markdown."""
+
+    level: int
+    # 0-based line it starts on, and the line after it (past a Setext underline).
+    line: int
+    end: int
+    setext: bool
 
 
 @dataclass(frozen=True)
@@ -97,6 +110,19 @@ def slugger():
         return base if n == 1 else f"{base}-{n}"
 
     return slug
+
+
+def top_level_headings(markdown: str) -> list[SourceHeading]:
+    """The headings the renderer will make of ``markdown``, outside any quote
+    or list, for a caller rewriting the source. Only the parser can say which
+    lines these are: `Text` over `---` is a heading, but `- item` over `---`
+    is a list and a rule, and so is anything in a code fence."""
+    tokens = _parser().parse(_XML_INVALID.sub("", markdown or ""), {})
+    return [
+        SourceHeading(level=int(t.tag[1]), line=t.map[0], end=t.map[1], setext=t.markup in _SETEXT_MARKUP)
+        for t in tokens
+        if t.type == "heading_open" and t.level == 0 and t.map
+    ]
 
 
 def _normalise_space(text: str) -> str:

@@ -8,6 +8,10 @@ out of the workflow file here.
     key is immutable: a save after a cancelled or failed download (``always()``
     fires on both) pins a partial copy, and every later run restores it, skips
     the download and fetches the missing models at test time, for good.
+  * The download step fills every folder the cache lists, tiktoken's included,
+    and that folder is the one the suite reads (T-8.8.6.1).
+  * ``marketing/`` is built with its lock file, so the site cannot stop
+    building with nothing to show for it (T-2.8.6).
   * Only pull-request runs cancel each other. A push to master runs in a
     concurrency group of its own, so every merge commit gets a full result
     even when merges land minutes apart. A shared group with
@@ -22,6 +26,8 @@ from types import SimpleNamespace
 
 import pytest
 import yaml
+
+from tests import tiktoken_cache
 
 _CI_YML = Path(__file__).resolve().parents[3] / ".github" / "workflows" / "ci.yml"
 _EXPR = re.compile(r"\$\{\{\s*(.*?)\s*\}\}")
@@ -162,6 +168,30 @@ def test_the_download_step_fills_every_cached_path_before_the_save(workflow) -> 
         assert "DefaultEmbeddingFunction" in script, (
             "~/.cache/chroma is cached but the download step does not fetch Chroma's default ONNX model"
         )
+    if ".cache/tiktoken" in paths:
+        assert "python -m tests.tiktoken_cache" in script, (
+            "~/.cache/tiktoken is cached but the download step does not fetch the encoding"
+        )
+
+
+def test_the_encoding_is_cached_where_the_suite_reads_it(workflow) -> None:
+    """T-8.8.6.1: a runner starts with an empty temp directory, tiktoken's
+    default, so the file has to live in a folder the cache lists. A path that
+    differs from `stable_dir` saves an empty folder and stays green, fetching
+    on every run as before."""
+    steps = _backend_steps(workflow)
+    _, save = _step(steps, "actions/cache/save@")
+    stable = tiktoken_cache.stable_dir().relative_to(Path.home()).as_posix()
+    assert f"~/{stable}" in str(save["with"]["path"]).split()
+
+
+def test_nothing_in_the_workflow_overrides_the_encoding_folder(workflow) -> None:
+    """Set in the job, the variable would win over `stable_dir`, and the two
+    paths above would no longer be the same folder."""
+    steps = _backend_steps(workflow)
+    pytest_step = next(s for s in steps if "pytest" in str(s.get("run", "")))
+    for env in (_job_env(workflow), pytest_step.get("env", {})):
+        assert "TIKTOKEN_CACHE_DIR" not in env and "DATA_GYM_CACHE_DIR" not in env
 
 
 def test_only_the_test_step_is_offline(workflow) -> None:
@@ -186,6 +216,32 @@ def test_restore_and_save_use_the_same_key_and_paths(workflow) -> None:
     _, save = _step(steps, "actions/cache/save@")
     assert _resolved(restore["with"]["key"], env) == _resolved(save["with"]["key"], env)
     assert restore["with"]["path"] == save["with"]["path"]
+
+
+# ── marketing site ───────────────────────────────────────────────────────
+
+
+def test_the_marketing_site_is_built_from_its_lock_file(workflow) -> None:
+    """T-2.8.6: `astro build` was run by hand. `npm ci` fails when the lock
+    file and package.json disagree, where `npm install` would quietly rewrite
+    the lock, and a build from anywhere but marketing/ builds nothing here."""
+    job = workflow["jobs"]["marketing"]
+    assert job["defaults"]["run"]["working-directory"] == "marketing"
+    runs = [str(s["run"]) for s in job["steps"] if "run" in s]
+    assert runs[:2] == ["npm ci", "npm run build"]
+    assert not any(s.get("continue-on-error") for s in job["steps"])
+    node = next(s for s in job["steps"] if str(s.get("uses", "")).startswith("actions/setup-node@"))
+    assert node["with"]["cache-dependency-path"] == "marketing/package-lock.json"
+
+
+def test_the_built_page_and_its_favicon_are_checked(workflow) -> None:
+    """Both names have to be what the build writes: `test -s` on a stale name
+    fails every run, and on a dropped one passes every run."""
+    check = str(workflow["jobs"]["marketing"]["steps"][-1]["run"])
+    assert "dist/index.html" in check and "dist/favicon.svg" in check
+    root = _CI_YML.parents[2] / "marketing"
+    assert (root / "src" / "pages" / "index.astro").is_file()
+    assert (root / "public" / "favicon.svg").is_file()
 
 
 # ── anchor links ─────────────────────────────────────────────────────────

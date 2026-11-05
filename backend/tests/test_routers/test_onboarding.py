@@ -126,8 +126,8 @@ def test_first_job_created_is_recorded_once_by_job_creation(client, db, test_use
     assert first.json()["id"] in rows[0].metadata_json
 
 
-def test_first_report_opened_is_recorded_once_by_the_reader(client, db, test_user):
-    job = Job(job_type="topic", topic="read me", status="completed", num_videos=1, report_path="/fake.html", tenant_id=test_user.id)
+def test_first_report_opened_is_recorded_once_by_the_reader(client, db, test_user, tmp_path):
+    job = Job(job_type="topic", topic="read me", status="completed", num_videos=1, report_path=str(tmp_path / "r.html"), tenant_id=test_user.id)
     db.add(job)
     db.commit()
     html = build_report_html(title="Research Report: read me", job_type="topic", statistics={

@@ -9,10 +9,13 @@ from sqlalchemy.orm import sessionmaker
 
 from app.config import settings
 from tests.hf_offline import stay_off_the_hub
+from tests.tiktoken_cache import use_stable_cache
 
 # T-8.8.4.7: before the imports below, because huggingface_hub reads this once,
 # when it is imported. A DNS drop during a model load cannot fail a test.
 stay_off_the_hub(settings.EMBEDDING_MODEL_NAME)
+# T-8.8.6.1: the same for tiktoken's encoding, which it reads at the first count.
+use_stable_cache()
 
 from app.database import Base
 from app.dependencies import get_db
@@ -102,6 +105,27 @@ def _isolate_app_lifespan():
         patch("app.main.chroma_service", new=_chroma_for_lifespan),
     ):
         yield
+
+@pytest.fixture(scope="session", autouse=True)
+def _reports_stay_out_of_the_filesystem_root():
+    # T-8.8.6.4: `report_markdown` caches its conversion beside the report, so
+    # a test job at "/r.html" with `get_report_html` patched writes to the root
+    # of the drive the suite runs from, and on a runner only logs a refused
+    # write. `pytest.fail` because it is not an Exception: the book reports a
+    # failed conversion as a chapter and carries on.
+    from app.services import report_service
+
+    real = report_service.markdown_path_for
+
+    def guarded(report_path: str) -> str:
+        path = Path(report_path)
+        if path.anchor and path.parent == Path(path.anchor):
+            pytest.fail(f"report_path {report_path!r} is at the filesystem root: use tmp_path")
+        return real(report_path)
+
+    with patch.object(report_service, "markdown_path_for", guarded):
+        yield
+
 
 @pytest.fixture(autouse=True)
 def _publishes_stay_off_redis(monkeypatch):

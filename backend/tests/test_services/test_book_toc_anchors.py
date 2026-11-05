@@ -274,9 +274,9 @@ def test_the_epub_finds_its_sections_by_text_when_their_ids_were_taken():
 
 @pytest.mark.parametrize("contents", ["## Table of Contents\n\n1. [One](#1-one)\n\n", ""])
 def test_the_epub_takes_out_only_the_books_own_sections(contents):
-    """A Setext heading is not demoted, so an answer can still put an `h2` of
-    either name in a chapter. The contents are the first `h2` and the endnotes
-    the last: anything else named like them is the chapter's."""
+    """The outputter demotes an answer's headings (T-8.8.6.2), but the EPUB
+    does not lean on that. The contents are the first `h2` and the endnotes the
+    last: anything else named like them is the chapter's, and stays in the book."""
     book = book_html.render_book_html(
         f"# B\n\n{contents}## 1. One\n\nAn answer.\n\nTable of Contents\n---\n\nIts list.\n\n"
         "Endnotes\n---\n\nIts notes.\n\n## 2. Two\n\nMore.\n",

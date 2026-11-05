@@ -55,8 +55,9 @@ logger = logging.getLogger(__name__)
 _CHAPTER_HEADING_OFFSET = 2
 # An answer sits under "### Questions & Answers", so its H1 starts one below.
 _ANSWER_HEADING_OFFSET = 3
-_ATX_HEADING = re.compile(r"^(#{1,6})(\s+)(.*)$")
-_FENCE = re.compile(r"^\s*(```|~~~)")
+# A `#` run that ends a line after a space closes an ATX heading, so the text
+# of a Setext heading that ends in one needs it escaped to keep it.
+_CLOSING_HASHES = re.compile(r"(^|[ \t])(#+)$")
 # Markdown's inline punctuation, plus `#`, which would otherwise close a heading.
 _MARKDOWN_PUNCTUATION = re.compile(r"([\\`*_\[\]<&~#])")
 _LINE_BREAK = re.compile(r"\r\n?|\n")
@@ -71,27 +72,36 @@ def _literal(text: str) -> str:
 
 
 def _demote_headings(md: str, offset: int = _CHAPTER_HEADING_OFFSET, *, drop_h1: bool = True) -> str:
-    """Push every ATX heading down ``offset`` levels (capped at H6), leaving
-    fenced code untouched. The report's single H1 repeats the job topic the
-    chapter heading already carries, so it is dropped unless ``drop_h1`` is
-    off (an answer's H1 repeats nothing)."""
+    """Push every heading down ``offset`` levels (capped at H6). The report's
+    single H1 repeats the job topic the chapter heading already carries, so it
+    is dropped unless ``drop_h1`` is off (an answer's H1 repeats nothing).
+
+    The parser that renders the book decides what is a heading, so an ATX and
+    a Setext heading are treated alike, and fenced code and a `---` rule are
+    left alone. A Setext heading comes out as ATX, the only form that can say
+    a level below H2. A heading inside a quote or a list keeps its level: it
+    is not a section of the book (`book_epub._split` reads the top level)."""
+    lines = _LINE_BREAK.split(md)
+    headings = {h.line: h for h in book_html.top_level_headings(md)}
     out: list[str] = []
-    in_fence = False
     dropped_h1 = False
-    for line in md.splitlines():
-        if _FENCE.match(line):
-            in_fence = not in_fence
-            out.append(line)
+    index = 0
+    while index < len(lines):
+        heading = headings.get(index)
+        if heading is None:
+            out.append(lines[index])
+            index += 1
             continue
-        m = None if in_fence else _ATX_HEADING.match(line)
-        if m is None:
-            out.append(line)
-            continue
-        level = len(m.group(1))
-        if level == 1 and drop_h1 and not dropped_h1:
+        index = heading.end
+        if heading.level == 1 and drop_h1 and not dropped_h1:
             dropped_h1 = True
             continue
-        out.append("#" * min(6, level + offset) + m.group(2) + m.group(3))
+        marks = "#" * min(6, heading.level + offset)
+        if heading.setext:
+            text = " ".join(line.strip() for line in lines[heading.line : heading.end - 1])
+            out.append(marks + " " + _CLOSING_HASHES.sub(r"\1\\\2", text))
+        else:
+            out.append(marks + lines[heading.line].lstrip(" ").lstrip("#"))
     return "\n".join(out).strip()
 
 
@@ -132,7 +142,8 @@ def _job_qa_markdown(
     out = ["### Questions & Answers", ""]
     specs: list[output_citation_service.CitationSpec] = []
     for i, r in enumerate(rows, start=1):
-        out.append(f"**Q{i}.** {r.question.strip()}")
+        # On one line: a multi-line question could end in a heading of its own.
+        out.append(f"**Q{i}.** {' '.join(r.question.split())}")
         out.append("")
         # Below the chapter's headings: an H2 is the book's, and an answer's
         # own "## Endnotes" would read as a chapter or as the book's endnotes.

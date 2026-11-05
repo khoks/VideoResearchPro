@@ -4,9 +4,10 @@
 What it covers:
 
 - Discovery via ``app.bsky.feed.searchPosts``. Bluesky has real
-  text search on the public XRPC API (unlike Mastodon, which only
-  exposes hashtag timelines), so the search query is forwarded
-  verbatim — no normalisation needed.
+  text search on its XRPC API (unlike Mastodon, which only exposes
+  hashtag timelines), so the topic goes as written first. It matches
+  every word, so a whole sentence finds nothing, and the topic's
+  carrying words follow (T-1.5.14.2).
 - Listing a creator's recent posts via ``app.bsky.feed.getAuthorFeed``
   (after resolving handles to DIDs through ``app.bsky.actor.getProfile``).
 - Per-uri metadata via ``app.bsky.feed.getPostThread`` (one call per
@@ -38,6 +39,7 @@ from typing import Iterator
 from app.config import settings
 from app.services.social_classify import classify
 from app.sources import registry
+from app.sources._topic_terms import topic_queries
 from app.sources.base import BaseConnector
 from app.sources.bluesky import client as bluesky_client
 from app.sources.bluesky import flatten as bluesky_flatten
@@ -224,17 +226,16 @@ class BlueskyConnector(BaseConnector):
         limit: int = 10,
     ) -> list[Candidate]:
         # `instructions` is interpreted upstream by the search agent
-        # when planning query reformulations. The connector just runs
-        # each query as-written.
-        if not query.strip():
-            return []
+        # when planning query reformulations. A failure stays raised, so
+        # the dispatcher can tell "the service refused" from "nothing
+        # found" (T-1.5.14.1): turning it into an empty list is how a 403
+        # read as no results.
         client = bluesky_client.get_client()
-        try:
-            payload = client.search_posts(query, limit=limit)
-        except Exception as e:
-            logger.warning("Bluesky search failed for %r: %s", query, e)
-            return []
-        return [_post_to_candidate(p) for p in _posts_from_search(payload)]
+        for attempt in topic_queries(query):
+            posts = _posts_from_search(client.search_posts(attempt, limit=limit))
+            if posts:
+                return [_post_to_candidate(p) for p in posts]
+        return []
 
     def list_creator_items(
         self,

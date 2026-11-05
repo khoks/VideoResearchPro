@@ -11,6 +11,7 @@ import {
   formToTemplateParameters,
   isDraftForm,
   jobToFormState,
+  heldSourcesNote,
   offeredSourceTypes,
   parseDraft,
   sourceTypeShares,
@@ -290,6 +291,38 @@ describe('source types (S-1.5.13)', () => {
     expect(values({ twitter_search_enabled: true })).toContain('tweet');
     expect(values({})).toEqual(['video', 'hn_story', 'mastodon_post', 'bluesky_post', 'podcast_episode']);
     expect(values({ reddit_search_enabled: true, article_search_enabled: true })).toContain('reddit_post');
+  });
+
+  it('offers a keyless source until /health says false', () => {
+    const values = (caps: Record<string, boolean> | null) => offeredSourceTypes(caps).map((o) => o.value);
+    for (const [value, flag] of [
+      ['hn_story', 'hn_search_enabled'],
+      ['mastodon_post', 'mastodon_search_enabled'],
+      ['bluesky_post', 'bluesky_search_enabled'],
+      ['podcast_episode', 'podcast_search_enabled'],
+    ] as const) {
+      expect(values(null)).toContain(value);
+      expect(values({ [flag]: true })).toContain(value);
+      expect(values({ [flag]: false })).not.toContain(value);
+    }
+  });
+
+  it('flags a carried keyless source the install stopped offering', () => {
+    expect(unavailableSourceTypes(['video', 'bluesky_post'], { bluesky_search_enabled: false })).toEqual([
+      'bluesky_post',
+    ]);
+    expect(unavailableSourceTypes(['video', 'bluesky_post'], {})).toEqual([]);
+  });
+
+  it('says which sources are on hold, in the number they are', () => {
+    const until = '2026-11-05T12:00:00+00:00';
+    expect(heldSourcesNote({})).toBeNull();
+    expect(heldSourcesNote({ bluesky_post: { status: 403, until } })).toBe(
+      'Bluesky refused its last search from this install, so it is not offered for now.',
+    );
+    expect(
+      heldSourcesNote({ bluesky_post: { status: 403, until }, hn_story: { status: 401, until } }),
+    ).toBe('Bluesky, Hacker News refused their last search from this install, so they are not offered for now.');
   });
 
   it('flags a carried source the install no longer has, once capabilities are known', () => {

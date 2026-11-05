@@ -2,6 +2,12 @@ import { create } from 'zustand';
 
 export type LLMStatus = 'ok' | 'degraded' | 'down' | 'unknown';
 
+/** A source that refused this install, from `/health` (T-1.5.14.1). */
+export interface SourceHold {
+  status: number;
+  until: string;
+}
+
 interface SystemStatusState {
   llmStatus: LLMStatus;
   unavailableFeatures: string[];
@@ -11,8 +17,11 @@ interface SystemStatusState {
    * (e.g. `visual_analysis_enabled`, S-1.18.2). Null until the first poll.
    */
   capabilities: Record<string, boolean> | null;
+  /** `/health` `source_holds`, by source type. Empty when nothing is on hold. */
+  sourceHolds: Record<string, SourceHold>;
   setStatus: (status: LLMStatus, unavailableFeatures: string[], lastCheckedAt: number) => void;
   setCapabilities: (capabilities: Record<string, boolean>) => void;
+  setSourceHolds: (sourceHolds: Record<string, SourceHold>) => void;
 }
 
 function arraysEqual(a: string[], b: string[]): boolean {
@@ -34,6 +43,7 @@ export const useSystemStatusStore = create<SystemStatusState>((set, get) => ({
   unavailableFeatures: [],
   lastCheckedAt: null,
   capabilities: null,
+  sourceHolds: {},
   setStatus: (status, unavailableFeatures, lastCheckedAt) => {
     const prev = get();
     if (
@@ -50,5 +60,9 @@ export const useSystemStatusStore = create<SystemStatusState>((set, get) => ({
   setCapabilities: (capabilities) => {
     if (recordsEqual(get().capabilities, capabilities)) return;
     set({ capabilities });
+  },
+  setSourceHolds: (sourceHolds) => {
+    if (JSON.stringify(get().sourceHolds) === JSON.stringify(sourceHolds)) return;
+    set({ sourceHolds });
   },
 }));

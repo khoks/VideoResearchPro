@@ -28,6 +28,15 @@ logger = logging.getLogger(__name__)
 
 ITUNES_SEARCH_BASE = "https://itunes.apple.com/search"
 
+# A download now goes to disk, so nothing stops a feed whose enclosure never
+# ends until the disk does. Fifty hours of speech at 64 kbit/s, far past any
+# real episode (they run 50-150 MB).
+AUDIO_MAX_BYTES = 1024 * 1024 * 1024
+
+
+class AudioTooLargeError(RuntimeError):
+    """An enclosure ran past ``AUDIO_MAX_BYTES``."""
+
 
 class PodcastClient:
     """Thread-safe HTTP client for podcast discovery + RSS fetching."""
@@ -112,13 +121,17 @@ class PodcastClient:
     # ------------------------------------------------------------------
     # Audio enclosure
     # ------------------------------------------------------------------
-    def fetch_audio(self, audio_url: str) -> bytes:
-        """Download an audio file (typically an MP3) and return its bytes.
+    def fetch_audio_to_file(self, audio_url: str, dest_path: str) -> int:
+        """Stream an audio file (typically an MP3) to ``dest_path``.
 
-        Used by the Whisper-fallback path. Generous timeout
-        (``PODCAST_AUDIO_FETCH_TIMEOUT_SEC``) because podcast episodes
-        are often 50-150MB. Caller is responsible for writing the
-        bytes to a temp file before handing to OpenAI Whisper.
+        Returns the bytes written. Used by the Whisper path. Streamed because
+        episodes are often 50-150 MB and a worker should not hold each one in
+        memory (T-1.7.1.2). Generous timeout
+        (``PODCAST_AUDIO_FETCH_TIMEOUT_SEC``) because audio is large.
+
+        Raises what the request raised, ``OSError`` for the disk, or
+        ``AudioTooLargeError``. A failure can leave a partial file: the
+        caller owns ``dest_path`` and removes it either way.
         """
         # Per-fetch timeout — read-side longer than the iTunes/RSS calls
         # because audio is large.
@@ -127,9 +140,20 @@ class PodcastClient:
         )
         self._limiter.wait()
         headers = {"User-Agent": settings.PODCAST_USER_AGENT}
-        resp = httpx.get(audio_url, headers=headers, timeout=timeout, follow_redirects=True)
-        resp.raise_for_status()
-        return resp.content
+        written = 0
+        with httpx.stream(
+            "GET", audio_url, headers=headers, timeout=timeout, follow_redirects=True
+        ) as resp:
+            resp.raise_for_status()
+            with open(dest_path, "wb") as out:
+                for chunk in resp.iter_bytes(chunk_size=1024 * 1024):
+                    written += len(chunk)
+                    if written > AUDIO_MAX_BYTES:
+                        raise AudioTooLargeError(
+                            f"enclosure ran past {AUDIO_MAX_BYTES} bytes"
+                        )
+                    out.write(chunk)
+        return written
 
 
 # Module-level singleton — lazy init.

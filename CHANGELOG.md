@@ -10,6 +10,99 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Changed: test infrastructure, and Setext headings in books (T-8.8.6.1, T-8.8.6.2, T-8.8.6.4, T-2.8.6, 2026-11-05)
+
+PR [#421](https://github.com/khoks/VideoResearchPro/pull/421). [D-147](docs/decisions.md#d-147--the-rendering-parser-decides-what-is-a-heading-in-book-markdown-a-rewrite-parses-what-it-will-emit-and-the-suites-tiktoken-file-lives-at-a-fixed-path-2026-11-05).
+
+- **Fixed:** a Setext heading (`Text` over `---`) in an answer is demoted like `## Text`, so it no longer starts an EPUB file or gets marked as backmatter. What counts as a heading is now the rendering parser's call. Headings in a quote or a list keep their level. Stored books keep their text until regenerated.
+- **Fixed:** cohesion prose could make real `h2`s through a bare `##`, bare `\r` line endings, and marks behind a quote, an indent or a control character. A multi-line question had the same effect, so a question in a book is now one line.
+- The suite keeps tiktoken's `cl100k_base` in `~/.cache/tiktoken`, and CI caches that folder, with a test that fails on a runner if the file did not come from the cache. Only the suite changed: a worker still fetches into the temp directory.
+- Tests no longer write report files at the filesystem root, and conftest fails any test that does. `D:\` still holds 177 old test files, which `Remove-Item 'D:\*.html.md'` clears.
+- New CI job, "Marketing site build (Astro)": `npm ci`, `npm run build`, and a check that `dist/index.html` and `dist/favicon.svg` were written. If branch protection lists required checks, add it.
+
+### Changed: `MAX_CONCURRENT_JOBS` is per user, Whisper uses your own key, and Verify key (T-5.6.12, T-5.6.13, T-5.2.14, T-5.6.8, 2026-11-05)
+
+PR [#417](https://github.com/khoks/VideoResearchPro/pull/417). [D-146](docs/decisions.md#d-146--a-pool-never-carries-the-session-max_concurrent_jobs-is-per-user-a-key-check-says-good-or-bad-only-when-the-provider-did-and-whispers-key-and-count-hold-on-every-sync-2026-11-05).
+
+- `MAX_CONCURRENT_JOBS` now counts the caller's active jobs. A single-user install is unchanged. The limit decides refusals, not order, so on a shared install a second user's job can still wait behind the first's, and the total of active jobs can exceed the old five.
+- The YouTube fallback and podcast audio now run on your own OpenAI key when you brought one, as Echo recordings already did, and `llm_service.whisper_api_key` is the one rule for all three.
+- **Changed, please check:** `WHISPER_MAX_PER_JOB` now bounds subscription syncs, on every key. #415 reported that it did not. A channel with many uncaptioned videos reads 50 recordings per sync, says so in a run note, and the next sync reads 50 more. `0` now does turn Whisper off on syncs. For the old behaviour, raise the setting (OQ-36).
+- **Added:** **Verify key** on the keys panel, `POST /auth/credentials/{provider}/verify`, limited by the new `RATE_LIMIT_VERIFY_KEY_PER_MIN`. It makes one small call on your key and answers `valid`, `refused` or `unreachable`, and nothing the provider said reaches the response or the log. The check models have not been tried live, so press it once per provider.
+- **Fixed:** report map batches no longer read through the task's `Session`, which could silently put your work on the install's key.
+- **Fixed:** `langchain-anthropic` was never in `requirements.txt`, so on a clean install every Anthropic call failed at the client. Reinstall requirements on any clean environment.
+- No migration. Restart the services.
+
+### Added: cut answers are noticed, depth on the shelf, and an account default depth (T-1.15.4.5, T-1.15.4.6, S-8.13.3, T-4.11.2.6, T-1.15.3.9, 2026-11-05)
+
+PR [#419](https://github.com/khoks/VideoResearchPro/pull/419). [D-145](docs/decisions.md#d-145--a-cut-off-flag-is-a-fact-about-one-reply-the-offer-keeps-the-cards-scope-and-the-server-never-applies-the-accounts-default-depth-2026-11-05).
+
+- A Q&A answer cut off at its budget now logs a warning naming the use case and the model, and job, library and shelf cards show a note with **Ask again at Deep depth**, which fills the composer and spends nothing until you press Ask. The note lasts until a reload, since the flag is not stored.
+- The shelf panel has the Answer depth select.
+- A failed clarify on the library page becomes a direct ask instead of a dead end.
+- **Default depth** on `/account/ai-models`: the submit form's Topic tab, the knowledge drawer and the Q&A panels start from it, and a depth picked on a page wins. The server never applies it. New column `users.preferred_output_length` (migration `869754146393`) and `PATCH /auth/me/preferences`.
+- `KNOWLEDGE_MAX_TRANSCRIPT_TOKENS` now takes effect. The default is 20000, so nobody's spend moves, but an install that pins it higher now spends more.
+- **Fixed:** `stopped_for_length` read nothing from OpenAI's Responses API, so report and knowledge cut-offs went unseen on langchain's responses-only models.
+
+### Changed: language follow-ups (T-1.16.2.16, T-3.3.2.11, T-1.11.11.4, 2026-11-05)
+
+PR [#418](https://github.com/khoks/VideoResearchPro/pull/418). [D-144](docs/decisions.md#d-144--a-fifth-voice-label-other-names-no-language-to-write-in-a-job-fills-gaps-and-only-the-backfill-rewrites-and-the-declared-audio-language-is-a-key-on-the-document-2026-11-05).
+
+- A job that reuses an embedded document now adds the document-level `code_mix_*` fields to chunks that lack them, with no re-embed. A job only fills gaps, so a refreshed profile still needs `backfill_chunk_language_fields.py`.
+- **Fixed:** a Spanish note no longer reads `hi-Latn` as a voice signal. `language_of` reads a figure that excludes abstained words, and a text no label fits reads the new fifth label, `other`. Bengali, Tamil and Urdu notes read `other` too. A draft is never written in `other`. Stored labels stay until their text is edited.
+- The voice test tells the drafter "the language of the situation above" for an `other` note. That has not been checked on a real note (T-3.4.1.16).
+- `defaultAudioLanguage` now travels from `get_video_details` to the document and into `fetch_transcript`, with no migration. It does not pay for itself in quota; the gain is that a fetch stops depending on the Data API.
+- No write run. The four `--write` steps under S-1.16.2 keep their order. Restart the worker.
+
+### Added: Content-Security-Policy, JSON logs and an OAuth redirect allow-list (T-4.11.2.1, T-4.11.2.2, T-4.11.2.4, T-4.11.2.7, T-3.7.2.9, T-5.4.21, T-5.5.9, 2026-11-05)
+
+PR [#420](https://github.com/khoks/VideoResearchPro/pull/420). [D-143](docs/decisions.md#d-143--the-apis-content-security-policy-is-locked-by-default-oauth-redirects-are-compared-as-origins-a-socket-ends-at-its-tokens-expiry-and-a-shared-link-is-logged-by-host-alone-2026-11-05).
+
+- Every API response carries a `Content-Security-Policy`. A response nobody named also gets `sandbox`, so a new route starts locked. The README gives the policy a host should send for the built app.
+- New setting `LOG_FORMAT`: `text`, the default, changes nothing, and `json` writes one object per line for the API, the worker and beat. Celery's banner and the `JWT_SECRET is blank` warning stay text.
+- **Security:** `GET /auth/oauth/{provider}/start` accepts a `redirect_uri` only on the origin of `APP_BASE_URL` or one of the new `OAUTH_ALLOWED_REDIRECT_ORIGINS`. **If you open the app at any other address, set one of these, or Google and GitHub sign-in answer 400.**
+- **Security:** logs on the article path name a shared link's host and the exception's type, never the URL, and httpx and trafilatura no longer write it either.
+- A socket closes with 1008 within a minute of its token's expiry.
+- The per-IP limits count an IPv6 caller by its /64, and `1.2.3.4:5678` and `[2001:db8::1]:443` in `X-Forwarded-For` read as their address.
+- **Fixed:** a database path holding a `%` now migrates.
+- Run `./scripts/restart_services.ps1` to pick this up.
+
+### Changed: a draft with nothing behind it is refused, overlapping syncs both finish (T-3.2.1.13, T-3.2.1.14, T-3.4.1.11, 2026-11-05)
+
+PR [#416](https://github.com/khoks/VideoResearchPro/pull/416). [D-142](docs/decisions.md#d-142--a-draft-with-nothing-behind-it-is-refused-a-register-needs-a-saved-draft-and-overlapping-syncs-are-settled-by-the-databases-insert-2026-11-05).
+
+- **Fixed:** two overlapping syncs of one grant both finish. The second used to show "Sync failed: IntegrityError" until the next sync.
+- **Fixed:** the delete and revoke dialogs say when a row will be kept deleted, from a new `kept_deleted_by` field the delete itself agrees with.
+- **Changed:** a question, opinion or recommendation with nothing behind it is refused with `409 ungrounded` instead of delivered with a flag, and the refusal says what would let the draft go ahead. A reply citing only mail is refused too.
+- **Added:** a first draft in a named register needs a go-ahead (`409 register_needs_approval`, `acknowledge_register`), and a saved version approves that register.
+- Facts, shares and past answers now meet the same distance cut as sources and notes.
+- A refusal the model wrote counts against the daily cap. How often a real model's draft is refused is unmeasured. Speak as me is off on this install, so these two rules change nothing live.
+
+### Changed: sources that quietly returned nothing, and the podcast text path (S-1.5.14, T-1.5.13.6, T-1.7.1.1 to T-1.7.1.3, 2026-11-05)
+
+PR [#415](https://github.com/khoks/VideoResearchPro/pull/415). [D-141](docs/decisions.md#d-141--a-connectors-search-raises-on-failure-a-refusal-is-a-24-hour-hold-on-a-sources-own-endpoint-non-video-sources-search-before-youtube-and-a-recording-counts-once-2026-11-05).
+
+- A connector's search now raises when the service failed, and the run says so in `run_notes`, shown at the top of the job page. A run where everything failed no longer suggests a broader topic.
+- A source that answers 401 or 403 on its own search is held off the form for 24 hours, or until its settings change or a search answers. `POST /jobs` still accepts it. New table `source_refusals` and column `jobs.run_notes_json` (migration `8e4b1f6c2a37`).
+- **Bluesky works, with no credentials:** `BLUESKY_XRPC_BASE` moves to `api.bsky.app`. The old host refuses `searchPosts` at its CDN.
+- Topics are sent in forms each service can answer, with no LLM. A full-sentence topic went from 0 to 10 results on Hacker News, Bluesky and Mastodon.
+- Non-video sources search before YouTube, so a share one cannot fill goes to the others. YouTube takes it on its one search, only if the worst case fits the day's quota. The run's total stays `num_videos`.
+- A blank Mastodon or Bluesky base URL is "not set up": off the form, and a 422 at job creation.
+- New setting `WHISPER_MAX_MINUTES_PER_JOB`, default 0 (no cap), which counts each recording once and also bounds subscription jobs. `fetch_audio` now streams to a temporary file, with a 1 GB ceiling. Each show offers its on-topic episodes first.
+- **Fixed:** a topic run with preferred channels could not be read back, and `GET /jobs` failed for that user. The bug dates from July.
+- Restart the API and the worker.
+
+### Fixed: the sign-in redirect, an error screen, pricing, and primitives (T-5.4.20, T-4.11.2.3, T-4.11.2.5, T-2.2.1 to T-2.2.4, T-7.1.1.6, T-6.1.3.7, T-6.7.1.7, T-1.5.13.5, 2026-11-05)
+
+PR [#414](https://github.com/khoks/VideoResearchPro/pull/414). [D-140](docs/decisions.md#d-140--a-sign-in-makes-one-redirect-the-query-cache-ends-with-the-session-the-error-screen-replaces-the-page-and-signed-out-pricing-leads-to-free-2026-11-05).
+
+- **Fixed:** a sign-in now returns you to the page you asked for, with its query and fragment, for password, two-step and OAuth. `PublicOnlyRoute` is the only redirect a sign-in makes, so nothing races it.
+- A sign-out, here or in another tab, leaves no page behind for the next account, and the query cache now ends with the session. A tab signed out elsewhere used to keep the last account's data.
+- A render error now reaches "This page slipped off the shelf." with **Back to your library** and **Reload**, instead of React Router's default screen.
+- The pricing links drop `?intent=`, which nothing read, and the paid cards read **Start on Free**.
+- The trust-weight slider's text now says what a weight near 0 does.
+- A book's "About this edition" note no longer takes the drop cap, and the job page's **Job parameters** gains a **Sources** row.
+- `Tabs`, `IconButton` and `Toast` are in `primitives/`. `Tooltip` was closed with no primitive, since it has fewer than two call sites.
+
 ### Changed: Alembic follows `DATABASE_URL`, four unused settings are gone, and the docs match the pages (T-2.6.7, T-4.11.1.4, T-4.11.1.5, 2026-11-05)
 
 PR [#412](https://github.com/khoks/VideoResearchPro/pull/412). [D-139](docs/decisions.md#d-139--alembic-uses-the-url-a-caller-names-else-the-setting-and-alembicini-holds-none-2026-11-05).

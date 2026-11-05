@@ -3,6 +3,7 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
+from app.config import settings
 from app.database import Base
 # Wildcard re-import of every model so `--autogenerate` sees the full
 # schema. ``app.models.__init__`` is the single source of truth; if a
@@ -31,16 +32,32 @@ if config.config_file_name is not None:
 target_metadata = Base.metadata
 
 
+def _database_url() -> str:
+    """The database to migrate: the one the caller named, else the app's own.
+
+    A caller's URL has to win. The app's startup (`schema_init_service`) and
+    every migration test put one on the Config, and a test's throwaway file
+    must never turn into the live database: some of them downgrade to base.
+    Without one, `alembic` on the command line reads `DATABASE_URL`, like the
+    app. alembic.ini used to repeat the value, so after the database moved a
+    manual `alembic upgrade head` built an empty file at the old path and
+    reported success (T-2.6.7).
+    """
+    return config.get_main_option("sqlalchemy.url") or settings.DATABASE_URL
+
+
 def run_migrations_offline() -> None:
-    url = config.get_main_option("sqlalchemy.url")
+    url = _database_url()
     context.configure(url=url, target_metadata=target_metadata, literal_binds=True)
     with context.begin_transaction():
         context.run_migrations()
 
 
 def run_migrations_online() -> None:
+    section = config.get_section(config.config_ini_section, {})
+    section["sqlalchemy.url"] = _database_url()
     connectable = engine_from_config(
-        config.get_section(config.config_ini_section, {}),
+        section,
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )

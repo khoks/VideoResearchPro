@@ -270,8 +270,9 @@ class Settings(BaseSettings):
     # must then cover both redirects (register the frontend origin).
     OAUTH_GITHUB_CONNECTOR_CLIENT_ID: str | None = None
     OAUTH_GITHUB_CONNECTOR_CLIENT_SECRET: str | None = None
-    # S-3.2.2 / S-3.2.5 (not built): Google connectors use their own OAuth
-    # client so a scope review never touches Google sign-in.
+    # Reserved for S-3.2.2 / S-3.2.5 (not built, so nothing reads these yet):
+    # Google connectors use their own OAuth client so a scope review never
+    # touches Google sign-in.
     OAUTH_GOOGLE_CONNECTOR_CLIENT_ID: str | None = None
     OAUTH_GOOGLE_CONNECTOR_CLIENT_SECRET: str | None = None
     # Text embedded per share in shares_global (one vector per share, like
@@ -599,6 +600,9 @@ class Settings(BaseSettings):
     # the cap with a 60-rpm token bucket; operators on higher tiers
     # can lift via env if they hit the floor.
     TWITTER_RATE_LIMIT_RPM: int = 60
+    # Reserved for S-1.5.10's top-K replies, its siblings' COMMENT_DEPTH_DEFAULT.
+    # Not read yet: `TwitterClient.get_conversation_replies` exists and nothing
+    # calls it, because `TwitterConnector` keeps the paste-mode `fetch_text`.
     TWITTER_REPLY_DEPTH_DEFAULT: int = 50
 
     # -------------------------------------------------------------------
@@ -634,7 +638,6 @@ class Settings(BaseSettings):
     # "openai"; kept to avoid a breaking change for existing deployments.
     LLM_MODEL: str = "gpt-5"
     LLM_FALLBACK_MODEL: str = "gpt-4o"
-    LLM_MAX_CONTEXT_TOKENS: int = 1047576
 
     # -------------------------------------------------------------------
     # LLM — Fast (cheap / local) model
@@ -712,7 +715,6 @@ class Settings(BaseSettings):
 
     # Jobs
     MAX_CONCURRENT_JOBS: int = 5
-    MAX_VIDEOS_PER_JOB: int = 100
     DEFAULT_TRANSCRIPT_LANGUAGE: str = "en"
 
     # RAG
@@ -744,7 +746,6 @@ class Settings(BaseSettings):
     AUTHOR_PDF_ENGINE: str = "auto"
     # Wall-clock budget for Chromium to launch and lay out one book.
     AUTHOR_PDF_TIMEOUT_SEC: int = 180
-    MAX_REPORT_WORDS: int = 20000
 
     # Knowledge extraction (Unit 4)
     KNOWLEDGE_EXTRACT_BATCH_TOKENS: int = 8000
@@ -807,9 +808,6 @@ class Settings(BaseSettings):
     OAUTH_GOOGLE_CLIENT_SECRET: str | None = None
     OAUTH_GITHUB_CLIENT_ID: str | None = None
     OAUTH_GITHUB_CLIENT_SECRET: str | None = None
-    # Override per-deployment (e.g. to support a frontend on a different
-    # origin). Defaults assume the API itself is the redirect target.
-    OAUTH_REDIRECT_BASE_URL: str | None = None
 
     # T-5.4.8: SMTP delivery for password-reset / future verification emails.
     # When SMTP_HOST is unset, the email_service falls back to logging the

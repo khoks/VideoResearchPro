@@ -19,6 +19,8 @@ These are the rules every PR is checked against, starting today:
 
 If a PR violates any of these, it's blocking SaaS regardless of how clean the feature is.
 
+**Where the code stands.** These are the target, not today's state. A tenant is one user, so `tenant_id` holds `User.id`, and `users` has no `tenant_id`. `outputs`, `quota_usage`, `user_llm_overrides`, `user_credentials`, `oauth_identities`, `sessions`, `mfa_secrets`, `mfa_step_tickets` and `password_reset_tokens` key on `user_id` with no `tenant_id`, so the SaaS retrofit adds the column there. `with_tenant_scope` is not built: queries filter where they run ([NFR-7.2](requirements.md#nfr-7--forward-compatibility-with-multi-tenancy)).
+
 ---
 
 ## 1. Tenancy model
@@ -108,7 +110,7 @@ collection.query(
 )
 ```
 
-Today's queries already use `where={"video_id": {"$in": approved_set}}`. Adding `tenant_id` to the `$and` is mechanical.
+Today's queries use `where={"document_id": {"$in": visible_set}}`, with the set read from `document_visibility` ([D-063](decisions.md#d-063--per-user-isolation-shared-cache-private-catalogue-2026-07-31)), and the private collections carry a tenant filter that fails closed. Chunks themselves are shared across tenants, so a `tenant_id` on a chunk is not the shape this took.
 
 ---
 
@@ -125,7 +127,7 @@ Today's queries already use `where={"video_id": {"$in": approved_set}}`. Adding 
 | **Studio** | Power users, content creators using L2 outputs heavily | $49/mo |
 | **Team** | Small teams sharing a workspace | $99/mo per workspace, includes 5 seats |
 
-Self-host installs are functionally Studio (no caps), but the tier column exists. Operators upgrade users via SQL: `UPDATE users SET tier='pro' WHERE id='...'`.
+New accounts start on Free, on self-host too, and the limits are enforced. The install's operator changes a tier on `/account/subscription` (`PUT /auth/me/tier`, [D-111](decisions.md#d-111--operator-only-tier-switching-and-an-honest-pricing-page-2026-10-25)). Team is not built: the code has Free, Pro and Studio.
 
 ### Quotas (per month, per tenant)
 
@@ -142,7 +144,7 @@ Self-host installs are functionally Studio (no caps), but the tier column exists
 | Output storage | — | 1 GB | 10 GB | 50 GB |
 | Activity connectors enabled (L3) | 0 | 2 | 5 | 5 |
 
-Numbers are placeholders. The point is: the tier-quota table exists from day one, even if today every user gets the Studio limits.
+This is the target table, and its numbers are placeholders. The limits in force are in `app/services/tier_service.py`, and `/pricing` shows them.
 
 ### Quota schema
 

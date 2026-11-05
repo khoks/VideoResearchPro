@@ -95,7 +95,7 @@ npm run dev                    # http://localhost:5173
 ### 2.4. Tests, lint, type-check
 
 ```bash
-# Backend tests (168 of them)
+# Backend tests (4,400+)
 cd backend && ./venv/Scripts/python -m pytest tests/ -v
 
 # Backend lint
@@ -118,7 +118,7 @@ Runbook for stress-testing LLM configs lives in [CLAUDE.md](../CLAUDE.md#llm-str
 
 ## 3. Database migrations (Alembic)
 
-Schema changes go through Alembic. The backend ships with a linear migration history under `backend/alembic/versions/`.
+Schema changes go through Alembic. The backend ships with a linear migration history under `backend/alembic/versions/`. Run these from `backend/`. They migrate the app's `DATABASE_URL`: `backend/alembic.ini` holds no URL of its own.
 
 ```bash
 cd backend
@@ -132,7 +132,7 @@ cd backend
 
 - Filename: `<rev>_<snake_case_summary>.py`. Pick a fresh hex prefix; don't reuse one.
 - Every revision must define `upgrade()` **and** `downgrade()`. `downgrade()` may `raise NotImplementedError` for destructive changes, but never leave it empty.
-- Add new tables and columns with `tenant_id INTEGER NOT NULL` (or a TODO comment + migration ticket). Forward-compat with multi-tenancy is non-negotiable — see [docs/saas-roadmap.md](saas-roadmap.md).
+- Add new tables and columns with `tenant_id VARCHAR(36) NOT NULL` (or a TODO comment + migration ticket). Forward-compat with multi-tenancy is non-negotiable — see [docs/saas-roadmap.md](saas-roadmap.md).
 - Index any column you'll filter on. Especially `tenant_id`, `user_id`, `created_at`.
 - Don't drop columns inline with a feature change; do it in a follow-up migration after one release of soft-deprecation.
 

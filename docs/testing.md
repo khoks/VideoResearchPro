@@ -1,8 +1,8 @@
 # Testing
 
-> Status: living doc (last refreshed 2026-10-19). Owns: testing strategy, fixture catalogue, how to add a test, how to run the LLM stress harness. Setup commands live in [docs/contributing.md](contributing.md).
+> Status: living doc (last refreshed 2026-11-04). Owns: testing strategy, fixture catalogue, how to add a test, how to run the LLM stress harness. Setup commands live in [docs/contributing.md](contributing.md).
 
-The backend ships with **1013 tests** under `backend/tests/`. The frontend gates on `tsc -b` plus ESLint, and since 2026-10-19 has two suites of its own: **vitest + jsdom** unit tests under `frontend/src/**/*.test.{ts,tsx}` (`npm test`; the reader's sanitiser, parsers, citation resolution, card, toolbar and composer) and **Playwright device tests** under `frontend/tests/` (`npm run test:mobile`; see [§5.6](#56-frontend-suites)). This doc explains the conventions so a new contributor can add a test in five minutes.
+The backend ships with **4,400+ tests** under `backend/tests/` (`pytest tests/ --collect-only -q` prints the count). The frontend gates on `tsc -b` through `npm run build`, and since 2026-10-19 has two suites of its own: **vitest + jsdom** unit tests under `frontend/src/**/*.test.{ts,tsx}` (`npm test`; the reader's sanitiser, parsers, citation resolution, card, toolbar and composer) and **Playwright device tests** under `frontend/tests/` (`npm run test:mobile`; see [§5.6](#56-frontend-suites)). ESLint runs by hand (`npm run lint`); CI does not run it. This doc explains the conventions so a new contributor can add a test in five minutes.
 
 ---
 
@@ -10,13 +10,13 @@ The backend ships with **1013 tests** under `backend/tests/`. The frontend gates
 
 **Goals.**
 
-- **Fast.** Full backend suite runs in seconds, not minutes. No real Redis, no real Postgres, no real LLM calls, no real YouTube API.
+- **Fast where it counts.** One file runs in seconds. The full backend suite takes about 20 minutes on CI and longer on a busy dev machine, so a long run is not a hung one. No real Redis, no real Postgres, no real LLM calls, no real YouTube API.
 - **Hermetic.** A test never depends on another test's state, the network, or the developer's machine. CI parity == local parity.
 - **Honest about boundaries.** Mocks at the *system edges* (Celery dispatch, ChromaDB persistence, LLM clients, YouTube API). Code on the inside of those edges runs for real.
 
 **Non-goals.**
 
-- Browser end-to-end tests. Out of scope today; the design intent is to introduce Playwright once the warm-editorial UI redesign lands and pages stabilize. Until then, UI changes are verified by running the dev server in a browser (see [docs/contributing.md §5.3](contributing.md#53-ui-changes-specifically)).
+- Browser tests against a live stack. The Playwright device suite ([§5.6](#56-frontend-suites)) runs in CI on every pull request, but it is hermetic: every API call comes from fixtures, so a page that makes a new request needs a fixture for it. Nothing in CI drives the real backend from a browser (see [docs/contributing.md §5.3](contributing.md#53-ui-changes-specifically) for checking a UI change by hand).
 - Load tests against live infrastructure. Use the LLM stress harness for capacity planning of the model layer; everything else is small enough that micro-benchmarks would mislead more than help.
 
 ---
@@ -223,7 +223,7 @@ cd backend
 ./venv/Scripts/python -m pytest tests/ -v
 ```
 
-Expect green in well under a minute on a typical dev machine.
+Expect about 20 minutes on CI and longer on a busy dev machine. While you work, run one file ([§5.2](#52-one-file-or-one-test)).
 
 ### 5.2. One file or one test
 
@@ -274,15 +274,14 @@ The dev server for these tests listens on both loopback addresses (`--host ::`, 
 
 ### 5.5a. From a git worktree
 
-A `.claude/worktrees/<name>` checkout has no `backend/venv` or `backend/.env`, and its `backend/data/videoresearchpro.db` is a stale copy with no `alembic_version`, so the first `TestClient` trips `ensure_schema_at_head` with *tables present but alembic_version is missing*. The tests themselves use the in-memory engine from §3.1; only the app lifespan touches `DATABASE_URL`. Point it at a scratch file and reuse the main checkout's interpreter:
+A `.claude/worktrees/<name>` checkout has no `backend/venv` or `backend/.env`. Reuse the main checkout's interpreter:
 
 ```bash
 cd <worktree>/backend
-DATABASE_URL="sqlite:///<absolute scratch dir>/test.db" \
-  <main checkout>/backend/venv/Scripts/python.exe -m pytest tests/test_routers -q
+<main checkout>/backend/venv/Scripts/python.exe -m pytest tests/test_routers -q
 ```
 
-Every `TestClient` startup also runs the real LLM smoke probes (one short call per unique provider/model, a few seconds and a few cents), so batch reruns rather than iterating one test at a time.
+No `DATABASE_URL` override is needed. `tests/conftest.py` points the app lifespan's schema init at `tests/.pytest_schema.db` and stubs the LLM smoke probes and the Chroma backfills for the whole session, so a `TestClient` startup spends nothing. Delete that file after merging master, because it stays at the migration head it was built on, and keep `backend/.env` out of the worktree, because its switches change what the tests see.
 
 **The embedding model.** The first run downloads `paraphrase-multilingual-MiniLM-L12-v2` from huggingface.co. From then on `tests/hf_offline.py` sets `HF_HUB_OFFLINE=1` before anything imports the hub, so a model load makes no network call and a DNS drop cannot fail a test (T-8.8.4.7). It stays online only while the model is missing or partly downloaded. Set `HF_HUB_OFFLINE=0` to force a hub check; the test that loads the model with the hub unreachable then skips, because a load asks the hub on that run by design.
 
@@ -343,7 +342,7 @@ with TestClient(app) as c:
 "
 ```
 
-Each of (a) through (d) takes seconds. Run all four when shipping schema changes; (a) alone for everything else.
+(b), (c) and (d) take seconds, and (a) is the full suite ([§5.1](#51-full-suite)). Run all four when shipping schema changes; (a) alone for everything else.
 
 ---
 

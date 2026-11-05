@@ -6,11 +6,11 @@ type: project
 
 # Personal Brain — L3 long-horizon design
 
-**Status:** future-work, design-only (2026-04-24). Not on the immediate roadmap. This doc exists so today's schema and connector decisions stay forward-compatible.
+**Status:** design (2026-04-24), in build since 2026-10-19. This doc is the picture being built toward, written down so day-to-day choices don't accidentally foreclose it.
 
-**Building since 2026-10-19.** Domain 1 (facts, PR #172) and the first piece of Domain 5 (the shares inbox, S-3.7.1) exist, and so do the whole-brain export and delete (S-3.10.1 / S-3.10.2). Sections below say "as built" where the shipped shape differs from the sketch. The build plan is [`plans/l3-echo-personal-brain.md`](plans/l3-echo-personal-brain.md).
+**As built.** Domain 1 (facts), Domain 2 (connectors, the activity timeline and export imports), Domain 3 (voice and personality signals) and Domain 5 (the shares inbox and its surfaces) exist, and so do readiness, the whole-brain export and delete (S-3.10.1 / S-3.10.2), the Echo panel, and "speak as me" with its voice test, which stays off until its switches are on. Sections below say "as built" where the shipped shape differs from the sketch. The build plan is [`plans/l3-echo-personal-brain.md`](plans/l3-echo-personal-brain.md).
 
-This is Ring 3 of the [vision](vision.md). It begins after Phase 4 of the [feature-roadmap](feature-roadmap.md) ships (post-2027 Q3). Nothing in this document is a commitment — it is the picture we're navigating toward, written down so day-to-day choices don't accidentally foreclose it.
+This is Ring 3 of the [vision](vision.md). Nothing in this document is a commitment.
 
 ---
 
@@ -137,6 +137,8 @@ A new table, `personal_facts`:
 | `embedding_id` | string | reference into a new Chroma collection |
 
 A **new Chroma collection** (`personal_context_global`) embeds every fact so retrieval can pull them into Q&A and "speak as me" context.
+
+**As built (E-3.1, PR #172).** The table is `personal_context`, not `personal_facts`: one row per `(user_id, kind, key)` with `value`, `source`, `confidence`, `captured_at` and `expires_at`, and `kind` (`interest`, `work`, `skill` and so on) in place of `category`. A derived fact the user deletes leaves a row in `echo_fact_tombstones`, so the next sync cannot bring it back.
 
 ### Categories with examples
 
@@ -286,35 +288,40 @@ A LangGraph agent that takes (a) an input prompt — incoming message, draft to 
 
 ### Pipeline
 
+The gates and guards are in [Speak as me, as built](#self-host-today-and-forever).
+
 ```
 classify_intent → retrieve_relevant_knowledge → retrieve_voice_signals → retrieve_personal_context → draft → self_critique_against_voice → finalize
+self_critique_against_voice → revise → self_critique_against_voice   (below target, at most ECHO_DRAFT_CRITIQUE_ROUNDS times)
 ```
 
-1. **classify_intent.** Is this a reply to a question? A new outreach? A short ack? A long-form post? Different intents pull different voice signals (the user's "ack" voice ≠ their "essay" voice).
-2. **retrieve_relevant_knowledge.** Standard RAG over the source library — what does the user *know* that's relevant to this message? Pulls from the same `videoresearchpro_global` collection.
-3. **retrieve_voice_signals.** Fetches the user's relevant style and framing signals from `voice_signals`, scoped by audience hint.
-4. **retrieve_personal_context.** Pulls relevant `personal_facts` — opinions, current goals, expertise. This is what makes "speak as me" different from "speak generically": the agent knows the user *is* a backend engineer, *does* think LLM agents are oversold, *is* trying to ship SaaS by Q2.
+1. **classify_intent.** The message's intent, topic and language, and the people it names. A private person named here stops the run until the user confirms them.
+2. **retrieve_relevant_knowledge.** Standard RAG over the source library — what does the user *know* that's relevant to this message? Pulls from the same global collection as Q&A (`pratidhvani_global` by default, `CHROMA_GLOBAL_COLLECTION_NAME`), plus the user's notes, past answers and shares.
+3. **retrieve_voice_signals.** Fetches the user's relevant style and framing signals from `voice_signals`, scoped by topic and language.
+4. **retrieve_personal_context.** Pulls relevant rows of `personal_context` — opinions, current goals, expertise. This is what makes "speak as me" different from "speak generically": the agent knows the user *is* a backend engineer, *does* think LLM agents are oversold, *is* trying to ship SaaS by Q2.
 5. **draft.** A long, carefully-prompted call to a strong model with all of the above.
-6. **self_critique_against_voice.** A second model call that grades the draft against the voice signals. *"Does this sound like the user? Where does it deviate? Score 0-10 per dimension."* Below threshold → rewrite once.
-7. **finalize.** Attach citations (every claim ties back to a source or a personal fact) and a confidence score.
+6. **self_critique_against_voice.** A second model call that grades the draft against the voice signals. *"Does this sound like the user? Where does it deviate?"* Tone, vocabulary, structure, topicality and groundedness each score 1 to 5. Below `ECHO_DRAFT_CRITIQUE_TARGET`, or with groundedness under 4, **revise** rewrites the draft and the critique runs again, up to `ECHO_DRAFT_CRITIQUE_ROUNDS` times. The best-scored round is kept.
+7. **finalize.** Run the verbatim guard, attach the citations the draft used, and report a voice-match score and a confidence score.
 
 ### Output contract
 
 ```json
 {
   "draft": "...",
-  "confidence": 0.78,
-  "voice_match_score": 8.2,
   "citations": [
-    { "type": "source", "id": "...", "quote": "..." },
-    { "type": "personal_fact", "id": "...", "fact": "..." },
-    { "type": "past_qa", "id": "...", "summary": "..." }
+    { "kind": "source", "ref": "S1", "label": "...", "url": "..." },
+    { "kind": "fact", "ref": "F1", "label": "what Echo knows about you" },
+    { "kind": "qa", "ref": "Q1", "label": "a question you asked before" }
   ],
-  "deviation_notes": "Drafted slightly more formal than your usual register because the recipient is unknown."
+  "deviation_notes": ["Drafted slightly more formal than your usual register because the recipient is unknown."],
+  "flags": [],
+  "voice_match_score": 82.5,
+  "confidence": 0.8,
+  "critique_rounds": 1
 }
 ```
 
-The user reads the draft, the citations, and the deviation notes. They edit, accept, or discard. If they edit, the diff feeds back as a new voice signal.
+The user reads the draft, the citations, and the deviation notes. They edit, accept, or discard. If they save their own version, the words they typed become a signal-extraction input ([D-104](decisions.md#d-104--a-draft-edit-teaches-only-the-words-the-user-typed-2026-10-20)).
 
 ### What "Speak as me" never does
 
@@ -322,6 +329,8 @@ The user reads the draft, the citations, and the deviation notes. They edit, acc
 - **Speak in voice modes the user hasn't authorized.** Drafting a reply in casual register requires the user has previously approved at least one casual draft.
 - **Cite things the user hasn't ingested.** No "general world knowledge" claims. Every factual claim ties to a source the user has chosen to listen to.
 - **Speak about other people in their absence.** If a draft would name a non-public person, the agent flags it: *"This draft references your colleague Alice. I'm willing to draft this only with your explicit go-ahead."*
+
+*As built:* nothing sends, and a private name waits for the user's confirmation. The register rule was not built: `register` goes to the draft prompt and nothing asks for an earlier approval. A draft with nothing behind it is flagged `ungrounded`, not refused.
 
 ---
 
@@ -502,13 +511,13 @@ Conformance to this interface is the *only* way new connectors enter the system.
 
 ## What this means for today's PRs
 
-Even though Personal Brain is years out, today's choices matter. Specifically:
+Every PR's choices matter to this design. Specifically:
 
 1. **Every new user-scoped table gets `tenant_id` AND `user_id`** — not just `tenant_id`. Personal-brain data is per-user even within a tenant; tables that conflate this will need migrations later. (See the [saas-roadmap](saas-roadmap.md) invariants — Personal Brain extends them.)
 2. **The `documents` table (post-L1) gets a `user_provenance` JSON column placeholder** so we can later record "the user found this via Spotify history" without a schema migration.
 3. **Connector code never lives in `app/services/`.** Even today, when we add YouTube ingestion features, we resist the temptation to colocate "fetch user's watch history" with "fetch a video's transcript." Watch history is a connector; transcripts are a service. Keep them apart.
 4. **Voice/style hints in user-facing copy stay generic.** Don't write "your library" assuming a single user — write it in a way that survives multi-user tenants.
-5. **`anthropic-skills` and similar provider-specific surfaces** (used today for PPTX generation in [feature-roadmap](feature-roadmap.md) L2) must not absorb personal-brain content into their cloud-side processing in zero-knowledge mode. Audit the skill's data flow before wiring it to brain content.
+5. **`anthropic-skills` and similar provider-specific surfaces** (none is in use: decks render locally with python-pptx) must not absorb personal-brain content into their cloud-side processing in zero-knowledge mode. Audit the skill's data flow before wiring it to brain content.
 6. **Every new Echo store is registered for export and erasure.** A table goes into `echo_privacy_service.ECHO_TABLES`, a Chroma collection into `echo_vectors.echo_collection_names()`, files under the tenant's directory. An unregistered store is neither exported nor deleted, which breaks the promise above.
 
 ---

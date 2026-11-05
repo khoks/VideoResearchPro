@@ -411,8 +411,7 @@ class UseCaseInfo:
 # so re-measuring after a model refresh is free — see D-052.
 #
 # Callers that assemble large prompts (report map/reduce/channel batching)
-# derive their budgets from the RESOLVED model via `context_window_for()`
-# instead of the legacy global `LLM_MAX_CONTEXT_TOKENS` constant.
+# derive their budgets from the RESOLVED model via `context_window_for()`.
 MODEL_CONTEXT_WINDOWS: dict[str, int] = {
     # measured 2026-07-29
     "gpt-5.4-nano": 272_000,

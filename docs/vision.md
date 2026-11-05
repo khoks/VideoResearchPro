@@ -49,13 +49,13 @@ Pratidhvani's vision unfolds in three nested rings, each strictly contained by t
 
 The smallest, most concrete circle. **Already largely shipped.**
 
-The user picks sources (currently YouTube channels and topics), curates a discovery list, approves which videos to actually ingest, and then queries the resulting transcript library for citation-grounded answers. Subscriptions auto-pull new content from chosen channels. Knowledge reports extract structured `{topics, concepts, events, facts}` per video. Q&A history accumulates into its own searchable corpus.
+The user picks sources (YouTube channels and topics, and every source type of Ring 2), curates a discovery list, approves which videos to actually ingest, and then queries the resulting transcript library for citation-grounded answers. A channel subscription ingests the channel's uploads once, and **Sync now** pulls what is new; nothing syncs on a schedule yet. Knowledge reports extract structured `{topics, concepts, events, facts}` per video. Q&A history accumulates into its own searchable corpus.
 
 **The product north-star here**: a wiki the user has *built themselves*, source-by-source, opinion-by-opinion. It looks and reads like a research journal, not a database.
 
-### Ring 2 — Multi-source curated knowledge (next 1-2 quarters)
+### Ring 2 — Multi-source curated knowledge (shipped)
 
-The middle ring. **Begins with L1 in [feature-roadmap.md](feature-roadmap.md).**
+The middle ring. **L1 in [feature-roadmap.md](feature-roadmap.md) shipped it.**
 
 The same job/approval/curation flow generalizes beyond YouTube to:
 
@@ -178,14 +178,14 @@ Roughly:
 | Phase | When | Scope |
 |-------|------|-------|
 | **Phase 0 — VideoResearchPro era** (shipped) | Through 2026 Q1 | YouTube-only ingest, jobs (topic/channel/subscription), global library, citation Q&A, knowledge artifacts, dataset exports, multi-user auth, fail-soft LLM routing. |
-| **Phase 1 — Pratidhvani rebrand** (current) | 2026 Q2 | Name, brand, warm-editorial visual identity, sidebar navigation, design tokens, doc consolidation. **No functional regression.** |
-| **Phase 2 — Multi-source ingest** | 2026 Q3 | L1 lands. Podcasts + articles + threads + PDFs feed the same job/approval/library flow. `videos` table generalized to `documents`. |
-| **Phase 3 — Author Studio** | 2026 Q4 | L2 lands incrementally: Books → static sites → decks → reels. |
-| **Phase 4 — Curated source ranking** | 2027 Q1 | L4 lands. Source weights, disagreement-preserving answers, side-by-side narratives. |
-| **Phase 5 — SaaS** | 2027 Q2+ | L5 lands. Hosted SaaS, billing tiers, OAuth, regions, abuse prevention. Self-host stays first-class. |
-| **Phase 6 — Echo (Personal Brain)** | 2027 Q3+ | L3 begins. Constant-stream intake (Domain 5) ships first; activity connectors land one-by-one; personality capture; the "speak as me" agent + always-evokable Echo bubble; cold-start readiness gating; opt-in Mode B fine-tuning. |
+| **Phase 1 — Pratidhvani rebrand** (shipped) | 2026 Q2 | Name, brand, warm-editorial visual identity, sidebar navigation, design tokens, doc consolidation. **No functional regression.** |
+| **Phase 2 — Multi-source ingest** (shipped) | 2026 Q3 | L1 lands. Podcasts + articles + threads + PDFs feed the same job/approval/library flow. `videos` table generalized to `documents`. |
+| **Phase 3 — Author Studio** (books, sites, decks and newsletters shipped; reels are not) | 2026 Q4 | L2 lands incrementally: Books → static sites → decks → reels. |
+| **Phase 4 — Curated source ranking** (source weights shipped; side-by-side narratives deferred) | 2027 Q1 | L4 lands. Source weights, disagreement-preserving answers, side-by-side narratives. |
+| **Phase 5 — SaaS** (tiers, OAuth and rate limits shipped; billing and hosting are not) | 2027 Q2+ | L5 lands. Hosted SaaS, billing tiers, OAuth, regions, abuse prevention. Self-host stays first-class. |
+| **Phase 6 — Echo (Personal Brain)** (begun ahead of this order on 2026-10-19) | 2027 Q3+ | L3 begins. Constant-stream intake (Domain 5) ships first; activity connectors land one-by-one; personality capture; the "speak as me" agent + always-evokable Echo bubble; cold-start readiness gating; opt-in Mode B fine-tuning. |
 
-Targets are aspirational, not commitments. Each phase only ships when its design doc, schema migration, and user-facing flow are stable enough to live with.
+These targets date from 2026-04-24 and the build ran ahead of them; the phases overlap. [feature-roadmap.md](feature-roadmap.md) holds the status of each item. Targets are aspirational, not commitments. Each phase only ships when its design doc, schema migration, and user-facing flow are stable enough to live with.
 
 ---
 

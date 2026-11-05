@@ -1,6 +1,6 @@
 # Pratidhvani — UI Pages
 
-**Status:** canonical (2026-04-24). This is the **single source of truth** for the frontend page inventory: every route, the page that renders it, what the user does there, and the empty / loading / error states. Visual system (colors, type, components) lives in [ui-design.md](ui-design.md). API endpoints these pages call live in [api-reference.md](api-reference.md).
+**Status:** canonical (2026-04-24), re-audited against the routes and pages on 2026-11-04 (T-4.11.1.5). This is the **single source of truth** for the frontend page inventory: every route, the page that renders it, what the user does there, and the empty / loading / error states. Visual system (colors, type, components) lives in [ui-design.md](ui-design.md). API endpoints these pages call live in [api-reference.md](api-reference.md).
 
 The frontend is a single-page app under `frontend/src/`. Routing is `react-router-dom` v7 via `createBrowserRouter`. The route table lives at [`frontend/src/routes/index.tsx`](../frontend/src/routes/index.tsx).
 
@@ -12,6 +12,11 @@ The frontend is a single-page app under `frontend/src/`. Routing is `react-route
 |------|-----------|------|---------|
 | `/login` | `LoginPage` | public | Email + password login |
 | `/register` | `RegisterPage` | public | Create a new account |
+| `/login/oauth/:provider/callback` | `OAuthCallbackPage` | public-only | Where Google or GitHub sends the browser back after sign-in (T-5.4.5) |
+| `/forgot-password` | `ForgotPasswordPage` | public, signed in or out | Ask for a password-reset code (T-5.4.3) |
+| `/reset-password` | `ResetPasswordPage` | public, signed in or out | Paste the code and set a new password |
+| `/landing` | `LandingPage` | public, signed in or out | The landing page inside the app, in `MarketingLayout` |
+| `/pricing` | `PricingPage` | public, signed in or out | The three plans, in `MarketingLayout` |
 | `/` | `OnboardingGate` | protected | Default landing: `/welcome` while the server says the account should onboard, otherwise `/submit` |
 | `/welcome` | `WelcomePage` | protected | First-run wizard: channels, a small first run, its report (S-8.10.1) |
 | `/submit` | `SubmitJobPage` | protected | Start a new research run |
@@ -19,9 +24,9 @@ The frontend is a single-page app under `frontend/src/`. Routing is `react-route
 | `/jobs/:jobId` | `JobDetailPage` | protected | Single job: status, approval, report, Q&A |
 | `/reports/:jobId` | `ReportReaderPage` | protected | Reading room: the run's report rendered natively with outline, drop cap, citations and progress |
 | `/knowledge/:videoId` | `KnowledgeReaderPage` | protected | Reading room for a source's knowledge report (YouTube id or `document_id`) |
-| `/author/outputs/:outputId` | `OutputReaderPage` | protected, Pro+ | Reading room for an Author Studio output (books today) |
-| `/library` | `LibraryPage` | protected | Browse the global video library |
-| `/library/qa` | `LibraryQAPage` | protected | Ask across the entire library |
+| `/author/outputs/:outputId` | `OutputReaderPage` | protected, Pro+ | Reading room for an Author Studio output with a text form: a book, a deck's outline, a site's contents, a newsletter issue |
+| `/library` | `LibraryPage` | protected | Browse the sources the reader can see, and add PDFs and pasted pages |
+| `/library/qa` | `LibraryQAPage` | protected | Ask across the entire library, or one source |
 | `/library/graph` | `GraphPage` (lazy) | protected | The library map: sources, channels, topics and your questions as a graph, or as a table |
 | `/library/channels/:channelId` | `ChannelPage` | protected | One channel: header, subscribe / sync, trust-weight slot, its documents |
 | `/shelves` | `ShelvesPage` | protected (writes Pro+) | The reader's shelves: create, edit, delete |
@@ -31,44 +36,69 @@ The frontend is a single-page app under `frontend/src/`. Routing is `react-route
 | `/qa-history` | `QAHistoryChatPage` | protected | Meta-chat across all past Q&A |
 | `/exports` | `ExportsPage` | protected | Dataset export endpoints + downloads |
 | `/notes` | `NotesPage` | protected | Every note the user wrote, grouped by target, searchable, exportable |
-| `/author` | `AuthorPage` | protected, Pro+ | Author Studio: bind finished runs into a book; other kinds shown as coming later |
+| `/author` | `AuthorPage` | protected, Pro+ | Author Studio: make books, sites, decks and newsletters from finished work, and the email digest; later kinds shown as coming |
 | `/echo` | `EchoPage` | protected, Studio | Echo: personal-context store, readiness meter, sources and connectors, export and delete |
 | `/echo/inbox` | `EchoInboxPage` | protected, Studio | Echo's shares inbox: everything the user forwarded, with state and authorship |
 | `/echo/import` | `EchoImportPage` | protected, Studio | Import an export from another service (WhatsApp, Google Takeout, Spotify, Goodreads, Letterboxd, Strava, Apple Health): preview, choose whose words are whose, import, undo |
 | `/echo/incoming` | `EchoShareTargetPage` | protected, Studio (the server refuses the share otherwise) | Where a share from the Android share sheet lands: shows what is waiting on the device and asks for one tap, since any website can post to the share target. Then opens the inbox. A share made signed out waits through the sign-in ([docs/echo-share-surfaces.md](echo-share-surfaces.md)) |
 | `/echo/connectors/:name/callback` | `EchoConnectorCallbackPage` | protected | Where a provider returns after the user approves a connector: posts the code back, then returns to `/echo?connected=<name>` |
-| `/account/subscription` | `SubscriptionPage` | protected | Tier, upgrade / downgrade (demo billing) |
-| `/account/ai-models` | `AIModelsPage` | protected | Per-use-case LLM overrides and BYOK keys |
+| `/account/subscription` | `SubscriptionPage` | protected | The plans, the document-cap line and the reader's usage by feature; only the operator switches tiers (demo billing) |
+| `/account/ai-models` | `AIModelsPage` | protected | Per-use-case LLM overrides with their measured guidance and cost; BYOK keys (Studio) |
+| `/account/security` | `AccountSecurityPage` | protected | Sessions, two-step verification, password, recent account activity |
+| `/account/system` | `SystemStatusPage` | protected | LLM probes, scheduler and YouTube quota; restart for operators |
 | `*` | (redirect → `/`) | — | 404 → home |
 
-Protected routes are wrapped in `<ProtectedRoute>` which redirects unauthenticated visitors to `/login`. Public-only routes (`/login`, `/register`) are wrapped in `<PublicOnlyRoute>` which redirects authenticated users to `/`, where the gate decides between the wizard and `/submit`.
+Protected routes are wrapped in `<ProtectedRoute>` which redirects unauthenticated visitors to `/login`. Public-only routes (`/login`, `/register`, the OAuth callback) are wrapped in `<PublicOnlyRoute>` which redirects authenticated users to `/`, where the gate decides between the wizard and `/submit`. `/landing` and `/pricing` sit in `MarketingLayout`, and the two password pages stand alone, so all four open signed in or out.
 
-`VideoKnowledgePage.tsx` exports `VideoKnowledgeDrawer` — used as an inline drawer inside `JobDetailPage` to show a video's knowledge artifact, not as its own route.
+Pages an account opens now and then are lazy routes, each its own chunk: the three readers, the library map, the four Echo pages, Author Studio, Subscription, AI models and System status (T-8.8.4.1, T-8.8.4.5). The other pages are in the main chunk, and they load the Markdown renderer on demand through `components/common/Markdown`, showing the plain text first.
 
-The protected routes share `<AppLayout>` (top-tabs nav today, sidebar after the redesign per [branding.md](branding.md) and [ui-design.md](ui-design.md)).
+`VideoKnowledgePage.tsx` exports `VideoKnowledgeDrawer`, a drawer opened from a job page's rows and from every library row whose text has been read (`VideoRow`), not a route of its own.
+
+The protected routes share `<AppLayout>`: a left sidebar, and a top bar with a drawer on small screens. See [Layout](#layout-applayout).
 
 ---
 
 ## Page-by-page
 
 ### `LoginPage` — `/login`
-**Purpose.** Email + password login. Calls `POST /api/v1/auth/login`, stores the JWT in the auth context, redirects to `from.pathname` (or `/`, which the onboarding gate resolves).
+**Purpose.** Sign in. Calls `POST /api/v1/auth/login`, stores the JWT in the auth context, redirects to `from.pathname` (or `/`, which the onboarding gate resolves). An account with two-step verification gets a five-minute ticket instead of a token, and the page becomes the second step.
 
 | State | What renders |
 |-------|--------------|
-| Default | Email + password fields, "Sign in" button, link to `/register`. |
-| Submitting | Button shows spinner, fields disabled. |
-| Auth error | Inline error below the form ("Email or password is wrong."). |
-| Network error | Toast via the global `ToastContainer`. |
+| Default | Email + password fields, "Sign in" button, **Forgot your password?**, **Continue with Google** / **GitHub** for the providers this install has set up (`OAuthButtons`, nothing at all when there are none), a link to `/register`, and links to `/landing` and `/pricing`. |
+| Submitting | Button shows a spinner and reads "Signing in…". |
+| Refused | `AuthError` under the button with the server's `detail` ("Invalid email or password", a lockout, a rate limit), or the request's own message when no response came. |
+| Two-step (T-5.4.6) | `MfaCodeStep`: a code from the authenticator app, or a recovery code behind a switch, to `POST /auth/login/mfa`. A ticket takes five codes (T-5.4.13). When it runs out or times out, the step says so and sends the reader back to the first step. |
 
 ### `RegisterPage` — `/register`
-**Purpose.** Account creation. Calls `POST /api/v1/auth/register`, immediately follows with a login call to capture the JWT (the register response carries the user, not a token; until 2026-10-19 the context stored the missing token and every new account landed signed out on `/login`). Then goes to `/`, so a new account opens the wizard.
+**Purpose.** Account creation. Calls `POST /api/v1/auth/register`, immediately follows with a login call to capture the JWT (the register response carries the user, not a token; until 2026-10-19 the context stored the missing token and every new account landed signed out on `/login`). Then goes to `/`, so a new account opens the wizard. `/pricing` links here with `?intent=<tier>`, which nothing reads yet.
 
 | State | What renders |
 |-------|--------------|
-| Default | Email + password + confirm-password, "Create account" button. |
-| Validation error | Inline below the offending field. |
-| Email exists | "An account with this email already exists. Sign in instead?" with link. |
+| Default | Email, password ("At least 8 characters."), confirm password, "Create account" button, a link to `/login`, links to `/landing` and `/pricing`. There are no OAuth buttons here; they are on the sign-in page. |
+| Validation error | One `AuthError` under the button, checked before any request: "Passwords do not match." or "Password must be at least 8 characters." |
+| Refused | The same place, with the server's `detail`: "Email already registered", a password that cannot be stored, or the refusal of an address listed in `ADMIN_EMAILS` (D-111). |
+
+### `OAuthCallbackPage` — `/login/oauth/:provider/callback`
+**Purpose.** Where Google or GitHub sends the browser back (T-5.4.5). Reads `code` and `state`, drops them from the address bar at once, and hands them to the server once. Then goes to `/`, or to `MfaCodeStep` for an account with two-step verification.
+
+| State | What renders |
+|-------|--------------|
+| Working | Spinner, "Finishing sign-in…". |
+| Cancelled or refused at the provider | "You cancelled at Google, so you are not signed in.", or the provider's `?error=` code, with **Back to sign in**. |
+| Missing parameters, failed exchange | Says to start again from the sign-in page. A 403 shows the server's reason, such as an email the provider had not verified. |
+
+### `ForgotPasswordPage` — `/forgot-password`
+**Purpose.** Ask for a reset code (T-5.4.3). The answer is the same whether or not the address has an account, and it never carries the code, so the page shows nothing from the response. It goes by email, or to the server log on an install without email, and the page says both: "If an account uses … a reset code is on its way", then that an install without email puts the code in the server log for its operator. **I have a code** opens `/reset-password`; **Use a different address** starts over.
+
+### `ResetPasswordPage` — `/reset-password`
+**Purpose.** The code, a new password and its confirmation, to `POST /auth/password-reset/confirm`. The code is pasted, never read from the address bar: a secret in a URL lands in history, logs and Referer headers. A used, expired or mistyped code gets its own sentence, and any other refusal shows the server's words (a password that cannot be stored leaves the code good, T-5.4.18). On success: "Your new password works now", that every session was signed out, and **Sign in**.
+
+### `LandingPage` — `/landing`
+**Purpose.** The landing page inside the app, in `MarketingLayout`: a top bar with **How it works** and **Pricing**, **Sign in** and a sign-up link, or **Open app** for a signed-in reader, and a footer. Linked from the sign-in and register pages. The separate Astro site in `marketing/` is a different build, deployed on its own.
+
+### `PricingPage` — `/pricing`
+**Purpose.** The three plans, from the same `TIER_DESCRIPTORS` as the Subscription page. Signed out, a card goes to `/register?intent=<tier>`. Signed in, the current plan is marked and the others go to `/account/subscription`, the only place a plan changes.
 
 ### `WelcomePage` — `/welcome`
 **Purpose.** The first-run wizard (S-8.10.1, plan [m10-onboarding](plans/m10-onboarding.md)): a task flow with real actions, not an overlay tour. Its state lives on the user row (`GET` / `PATCH /auth/me/onboarding`), so it resumes at the same step on any device. `/` sends an account here while `should_onboard` is true: no runs yet, or the wizard already started, and neither finished nor skipped. Accounts that had runs before the wizard shipped are not sent. **Skip for now** is always in the header (it records the dismissal and goes to `/submit`); after a skip or a finish it reads **Close** and the page stays reachable from the palette's **Getting started** action. A `Stepper` (ordered list, `aria-current="step"`) lets the reader go back to a finished step without losing what they entered.
@@ -86,70 +116,69 @@ The protected routes share `<AppLayout>` (top-tabs nav today, sidebar after the 
 | Finished earlier | A note with the date it was finished; the steps still work |
 
 ### `SubmitJobPage` — `/submit`
-**Purpose.** Start a research run. Three tabs: **Topic**, **Channels**, **Subscribe**.
+**Purpose.** Start a research run. Three tabs: **Topic**, **Channels**, **Subscription**. The header shows the title ("Begin a new research run", "Duplicate a research run" or "Research from a template") and **Reset form**.
 
 | Tab | Inputs | Result |
 |-----|--------|--------|
-| Topic | topic, search instructions, preferred channels (multiselect from existing subscriptions), `max_videos` | `POST /api/v1/jobs` with `job_type=topic` |
-| Channels | one or more channel URLs, `max_videos_per_channel` | `POST /api/v1/jobs` with `job_type=channel` |
-| Subscribe | one or more channel URLs | `POST /api/v1/jobs` with `job_type=subscription`; channels become subscribed for auto-pull |
+| Topic | Research topic; **Sources to search** (`SourceTypePicker`); search instructions; preferred channels (a text box, one @handle, channel URL or UC id per line, checked as typed); **Number of videos**, or **Number of results** once other sources are on, with the plan's cap in the helper text; **Report depth** (Auto, Brief, Standard, Deep); min and max duration; publish window; channel-type filters | `POST /api/v1/jobs` with `job_type=topic` |
+| Channels | YouTube channels, one per line; videos per channel (1 to 50); min and max duration | `POST /api/v1/jobs` with `job_type=channel` |
+| Subscription | A note that every video on each channel is ingested; YouTube channels, one per line | `POST /api/v1/jobs` with `job_type=subscription`; the channels become subscribed |
 
 | State | What renders |
 |-------|--------------|
-| Default | Tabbed form with the active tab's inputs. |
+| Default | The active tab's form, then "Estimated YouTube quota: ~N units (daily free quota: 10,000)", which is an estimate of this run and reads no usage. Today's usage is on `/account/system`. |
 | Channels pre-filled | T-8.10.1.7: the first run reads one of the channels chosen in the wizard, so an empty Channels list is filled with the ones no run has named yet (`channels_not_yet_run`), once per browser, and the helper text says where they came from until the reader edits the list. The offer is made, and spent, only when the Channels form is on screen, so a reader who stays on Topic keeps it. Never over a draft (any setting changed, on any tab), a cloned run or a template. |
-| Submitting | Submit button shows spinner. |
-| LLM down for `search_plan_queries` | Banner above the Topic tab: "Search planning is unavailable. Topic jobs are paused. Channel and Subscribe still work." Topic tab's submit button is disabled. |
-| Quota near cap | Yellow banner: "YouTube quota at 86% — large jobs may fail." (Soft warning at 80% per `health/quota`.) |
-| Quota exhausted | Red banner: "YouTube quota exhausted until {resets_at}." Submit blocked. |
-| Success | Redirects to `/jobs/{id}` for the new job. |
+| Submitting | **Begin research** shows a spinner. |
+| Validation error | The form's error box (`role="alert"`), from `formToJobCreate`; on Topic also a chosen source this install has not set up ("… is not set up on this install; remove it from the sources to submit."). |
+| Topic search down | While `topic_job` is unavailable on the Topic tab, a warning above the buttons says topic research depends on the search model, and **Begin research** is disabled with the reason as its tooltip. Channels and Subscription still work. |
+| Document cap (T-5.2.10) | A full library refuses a run that would add sources (429, `detail.resource === 'documents'`). The form's error box shows the cap in words, in place of the generic toast. |
+| Success | Goes to `/jobs/{id}` for the new job. |
 
 **Templates** (S-8.6.1). Above the tabs, **Start from a template** lists the reader's templates and the starters, and links to **Manage templates →**. Choosing one fills every field but the topic (a topic already typed is kept) and shows a banner: "From template *Name* · vN. Type a topic; any other change applies to this run only." with **Save changes as vN+1** (own templates only) and **Detach**. The run is submitted with `?template_id=&template_version=`; switching the research type drops the provenance and says so. **Save as template** beside **Begin research** saves the form's recipe as a new template without running it. Arriving from `/templates` with **Use** applies that template.
 
 **Publish window** (S-8.6.3). **Prefer sources from the last (days)**, empty by default. A ranking preference, not a filter, and the helper text says so: an older source is still picked when nothing newer is as good. It is counted from the day the run starts, so a template stays current. Shown only while YouTube is among the sources, since nothing else is ranked; what was typed comes back if YouTube does. With other sources selected too, the helper text adds that it steers the YouTube results only. **Job parameters** on the job page names it when set.
 
-**Duplicate** carries every parameter of the source run, including report depth and the visual-analysis flag (before S-8.6.1 it reset depth to Auto and dropped the flag). The form has **no** visual-analysis opt-in: that toggle is S-1.18.2, deferred by D-071 / D-075. When a duplicated run or a template carries the flag, an info box says so ("Visual analysis is on, carried from the run or template you started from…") with **Turn off**. The form's state and its conversions live in `utils/jobForm.ts` and are unit-tested (`npm test`).
+**Duplicate** carries every parameter of the source run, including report depth and the visual-analysis flag (before S-8.6.1 it reset depth to Auto and dropped the flag). The visual-analysis opt-in (`VisualAnalysisOption`, S-1.18.2) is built and hidden: `featureFlags.visualAnalysis` in `config/features.ts` stays off by the owner's decision (D-105), and R1 is parked (D-109). When a duplicated run or a template carries the flag, the form says "Visual analysis is paused in this version, so this run will go without frames." Templates keep the stored setting. The form's state and its conversions live in `utils/jobForm.ts` and are unit-tested (`npm test`).
 
 ### `JobsListPage` — `/jobs`
-**Purpose.** Dashboard of every job the user owns. Real-time updates via the WS hook.
+**Purpose.** Every run the user owns, under the heading "Active runs". The list refetches every 10 s; it holds no WebSocket subscription. Above it: search by topic or channel name, a status filter, and newest or oldest first. **Previous** and **Next** page through the rest.
 
-Columns: title, type icon, status pill, video count, created_at, last activity. Row hover reveals "Open" / "Cancel" / "Delete".
+One card per run, and the card opens the run: title, status pill, type, **Add to shelf**, **Duplicate**, then **Cancel** while it runs or **Delete** once it has ended; a progress bar, the progress message, and "N videos · N transcripts · date".
 
 **Shelves** (S-8.1.2): each card carries an **Add to shelf** button ("On N shelves" once shelved) that opens a popover of checkboxes, one per shelf, saved on toggle, with an inline "New shelf…" field that creates and adds in one step; the shelves a run is on show as colour chips under the title, each linking to its shelf. Membership comes from the one cached `GET /shelves` (each shelf carries `job_ids`), so a page of cards costs one request. Readers without the `shelves` capability see the chips but no picker unless the run is already shelved.
 
 | State | What renders |
 |-------|--------------|
-| Default | Sortable table; default sort by `last activity` desc. |
+| Default | Cards, newest first. |
 | First run | **Getting started** checklist card above the filters (S-8.10.2): *Start a research run*, *Read a report*, *Ask your sources a question*, each with the one link that completes it, "N of 3 done", and **Hide this** (kept on the server, `checklist_dismissed`). It disappears by itself once all three are done, so accounts that already work never see it. |
 | Empty (no runs, nothing filtered) | "Nothing researched yet." with **New research** → `/submit`. |
 | Empty (search or status filter returns nothing) | "Nothing matches these filters." with **Clear filters**. Until S-8.10.2 a status filter with no hits showed the first-run copy. |
 | Loading | Skeletons in the shape of the header, filter card and two run cards. |
 | Network error | "Couldn't load your runs." with **Retry**. |
-| Background WS event | Status pill updates in place; if a job transitions to `awaiting_approval`, a small "review needed" badge appears. |
 
 ### `JobDetailPage` — `/jobs/:jobId`
-**Purpose.** The most complex page. Status, approval, report viewing, Q&A panel. Drives the WS subscription for this `jobId`.
+**Purpose.** The most complex page. Status, approval, report viewing, Q&A panel. Drives the WS subscription for this `jobId`, and refetches every 5 s besides.
 
 Sections (rendered conditionally on `job.status` and `job.job_type`):
 
 | Section | When shown | Notes |
 |---------|------------|-------|
-| **Header** | always | Title, type, status pill, created_at, "Cancel" / "Delete" overflow menu. Shelf chips under the meta line and the **Add to shelf** picker beside the status pill (S-8.1.2). **Save as template** beside Duplicate (S-8.6.1) names the run's recipe as a reusable template. |
-| **Progress** | status ∈ {searching, extracting, building_rag, generating_report} | Phase, progress bar (`completed / total`), message line, last-event timestamp. Driven by `useJobProgress`. |
-| **Search results / Approval** | status == `awaiting_approval` (topic only) | Table of candidate videos with checkboxes, "Approve selected" button. Auto-populates when WS reports the status change. |
+| **Header** | always | Title, type and date, status pill, **Add to shelf**, **Duplicate · Re-run**, **Save as template** (S-8.6.1), then **Cancel** while the run is active or **Delete** once it has ended. Shelf chips under the meta line (S-8.1.2). Under them, always, the progress bar and message, and the error when there is one. |
+| **Job parameters** | always | The run's recipe: topic or channels, instructions, depth, durations, publish window and the rest. |
+| **Sync progress** | subscription runs while extracting or building the index | Counts for a run with no approval step. |
+| **Search results / Approval** | status == `awaiting_approval` (topic and channel runs) | Table of candidate videos with checkboxes, **Approve & continue (N candidates)**. Auto-populates when WS reports the status change. A failed approval says so inline. |
 | **Your notes on this run** | always, once the job loads | Section-variant notes panel (M5 / S-8.5.1): the user's own Markdown on the run, newest first, with add / edit / delete. |
-| **Approved videos** | status ∈ {extracting, building_rag, ...completed} | Read-only list of approved videos with per-video transcript status. Each row has a "Knowledge" button that opens the `VideoKnowledgeDrawer`, and an inline notes control: a note on a document shows on every surface that shows the document (the shelf, every job containing it). |
-| **Report** | `job.report_path` is set | "Read report" (primary) → navigates to the reading room at `/reports/:jobId`; "Quick peek" (secondary) → the legacy HTML in an iframe modal, which also owns "Open in new tab". Both show the report from a blob: URL fetched with the bearer header (sandboxed frame, scripts blocked), never a `?token=` link (T-8.8.1.5). |
-| **Q&A panel** | status == `completed` | Question textarea, "Clarify first" optional toggle, language selector, "Ask" button. Below: list of past exchanges with citations rendered as chips that deep-link to `&t=` timestamps. Each exchange card carries the inline notes control (target `qa_exchange`). Under 640 px the composer moves below the thread and docks at the bottom of the screen while the panel is in view, above the keyboard (S-8.12.1). **You might ask** (S-8.4.2): under the composer, up to five suggested next questions from `GET /suggestions` (generated from the context, or the reader's own past questions, marked "You asked this before."). A click fills the composer; Shift-click asks at once, skipping the clarify step. Each use is logged through `POST /suggestions/feedback`. The card loads after the page, shows "Finding questions worth asking…" meanwhile, and renders nothing when there is nothing to suggest, when the request fails, or when the Q&A feature is down. Context `job:<id>`. |
-| **Knowledge drawer** | user clicks the Knowledge button on a video row | Slides in from the right; shows the structured `{topics, concepts, events, facts}` + Markdown report; "Generate" button if not yet extracted. |
+| **Videos (N)**, or **Synced videos (N)** | once there are videos and no approval is pending | Each row links to the source and shows its channel, length and transcript status. A row whose transcript is fetched has a **Knowledge** button that opens the `VideoKnowledgeDrawer`, and every row has the inline notes control: a note on a document shows on every surface that shows the document (the shelf, every job containing it). |
+| **Report** | the run has a report (never a subscription run) | **Read report** (primary) → navigates to the reading room at `/reports/:jobId`; **Quick peek** (secondary) → the legacy HTML in an iframe modal, which also owns "Open in new tab". Both show the report from a blob: URL fetched with the bearer header (sandboxed frame, scripts blocked), never a `?token=` link (T-8.8.1.5). **Add to a book** (S-6.1.1, tiers with Author Studio, once completed) opens `/author?new=book&job=<id>`. |
+| **Q&A panel** | status == `completed` | A question field, **Answer depth** (R4, S-1.15.3: Default, which is the depth the run was asked for or else sized to what it gathered, then Brief, Standard, Deep) and **Ask**. Ask always goes through the clarify step: how the question was understood and optional clarifying questions, then **Confirm & search** or **Skip clarifications**. While it answers, a line follows the server's stages from `POST /jobs/{id}/qa/stream` ("Searching your sources…", "Refining context…", "Writing the answer…", "Linking citations…"). Below: list of past exchanges with citations rendered as chips that deep-link to `&t=` timestamps. Each exchange card carries the inline notes control (target `qa_exchange`). Under 640 px the composer moves below the thread and docks at the bottom of the screen while the panel is in view, above the keyboard (S-8.12.1). **You might ask** (S-8.4.2): under the composer, up to five suggested next questions from `GET /suggestions` (generated from the context, or the reader's own past questions, marked "You asked this before."). A click fills the composer; Shift-click asks at once, skipping the clarify step. Each use is logged through `POST /suggestions/feedback`. The card loads after the page, shows "Finding questions worth asking…" meanwhile, and renders nothing when there is nothing to suggest, when the request fails, or when the Q&A feature is down. Context `job:<id>`. |
+| **Knowledge drawer** | user clicks the Knowledge button on a video row | See [`VideoKnowledgeDrawer`](#videoknowledgedrawer-a-drawer-not-a-route). |
 
 | State | What renders |
 |-------|--------------|
 | Default | Whichever sections apply per status. |
-| WS reconnecting | Subtle dot indicator next to the status pill. |
-| LLM down for `qa_formulate_answer` | Q&A panel banner: "Ask question is paused — `qa_formulate_answer` is unreachable." Ask button disabled. |
-| LLM down for `knowledge_synthesize_report` | Knowledge drawer's "Generate" button disabled with a tooltip. |
-| Job failed | Status pill in error color; banner with the failure message; offer to "Retry from extraction" if applicable. |
+| LLM down for Q&A | A line above the composer ("LLM-dependent feature is temporarily unavailable"); the field and **Ask** are disabled with the same words as their tooltip. |
+| LLM down for knowledge extraction | The rows' **Knowledge** button is disabled with the same words as its tooltip. |
+| Job failed | Status pill in error color and "Error: …" under the progress bar. **Duplicate · Re-run** is the way to go again; there is no retry from a phase. |
 | Job cancelled | Status pill in muted color; the prior progress is shown frozen. |
 
 ### `ReportReaderPage` — `/reports/:jobId`
@@ -166,16 +195,16 @@ What the reader does to the report's own markup:
 | The processing note (`<p class="processing-note">`, or a paragraph opening `<strong>Processing note:</strong>` in older reports) | Lifted out of the body and shown under the statistics tiles as a labelled note (`role="note"`), before the text it qualifies (T-8.8.4.4). It says what the pipeline dropped, trimmed or repaired, including a section closed after being cut off mid-markup (S-1.14.17). |
 | `<style>`, `<script>`, event handlers, `style=` attributes, embeds, forms, SVG, MathML | Removed by the sanitiser. |
 
-Layout: 75ch serif measure, `text-wrap: pretty` on prose and `balance` on headings, statistics tiles under the title, a sticky `<nav aria-label="Outline">` on the right with `aria-current` tracking scroll (one IntersectionObserver), and a floating "Reading · n%" pill (decorative; the figure is repeated in the outline). The outline hides under 960px (the M12 pass refines the rest).
+Layout: 75ch serif measure, `text-wrap: pretty` on prose and `balance` on headings, statistics tiles under the title, a sticky `<nav aria-label="Outline">` on the right with `aria-current` tracking scroll (one IntersectionObserver), and a floating "Reading · n%" pill (decorative; the figure is repeated in the outline). The outline hides under 1200px, where the bottom toolbar below takes over.
 
 | State | What renders |
 |-------|--------------|
-| Loading | Spinner with "Opening the report…" (`ReaderLoading`). The router shows the same line while the page's own chunk loads: the three readers are lazy routes (T-8.8.4.1), so DOMPurify, `html-react-parser` and `remark-gfm` stay out of the first paint (react-markdown's own core stays: the job page, notes and Q&A cards import it). |
+| Loading | Spinner with "Opening the report…" (`ReaderLoading`). The router shows the same line while the page's own chunk loads: the three readers are lazy routes (T-8.8.4.1), so DOMPurify, `html-react-parser` and `remark-gfm` stay out of the first paint. |
 | 404 (no report for this run) | `EmptyState` "No report for this run yet" + back link. |
 | Other error | `EmptyState` with the API's `detail` + back link. |
 | Report with no headings (e.g. "No transcript data available") | Body only; the outline nav is omitted. |
 
-**Citation cards (S-8.8.2).** The page also fetches the run's documents (`GET /jobs/{id}/videos`) and resolves every citation to a source: by the YouTube id in the href, by the href against document URLs, or — for pre-S-1.14.9 reports whose anchors carry only `&t=` — by a known title, then a channel with exactly one document in the run, found in the text around the anchor. Recovered anchors become real links. One shared card (Popover API, top layer, placed from the chip's bounding rect; a fixed-position fallback where `showPopover` is missing) opens on hover after 120 ms and at once on keyboard focus; it shows the source kind and footnote number, title, the kind's facts (channel, date and length for a video; subreddit and author for a Reddit thread; pages for a PDF…), the timestamp and an "Open at" link, and says when the match came from the report text. The chip gets `aria-describedby` while its card is open; Escape closes the card and leaves focus on the chip; scrolling moves the card with its chip and closes it only once the chip leaves the viewport. A chip that cannot be tied to any source is a `<button>` with an explanatory card, so the keyboard still reaches it. A collapsed "Sources cited" list after the body numbers every distinct place cited (identical targets share a number and show "cited n×"). The card has a still slot for R1 frames that nothing feeds until S-1.18.2.
+**Citation cards (S-8.8.2).** The page also fetches the run's documents (`GET /jobs/{id}/videos`) and resolves every citation to a source: by the YouTube id in the href, by the href against document URLs, or — for pre-S-1.14.9 reports whose anchors carry only `&t=` — by a known title, then a channel with exactly one document in the run, found in the text around the anchor. Recovered anchors become real links. One shared card (Popover API, top layer, placed from the chip's bounding rect; a fixed-position fallback where `showPopover` is missing) opens on hover after 120 ms and at once on keyboard focus; it shows the source kind and footnote number, title, the kind's facts (channel, date and length for a video; subreddit and author for a Reddit thread; pages for a PDF…), the timestamp and an "Open at" link, and says when the match came from the report text. The chip gets `aria-describedby` while its card is open; Escape closes the card and leaves focus on the chip; scrolling moves the card with its chip and closes it only once the chip leaves the viewport. A chip that cannot be tied to any source is a `<button>` with an explanatory card, so the keyboard still reaches it. A collapsed "Sources cited" list after the body numbers every distinct place cited (identical targets share a number and show "cited n×"). Where a frame was captured near the cited moment, the card shows that still (S-1.18.2, `useCitationStills`). Frames that already exist keep showing while visual analysis is paused.
 
 **Print (S-8.8.2).** "Print or save as PDF" in the toolbar, or Ctrl-P: app chrome, outline, progress pill, toolbar, card, health banner and toasts are hidden; text prints black on white whatever the theme; every `h2` after the first starts a page; tables, lists items, blockquotes and code avoid breaking; chips print as the writer's text plus a bracketed footnote number; the endnote list opens itself on `beforeprint` and prints each source's URL; other links print their URL after the text; `@page` margin 2 cm. The 102 kB R1 report prints to 37 A4 pages.
 
@@ -192,7 +221,7 @@ Layout: 75ch serif measure, `text-wrap: pretty` on prose and `balance` on headin
 
 | State | What renders |
 |-------|--------------|
-| Default | Row list. Each row: thumbnail (or source-type placeholder), title, channel or source type, duration where it applies, language pill, transcript-status pill, "referenced in N runs" footer, open link. |
+| Default | Row list. Each row: thumbnail (or source-type placeholder), title, channel or source type, duration where it applies, language pill, transcript-status pill, "referenced in N runs" footer, open link ("YouTube →", "Open PDF →" or "Open →"), and **Knowledge** on any row whose text has been read, whatever its source type. |
 | Filtering | Filter controls at the top; results update in place. |
 | Empty (no sources, nothing filtered) | "Your library is empty." with **Add sources**, which opens the Add sources tab (S-8.10.2; it used to say "Nothing matches these filters." with no filter set). |
 | Empty (filters return nothing) | "Nothing matches these filters." with **Clear filters**, which clears search, language, channel, transcript status, tag and the one-source filter. |
@@ -243,7 +272,7 @@ Result-state logic is pure and lives in `frontend/src/utils/ingestResults.ts`; t
 | Name collision | The form shows the server's 409 text inline ("You already have a shelf named …"). |
 
 ### `ShelfPage` — `/shelves/:shelfId`
-**Purpose.** One shelf as a filtered view of the library. Header: eyebrow with the colour dot, name, description, "N runs · updated …" (plus "read-only on your plan" when the tier lacks shelves), Edit / Delete for Pro+. **Runs**: one row per run (title link, status pill, type, sources · created), **Remove** for Pro+. **Sources**: the union of the runs' documents, each once, through `GET /shelves/{id}/documents` (visibility-scoped, D-063), with the library's search / transcript / sort filters and paging (`DocumentsBrowser`, shared with the channel page). **Ask this shelf** (S-8.1.4), between Runs and Sources: a question box, answer language and **Ask this shelf**, then the shelf's own history (`GET /shelves/{id}/qa`) as library exchange cards; answers draw only on the shelf's sources. On a shelf with no sources it says there is nothing to ask instead of showing the box.
+**Purpose.** One shelf as a filtered view of the library. Header: eyebrow with the colour dot, name, description, "N runs · updated …" (plus "read-only on your plan" when the tier lacks shelves), Edit / Delete for Pro+. **Runs**: one row per run (title link, status pill, type, sources · created), **Remove** for Pro+. **Sources**: the union of the runs' documents, each once, through `GET /shelves/{id}/documents` (visibility-scoped, D-063), with the library's search / transcript / sort filters and paging (`DocumentsBrowser`, shared with the channel page). **Ask this shelf** (S-8.1.4), between Runs and Sources: a question box, answer language and **Ask this shelf**, which goes through the library page's clarify step first (S-8.13.2; when that step fails the question goes straight to the shelf), then the shelf's own history (`GET /shelves/{id}/qa`) as library exchange cards; answers draw only on the shelf's sources. On a shelf with no sources it says there is nothing to ask instead of showing the box.
 
 | State | What renders |
 |-------|--------------|
@@ -276,20 +305,20 @@ Result-state logic is pure and lives in `frontend/src/utils/ingestResults.ts`; t
 **History** (S-8.3.3) opens a card's last runs: a badge per run (**Changed**, **No change**, **First answer**, **Nothing new to read** for the gate's skip, or the skip reason), when, whether it was scheduled or Run now, what changed ("Now cites 1 new source: …", or the judge's sentence), and links to **This answer** and, for a change, **The previous answer**. A notification lands here as `?search=<id>&run=<id>`: that card scrolls into view with its history open and the run outlined.
 
 ### `LibraryQAPage` — `/library/qa`
-**Purpose.** Ask questions across the entire library, with no per-job filter. The history holds shelf questions too (S-8.1.4): a scoped exchange reads "Asked on shelf Rates" above its question (a link to the shelf, or "a shelf that no longer exists"), so it never passes for a library-wide answer.
+**Purpose.** Ask questions across the library the reader can see ([D-063](decisions.md#d-063--per-user-isolation-shared-cache-private-catalogue-2026-07-31)), with no per-job filter. The history holds shelf questions too (S-8.1.4): a scoped exchange reads "Asked on shelf Rates" above its question (a link to the shelf, or "a shelf that no longer exists"), so it never passes for a library-wide answer.
 
-Layout: question textarea + clarify-first toggle + language selector at the top; past exchanges below ordered ascending by `created_at`, each with citation chips that link to the source video at the cited timestamp and the inline notes control (target `library_qa_exchange`). A YouTube chip whose video the reader can see also names its channel as a link to `/library/channels/:id` (S-8.7.4); the same holds for the Q&A panel on a run's page. A chip for one of the reader's own notes (S-8.5.2) reads "You wrote this on <date> · on <target>", in italics, shows the note's opening on hover, and links inside the app to what the note is on (the run, the channel page, the shelf, or `/notes` when the target cannot be linked).
+Layout: a question field, **Answer language** and **Answer depth** (S-1.15.3) at the top; past exchanges below ordered ascending by `created_at`, each with citation chips that link to the source video at the cited timestamp and the inline notes control (target `library_qa_exchange`). A YouTube chip whose video the reader can see also names its channel as a link to `/library/channels/:id` (S-8.7.4); the same holds for the Q&A panel on a run's page. A chip for one of the reader's own notes (S-8.5.2) reads "You wrote this on <date> · on <target>", in italics, shows the note's opening on hover, and links inside the app to what the note is on (the run, the channel page, the shelf, or `/notes` when the target cannot be linked).
 
 | State | What renders |
 |-------|--------------|
-| Default | Textarea + button + history list. Under 640 px the composer docks at the bottom below the history, as on the job page (S-8.12.1). **You might ask** (S-8.4.2): under the composer, up to five suggested next questions from `GET /suggestions` (generated from the context, or the reader's own past questions, marked "You asked this before."). A click fills the composer; Shift-click asks at once, skipping the clarify step. Each use is logged through `POST /suggestions/feedback`. The card loads after the page, shows "Finding questions worth asking…" meanwhile, and renders nothing when there is nothing to suggest, when the request fails, or when the Q&A feature is down. Context `library`. A question handed over from the knowledge drawer (route state) fills the composer, or is asked at once after a Shift-click. |
+| Default | The composer and the history list. Under 640 px the composer docks at the bottom below the history, as on the job page (S-8.12.1). **You might ask** (S-8.4.2): under the composer, up to five suggested next questions from `GET /suggestions` (generated from the context, or the reader's own past questions, marked "You asked this before."). A click fills the composer; Shift-click asks at once, skipping the clarify step. Each use is logged through `POST /suggestions/feedback`. The card loads after the page, shows "Finding questions worth asking…" meanwhile, and renders nothing when there is nothing to suggest, when the request fails, or when the Q&A feature is down. Context `library`. A question handed over from the knowledge drawer (route state) fills the composer, or is asked at once after a Shift-click. |
 | About one source | T-8.4.2.4: a question handed over from a knowledge drawer brings its source. A strip beside the composer reads "Asking about one source: *title*" with **Ask the whole library**; until that is pressed every ask carries `document_id`, the placeholder names the source, and the suggestions are that source's (context `document:<id>`). The answer card reads "Asked about one source" (a link to `/library?document=<id>`) and offers no **Pin this question**: a saved search takes the library or a shelf, so pinning would widen the question. |
-| Clarifying | Inline "Interpretation: ..." plus three suggested clarifying questions; user picks one or types their own context. |
+| Clarifying | **Ask** always goes through `ClarifyStep`, unless a suggestion was Shift-clicked: how the question was understood, the optional clarifying questions with a field each, **Confirm & search** and **Skip clarifications**. |
 | Pin (Pro+) | Each answer card carries **Pin this question** beside **Copy answer** (S-8.3.2). The dialog shows the question and asks only when: daily, weekly or monthly, the day, the hour in the reader's zone (weekly at 09:00 by default), and "Email me when the answer changes". **Pin it** creates the saved search; the button becomes a **Pinned** link to `/saved-searches`. Hidden on tiers without `saved_searches`. |
-| Asking | Streaming answer area appears; citations populate as the agent extracts references. |
+| Asking | "Searching the library and generating answer…" until the answer lands. Library questions do not stream: only the job page has a stream route. |
 | Empty (no exchanges yet) | Composer and an empty thread. |
 | Empty library | "Nothing to ask yet." with **Add sources** (→ `/library?tab=ingest`) in place of the composer, when the reader can see no source and has asked nothing (S-8.10.2). |
-| LLM down | Banner + Ask disabled. |
+| LLM down | A warning above the composer; the field and **Ask** are disabled with the same words as their tooltip. |
 
 ### `GraphPage` — `/library/graph`
 **Purpose.** The library map (S-8.9.2, [M9 plan](plans/m9-citation-graph.md)): the reader's sources, their channels and topics, and the questions they asked of them, from `GET /library/graph`. Loaded lazily, so sigma and the layout worker download only here and in a channel's concept map. Reached from the sidebar (**Library map**, under Library) and the channel page.
@@ -315,17 +344,16 @@ Layout: question textarea + clarify-first toggle + language selector at the top;
 ### `QAHistoryChatPage` — `/qa-history`
 **Purpose.** Meta-chat across every Q&A the user has ever run, powered by `qa_library_global`.
 
-Layout: chat-like — past meta-questions and meta-answers. Each meta-answer cites past *exchanges* (not videos directly), and each citation deep-links to the originating job-detail or library-Q&A page. Each card carries the inline notes control (target `qa_history_exchange`).
+Layout: chat-like — past meta-questions and meta-answers, an answer-language select in the header, the question field under the thread. Each meta-answer cites past *exchanges* (not videos directly), and each citation deep-links to the originating job-detail or library-Q&A page. Each card carries the inline notes control (target `qa_history_exchange`).
 
 | State | What renders |
 |-------|--------------|
-| Default | Full chat scroll, latest at the bottom. New question textarea is sticky at the bottom. |
-| Empty (no past exchanges anywhere) | "Once you've asked questions on a job or library page, they'll start echoing here." |
-| Empty (past exchanges exist but no meta-questions yet) | "Ask anything across your past questions. e.g. 'What have I learned about supply chains?'" |
-| Asking | Inline "thinking" indicator with skeleton paragraphs. |
+| Default | Full chat scroll, latest at the bottom, the question field after it. |
+| Empty (no meta-questions yet) | "No echoes yet." "Ask your first meta-question below to begin." |
+| Asking | A spinner and a line under the thread. |
 | Loading | Skeleton cards (S-8.10.2). |
 | Error | "Couldn't load your echoes." with **Retry**; the composer still works. |
-| LLM down for `qa_history_formulate_answer` | Banner + Ask disabled. |
+| LLM down for the history chat | The field and **Ask** are disabled with the reason as their tooltip. |
 
 ### `NotesPage` — `/notes`
 **Purpose.** "Your notes": everything the user has written on sources, runs, answers and channels (M5 / S-8.5.3). Sidebar entry under **Knowledge**.
@@ -352,37 +380,42 @@ Layout: one card per dataset (Q&A, knowledge, notes), each with its description 
 | Downloading | A toast on start and on failure. |
 
 ### `AuthorPage` — `/author` (Pro+)
-**Purpose.** Author Studio. Turn finished research runs into long-form output. Backend: `backend/app/routers/author.py`. Only `book` has a generator today; the page never offers a kind that would 501.
+**Purpose.** Author Studio. Turn finished research into long-form output. Backend: `backend/app/routers/author.py`, with one outputter per kind in `app/services/outputters/`. Four kinds have a generator: `book`, `site`, `deck` and `newsletter`. `GET /author/kinds` says which, and the page never offers a kind that would 501.
 
-Sections: **What you can make** (one card per kind from `GET /author/kinds`: `available` kinds get a "New …" button, the rest read "Coming later · E-6.x"), **Your outputs** (kind / status filters, one row per output), a **create modal**, and a **delete confirmation**. Reading happens in the reading room at `/author/outputs/:outputId` (S-8.8.3), which replaced the page's own reader modal.
+Sections: **What you can make** (one card per kind: `available` kinds get a "New …" button, the rest read "Coming later · E-6.x"), **Digest by email** when `newsletter` is available, **Your outputs** (kind / status filters, one row per output), a **create modal**, and a **delete confirmation**. Reading happens in the reading room at `/author/outputs/:outputId` (S-8.8.3), which replaced the page's own reader modal. `/author?new=book&job=<id>`, the job page's **Add to a book**, opens the create modal with that run ticked.
 
 | State | What renders |
 |-------|--------------|
 | Below tier, or API 403 | Editorial lock: "Author Studio opens at Pro." with a "See plans" button → `/account/subscription?upgrade=pro`. |
 | Kinds loading | Three skeleton cards. |
-| Create (book) | Modal: title; chapter picker over the user's topic / channel runs (filterable; runs not completed or without a report are listed but disabled with the reason); "Include each run's Q&A" and "Table of contents" toggles. Generate runs synchronously; a `completed` result opens it in the reading room, a `failed` one toasts `error_message`. |
+| Create (book) | Modal: title; chapter picker over the user's topic / channel runs (filterable; runs not completed or without a report are listed but disabled with the reason); "Include each run's Q&A" and "Table of contents" toggles; **cohesion** (none, light or full, S-6.1.3, priced before it runs); file formats where the install can make them. |
+| Create (site) | Modal: title, then shelves and runs. Each run's report becomes a page, and each source a page listing the reports that cite it (S-6.2.1). |
+| Create (deck) | Modal: title, then runs and documents with a knowledge report (S-6.3.2), with a filter over the documents. A model plans the slides, so the estimate always shows. |
+| Create (newsletter) | Modal: title, period and section toggles, with the featured deep-dive priced before it runs (S-6.4.1). |
+| After create | A `completed` result opens in the reading room. `failed` toasts `error_message`, `skipped` says there was nothing new, and anything else says it is generating in the background and opens when the worker finishes it. |
 | Outputs empty | "Nothing authored yet." with a "New book" button; with filters active, "Nothing matches these filters." |
-| Output row | Status pill (Ready / Failed / Generating / Pending), title, kind, source count, created date; **Read** (→ `/author/outputs/:id`) and **Download** when `has_content`; **Delete** always. Failed rows show `error_message` in full; pending rows explain they were created when their kind had no generator. |
-| Delete | Confirmation modal; the runs the book was built from are untouched. |
+| Output row | Status pill (Ready / Failed / Generating / Pending / Cancelled / Skipped), title, kind, size, usage and created date; **Read** (→ `/author/outputs/:id`) when there is a text form; **Download**, one button per format when there are several; **Cancel** with a progress bar and line while it generates; **Delete** always. Failed rows show `error_message` in full, and skipped rows their reason. A pending row that was never picked up says it was created when its kind had no generator. |
+| Delete | Confirmation modal; the runs it was built from are untouched. |
 | Digest by email (S-6.4.2) | Shown when `newsletter` is available. Off: "Turn on" with cadence (the saved-search schedule fields) and section toggles. On: the cadence in words and the next issue time, **Save changes**, **Send one now**, **Turn off** (keeps settings), **Unsubscribe** (removes them), and the latest sends ("Sent · read it", "Nothing new, not sent", "Made, but the email failed"). |
 
 ### `EchoPage` — `/echo` (Studio)
 **Purpose.** Echo's personal-context store. Backend: `backend/app/routers/echo.py`. Honest about scope: it says so wherever a part is not built or not switched on. Since S-3.4.1 "speak as me" is built but off until two switches are on, and the page shows which are still off.
 
-Sections: **Readiness**, **Connectors** (with **Sources on record**; S-3.2.1: one row per connector the install offers, with its privacy weight and status, **Connect** opening a consent dialog that shows the disclosure and what is recorded before any redirect, then **Sync now** and **Disconnect** (a confirmation saying how many events go); an auth failure offers **Reconnect**, a changed disclosure **Review and reconnect**; `?connected=<name>` after the callback shows a confirmation), **Activity** (S-3.2.1: the timeline, newest first, twenty at a time with **Show older**; events from an export import are labelled by service, such as Spotify or YouTube (Takeout), S-3.7.5), **What Echo knows** (grouped by the 10 kinds), **How you sound** (S-3.3.1), **Your Echo data** (S-3.10.1 / S-3.10.2), a **Not here yet** footer, and three modals (add / edit, forget, revoke). The subtitle links to the shares inbox.
+Sections: **Readiness**, **Connectors** (with **Sources on record**; S-3.2.1: one row per connector the install offers, with its privacy weight and status, **Connect** opening a consent dialog that shows the disclosure and what is recorded before any redirect, then **Sync now** and **Disconnect** (a confirmation saying how many events go); an auth failure offers **Reconnect**, a changed disclosure **Review and reconnect**; a sync that left the user's own entries alone says how many, T-3.2.1.11; `?connected=<name>` after the callback shows a confirmation), **Activity** (S-3.2.1: the timeline, newest first, twenty at a time with **Show older**; events from an export import are labelled by service, such as Spotify or YouTube (Takeout), S-3.7.5), **What Echo knows** (grouped by the 10 kinds, with **Kept deleted** under it), **How you sound** (S-3.3.1), **Speak as me**, **Add from your browser**, **Your Echo data** (S-3.10.1 / S-3.10.2), a **Not here yet** footer, and three modals (add / edit, forget, revoke). The subtitle links to the shares inbox.
 
 | State | What renders |
 |-------|--------------|
 | Below tier, or API 403 | Editorial lock: "Echo opens at Studio." → `/account/subscription?upgrade=studio`. |
 | Readiness | Since S-3.5.1 ([D-101](decisions.md#d-101--echo-readiness-v2-five-domains-measured-from-their-stores-blocked-reads-as-not-connected-the-voice-test-reported-not-gated-2026-10-20)): a large percentage, the mean of the five domains' progress and 100 only when the backend says `ready`, with "Five parts, all required." Then one row per domain (`components/echo/ReadinessDomains.tsx`): Facts about you, What you do, How you think, How you write, What you share. Each row has a status badge (Done, On the way, Not started, Not connected), a progress bar, the server's summary, and what is missing in words. The shares row links to the inbox. *What you do* lists each activity source with its status and event count; a connector the install cannot offer yet, such as YouTube likes or Google Calendar, reads "not connected" with its reason. *How you write* says when stability cannot be measured and how many notes remain before the user can take the voice test that switches on "speak as me" (D-100). An older backend without `domains` falls back to the three v1 gates. |
-| Connectors empty | "No connectors yet." with the planned list. Sources on record lists each `source` with its row count and a **Revoke** button (confirm → `DELETE /echo/sources/{source}`; the toast reports `deleted_count`). |
+| Connectors empty | "No connectors on this install.", which says everything Echo knows until then is what the user writes and shares. Sources on record lists each `source` with its row count and a **Revoke** button (confirm → `DELETE /echo/sources/{source}`; the toast reports `deleted_count`). |
 | Context browser | Filters: kind, source, "Show expired" (`include_expired`). Every known kind renders as a card, empty or not, each with an **Add** shortcut preselecting that kind; rows show label, value, source pill, confidence, captured date, expiry (an **Expired** pill when past). **Edit** reopens the form with kind and label locked (the backend upserts on `(kind, key)`; renaming means forget + add). **Forget** confirms, then `DELETE /echo/context/{kind}/{key}`. |
+| Kept deleted (T-3.2.4.4) | `FactTombstones`, under the context browser, when there are any: facts a connector or import worked out that the user deleted, which later syncs and re-imports skip. **Allow again** lets the source bring one back. The forget and revoke dialogs say this before a derived fact goes. |
 | Add / edit modal | Kind, label (≤128 chars, no `/` because the key travels as a path segment; warns when the label already exists under that kind and would overwrite), the fact, confidence 0–1, optional expiry date (sent as end-of-day UTC). Source is always `manual`. |
 | Loading | Skeleton rows / paragraphs per card. |
 | Error | Inline retry line per card; the browser uses an editorial error state with Retry. |
-| How you sound | `SignalsPanel` (S-3.3.1): what Echo learned about the user's style and personality, from `GET /echo/signals`. Two layers, **How you write** (style) and **What you think** (personality), each with an **Add** button; inside a layer, one block per signal type that has signals, in the vocabulary's order. A row shows the signal, its language and audience pills when set, where it came from ("You added this", "You corrected this", "Learned from your writing", "Measured from your writing") with the evidence in words ("from 2 × a note, a question you asked", "something you wrote elsewhere" for a connector's events, never a raw id), and a collapsible list of up to five verbatim examples. **Edit** corrects the wording, language or audience (the type is locked). **That's not me** confirms, then `DELETE /echo/signals/{id}`: a tombstone, so the signal leaves the list and is never learned again; re-adding it is refused with a toast that says so. An empty layer says signals appear as Echo reads notes and questions. **Export voice profile** downloads `GET /echo/signals/export`. Under the intro, the learning line (S-3.3.2) reads `learning`: "N texts are waiting to be read. Echo last learned on <date>. Echo starts on its own once 10 are waiting." with **Learn now** (`POST /echo/signals/learn`; the toast says whether a run was queued or nothing was waiting), "Up to date: Echo has read all N of your texts." when nothing is waiting, or, with no texts yet, that Echo learns from notes, questions and the user's own shares. When the install has learning off, the line says so and offers no button. The footer names the learning-terms version and that shares the user did not write never shape signals. Actions wrap under the signal at phone width. |
-| Speak as me (S-3.4.1) | `SpeakAsMePanel`, mounted for tiers with `echo_speak_as_me` ([D-102](decisions.md#d-102--speak-as-me-two-switches-guards-in-code-the-reply-in-the-users-language-2026-10-20)). While any gate is shut: an **Off** badge and one line per blocker from `GET /echo/draft/status`, in the server's words, in order (install switch, readiness, voice test, daily cap), with no composer. Once on: a composer (the message, an optional audience, register and language) and **Draft**. A message naming a private person shows the names with **Draft anyway** and **Cancel**. The draft opens as an editable **Your version** (S-3.4.2), with the hint that Echo learns from the words the user types, never from its own. An **Add the disclosure line** checkbox ("Drafted with Echo, reviewed by …", on by default) decides what **Copy** puts on the clipboard. **Save my version** sends the version and the checkbox to `POST /echo/drafts/{id}/feedback`, then says "Saved. Echo learns your voice from the N words you wrote, never from the ones it drafted.", adding that words repeated from their message are left out when there were any. It is disabled until something changes again. The same `DraftEditor` is the bubble's draft view. Below: "Sounds like you: N% · grounded N%", citations (an external link for a source at its timestamp), deviation notes, and a note when a quoting sentence was removed. An opened recent draft shows the saved version. The daily cap reads in words. Below: recent drafts with **Delete**. Pure helpers in `frontend/src/utils/echoDrafts.ts`. |
-| Add from your browser (S-3.7.3) | `ShareTokensCard`: explains the extension and how to load it, shows the **server address** to paste (the API's origin) with **Copy**, and **Make a share token** with a label. A new token is shown once in a highlighted box with **Copy token** and "it is not shown again". The list gives each active token's label, first characters, date made and last use ("Never used", "Used 3 days ago"), with **Revoke**. At the cap the button is disabled with a note. |
+| How you sound | `SignalsPanel` (S-3.3.1): what Echo learned about the user's style and personality, from `GET /echo/signals`. Two layers, **How you write** (style) and **What you think** (personality), each with an **Add** button; inside a layer, one block per signal type that has signals, in the vocabulary's order. A row shows the signal, its language and audience pills when set, where it came from ("You added this", "You corrected this", "Learned from your writing", "Measured from your writing") with the evidence in words ("from 2 × a note, a question you asked", "something you wrote elsewhere" for a connector's events, never a raw id), and a collapsible list of up to five verbatim examples. **Edit** corrects the wording, language or audience (the type is locked). **That's not me** confirms, then `DELETE /echo/signals/{id}`: a tombstone, so the signal leaves the list and is never learned again, and re-adding it is refused with a toast that says so. A **Rejected** list under the layers offers **Restore** (T-3.3.1.6), after which the signal may be added and learned again. An empty layer says signals appear as Echo reads notes and questions. **Export voice profile** downloads `GET /echo/signals/export`. Under the intro, the learning line (S-3.3.2) reads `learning`: "N texts are waiting to be read. Echo last learned on <date>. Echo starts on its own once 10 are waiting." with **Learn now** (`POST /echo/signals/learn`; the toast says whether a run was queued or nothing was waiting), "Up to date: Echo has read all N of your texts." when nothing is waiting, or, with no texts yet, that Echo learns from notes, questions and the user's own shares. When the install has learning off, the line says so and offers no button. The footer names the learning-terms version and that shares the user did not write never shape signals. Actions wrap under the signal at phone width. |
+| Speak as me (S-3.4.1) | `SpeakAsMePanel`, mounted for tiers with `echo_speak_as_me` ([D-102](decisions.md#d-102--speak-as-me-two-switches-guards-in-code-the-reply-in-the-users-language-2026-10-20)). While any gate is shut: an **Off** badge and one line per blocker from `GET /echo/draft/status`, in the server's words, in order (install switch, readiness, voice test, daily cap), with no composer. Below them, `VoiceTestPanel` (T-3.4.1.8) runs the "which of these did you write?" test that opens the per-user gate: it says what a test costs in model calls before the only button that starts one, shows the writing progress, then the pairs one at a time, then the result; while a gate blocks it, it says why. Once on: a composer (the message, an optional audience, register and language) and **Draft**. A message naming a private person shows the names with **Draft anyway** and **Cancel**. The draft opens as an editable **Your version** (S-3.4.2), with the hint that Echo learns from the words the user types, never from its own. An **Add the disclosure line** checkbox ("Drafted with Echo, reviewed by …", on by default) decides what **Copy** puts on the clipboard. **Save my version** sends the version and the checkbox to `POST /echo/drafts/{id}/feedback`, then says "Saved. Echo learns your voice from the N words you wrote, never from the ones it drafted.", adding that words repeated from their message are left out when there were any. It is disabled until something changes again. The same `DraftEditor` is the bubble's draft view. Below: "Sounds like you: N% · grounded N%", citations (an external link for a source at its timestamp), deviation notes, and a note when a quoting sentence was removed. An opened recent draft shows the saved version. The daily cap reads in words. Below: recent drafts with **Delete**. Pure helpers in `frontend/src/utils/echoDrafts.ts`. |
+| Add from your browser (S-3.7.3) | `ShareTokensCard`: explains the extension and how to load it, shows the **server address** to paste (the API's origin) with **Copy**, and **Make a share token** with a label. A new token is shown once in a highlighted box with **Copy token** and "it is not shown again". The list gives each active token's label, first characters, date made and last use ("Never used", "Used 3 days ago"), with **Revoke**. At the cap the button is disabled with a note. **From an iPhone or an Android phone** opens the phone steps (T-3.7.6.1): Android needs only the installed app; an iPhone uses a Shortcut with a share token of its own ([docs/echo-share-surfaces.md](echo-share-surfaces.md)). |
 | Your Echo data | `EchoDataCard`: what the archive holds, then "Echo holds: N facts · N shares · N signals · N files · N search vectors" from `GET /echo/brain/footprint`. **Export everything** downloads the zip through an authenticated blob fetch (no token in the URL). **Delete everything Echo knows** opens a modal that restates the counts, says there is no undo, and enables **Delete permanently** only after the user types DELETE; the toast reports "Echo now holds nothing about you." when the server's after-count is zero. Both buttons are disabled when Echo holds nothing. |
 
 Pure logic (gates, the readiness percentage, grouping, expiry, label validation) lives in `frontend/src/utils/echoReadiness.ts`; the signal vocabularies, grouping and evidence wording in `frontend/src/utils/echoSignals.ts`.
@@ -392,16 +425,32 @@ Pure logic (gates, the readiness percentage, grouping, expiry, label validation)
 
 | State | What renders |
 |-------|--------------|
-| Default | Search (debounced; text, links, file names, annotations) and a state filter; then one card per share: content-type badge, **Your words** or **Context only** (tooltip explains the default), processing state ("Waiting for processing" until S-3.7.2 exists), shared date; the link, the text (scrollable block, gold rule for the user's own words) or the file name, size and **Download**; the "why" annotation. Actions: **Add why** / **Edit why** inline, **These are my words** / **Not my words**, **Delete** (confirm: the share, its file and anything derived are removed). |
+| Default | Search (debounced; text, links, file names, annotations) and a state filter; then one card per share: content-type badge, **Your words** or **Context only** (tooltip explains the default), processing state, shared date; the link, the text (scrollable block, gold rule for the user's own words) or the file name, size and **Download**; the "why" annotation. Actions: **Add why** / **Edit why** inline, **These are my words** / **Not my words**, **Delete** (confirm: the share, its file and anything derived are removed). |
 | Processing (S-3.7.2) | A processed link shows its resolved title and author above the URL, and the opening of the extracted text below it. A processed file says how it was read: "Text read by local OCR", "Text read by a vision model", "Transcribed by Whisper · 0:13 · Hindi", "Text from 12 of 14 pages". A note, when there is one, follows in muted text (low confidence, text cut short, nothing found). A failed share shows the reason in red with **Retry**; a skipped share shows why it was not read, also with **Retry**. An eligible link shows **Add to library**; once added, **In your library →**. |
 | Drop zone (S-3.7.3) | Not this page only: `EchoDropZone` is mounted in the app chrome for Studio. Dragging files, a link or text in from outside shows a full-window "Drop to add to Echo" overlay; drags that start inside the page and drops onto text fields are left alone. Files are uploaded (up to 10 per drop) and links and text are shared, all with `surface=drag_drop`, each confirmed by a toast. A dropped WhatsApp or Takeout export opens `/echo/import` with that file already previewed. |
-| Sources (S-3.7.3) | A share with a source (a quote or image from the extension) shows "From <page title>" linking to the page. |
+| Sources (S-3.7.3) | A share with a source (a quote or image from the extension) shows "From <page title>" linking to the page. One that came by mail (S-3.7.4) shows "By email from <address>" and any attachments' names, and offers no **These are my words**: a From line can be forged. |
 | Imports (S-3.7.5) | The header links to the import page. A third filter picks **Shared one at a time** (the default), **From imports** or **Everything**. `?import=<id>` shows one import oldest first, with a banner and **Back to the inbox**. An imported card shows where it came from ("WhatsApp chat with Asha · Asha" or "Keep · Tariff thoughts · Essays") with the time it was written, and says "Imported" rather than "Shared". |
 | More than 100 | "Show N more" grows the page by 100. |
 | Empty | "Nothing shared yet." pointing at Add to Echo; with filters, "Nothing matches." |
 | Loading / error | Skeleton rows; editorial error with Retry. |
 
 Pure logic (quick-share parsing, labels, sizes, footprint sums) lives in `frontend/src/utils/echoShares.ts`, unit-tested.
+
+### `EchoShareTargetPage` — `/echo/incoming` (Studio)
+**Purpose.** Where a share from the Android share sheet lands (T-3.7.6.1). `public/share-target-sw.js` keeps the posted form on the device and redirects here, so shared words never reach a URL. The page shows what is waiting and asks for one tap, because any website can post to a share target: "This was sent to Echo. Add it to your inbox?", with a line saying to discard it if the reader did not just share it. Adding opens the inbox.
+
+| State | What renders |
+|-------|--------------|
+| Reading, adding | Spinner with a line. |
+| Nothing waiting | Says so, and where shares land. |
+| Lost | The device could not keep it: share again. |
+| More than the limit | Says only the first files are kept. |
+| Signed out when shared | The share waits on the device through any sign-in: `OnboardingGate` at `/` picks it up. |
+
+Details and limits: [docs/echo-share-surfaces.md](echo-share-surfaces.md).
+
+### `EchoConnectorCallbackPage` — `/echo/connectors/:name/callback`
+**Purpose.** Where a provider returns after the user approves a connector (S-3.2.1). Posts `code` and `state` with the reader's token, since the state is bound to that reader, then returns to `/echo?connected=<name>`. A spinner reads "Finishing the connection…". A denial at the provider, a missing parameter or a failed exchange shows the reason with **Back to Echo**.
 
 ### `EchoImportPage` — `/echo/import` (Studio)
 **Purpose.** Bring an export from another service into Echo (S-3.7.5). Same Studio lock as `EchoPage`. Linked from the Echo page and the inbox.
@@ -419,7 +468,7 @@ Pure logic (quick-share parsing, labels, sizes, footprint sums) lives in `fronte
 Pure logic (labels, count lines, provenance, the browser time zone) lives in `frontend/src/utils/echoImports.ts`, unit-tested.
 
 ### `KnowledgeReaderPage` — `/knowledge/:videoId`
-**Purpose.** A source's knowledge report in the reading room (S-8.8.3). `GET /videos/{id}/knowledge` (YouTube id or `document_id`, resolved through the tenant's visibility grants) supplies the Markdown and, since S-8.8.3, the source's title, channel, kind, URL and dates. The Markdown's leading `# Title` becomes the page title and leaves the body; "From <source title> · <channel> · Extracted <date>" sits under it; tiles count topics, concepts, events and facts; toolbar: Back, Open the source, Print or save as PDF.
+**Purpose.** A source's knowledge report in the reading room (S-8.8.3). `GET /videos/{id}/knowledge` (YouTube id or `document_id`, resolved through the tenant's visibility grants) supplies the Markdown and, since S-8.8.3, the source's title, channel, kind, URL and dates. The Markdown's leading `# Title` becomes the page title and leaves the body; "From <source title> · <channel> · Extracted <date>" sits under it; tiles count topics, concepts, events and facts; toolbar: Back, Open the source, Print or save as PDF. A report that stopped at its token budget says so above the body and offers a Deep regenerate (`KnowledgeCutOffNote`, T-1.15.3.8).
 
 Rendering goes through `parseMarkdownDoc` (`components/reader/parseMarkdown.tsx`): remark-parse → remark-gfm → remark-rehype → one tree transform → hast-util-to-jsx-runtime, run once in a `useMemo` so the outline exists before the body renders. The transform assigns heading ids with the same slugger reports use, collects `h2`/`h3` into the outline, demotes stray `h1`s, wraps tables in a scroll region, marks the drop-cap paragraph, sends external links to a new tab, and repoints in-page links whose target was slugged differently. Raw HTML in the Markdown is dropped, never rendered, and link and image URLs pass react-markdown's `defaultUrlTransform`.
 
@@ -439,24 +488,56 @@ Rendering goes through `parseMarkdownDoc` (`components/reader/parseMarkdown.tsx`
 | 404 | `EmptyState` "This output does not exist" (deleted, or another account's). |
 | Not completed / no content | `EmptyState` with the status, or the failure message. |
 
-### `VideoKnowledgeDrawer` (inside `JobDetailPage`)
-**Purpose.** View or generate the per-video knowledge artifact. The drawer is the quick peek; "Open in reader" (primary, once an artifact exists) goes to `/knowledge/:videoId`.
-
-Tabs: **Structured** (topics / concepts / events / facts) and **Report** (Markdown render).
+### `SubscriptionPage` — `/account/subscription`
+**Purpose.** The plans, and what this account has used. The header names the plan, and a line says how full the library is against the plan's document cap (`GET /auth/quota`, T-5.2.10). Below, the same three tier cards as `/pricing`, then `UsageSummaryPanel`: tokens and calls, YouTube units and Whisper audio by feature, today and over the last 30 days (`GET /usage`, E-5.2). Those figures are recorded and never limit anything (D-111).
 
 | State | What renders |
 |-------|--------------|
-| Not yet extracted | "No knowledge report yet for this video." + "Generate" button. |
-| Extracting | Progress indicator, disabled drawer-close (so user doesn't accidentally lose progress). |
-| Extracted | Two tabs populated; "Regenerate" button at the bottom (calls the endpoint with `?force=true`). Under the report, **You might ask** for this source (context `document:<id>`, S-8.4.2), noted "Asked about this source only." (T-8.4.2.4): a click opens library Q&A scoped to this source with the question filled in, and a Shift-click asks it there; hidden while library Q&A is down. Below the report: "Your notes on this report" (section-variant notes panel, target `knowledge_artifact`; the target only exists once extraction has run). |
-| LLM down | "Generate" disabled with a tooltip pointing at health status. |
+| Operator | A "Demo mode" banner: no payment is processed. An upgrade goes through a mock payment modal to `PUT /auth/me/tier`; a downgrade confirms first and lists the features that go. `?upgrade=<tier>`, where the locks on other pages point, opens that flow. |
+| Anyone else | The plans with no action buttons, and a note that only this install's operator can change plans (T-5.2.8). |
+
+### `AIModelsPage` — `/account/ai-models`
+**Purpose.** Per-user model choices. `ByokKeysPanel` sits at the top: Studio accounts add their own provider keys (`/auth/credentials`), which the server stores and never shows again; other tiers see what the plan adds. Then every use case, grouped, with provider, model and reasoning selects that save at once, **Reset** to the default, a badge saying whether the default was measured, the evidence behind it (S-1.14.7), a warning when the choice measured weaker or cannot take images on a vision function, and what the choice costs against the default. A sticky panel re-estimates the benchmark job after each save. Warnings advise; nothing refuses a choice.
+
+### `AccountSecurityPage` — `/account/security`
+**Purpose.** E-5.4's backend made visible, as four cards.
+
+| Card | What it does |
+|------|--------------|
+| **Where you're signed in** (T-5.4.7) | The sessions that still work, with this one marked "This device", each with **Sign out**, plus **Sign out everywhere else**. |
+| **Two-step verification** (T-5.4.6) | Turn it on: a key to type into an authenticator app, or a setup link, then a code from the app, then recovery codes shown once with **Copy codes**. Turn it off with a code or an unused recovery code; five tries in 15 minutes, then the server stops checking (T-5.4.16). |
+| **Password** (T-5.4.14) | Current password and a new one, twice. It signs out the other sessions and keeps this one. **Forgot it?** opens the reset flow, the only way to set a first password on an account Google or GitHub made. |
+| **Recent activity** (T-5.4.4) | Sign-ins, failed attempts, resets, sessions and two-step changes from `GET /auth/audit-log?scope=account`, newest first, a page at a time. |
+
+### `SystemStatusPage` — `/account/system`
+**Purpose.** What the API process reports about itself, refreshed every minute. Every signed-in account can read it; only the restart is limited.
+
+| Section | What it shows |
+|---------|---------------|
+| **AI models** | `GET /health/llm`: overall status, unavailable features, then one row per use case with provider, model, reasoning, result and latency, plus any measured warning. **Only failures and warnings** narrows the table. |
+| **Scheduler** | `GET /health/scheduler`: tick interval, last dispatch, row counts, lease and grace, the registered kinds. |
+| **YouTube quota** | `GET /health/quota`: today's units against the install's daily limit. |
+| **Restart services** | Operators only (`MeResponse.is_operator`; the API answers 403 to anyone else): confirm, then `POST /admin/restart`, and the page waits for the API to come back. |
+
+### `VideoKnowledgeDrawer` (a drawer, not a route)
+**Purpose.** View or generate a document's knowledge report, for any source type. Opened from a job page's rows and from library rows (`VideoRow`), which covers channel and shelf pages too. The drawer is the quick peek; **Open in reader** (primary, once a report exists) goes to `/knowledge/:videoId`. Close it with **Close**, the backdrop or Escape.
+
+It is one scrolling panel: a depth bar, the topics, concepts, events and facts as chips, the report as Markdown, then **On screen** for a video (`VideoFramesPanel`: captured frames; capturing new ones is hidden while visual analysis is paused), **You might ask** and the notes.
+
+| State | What renders |
+|-------|--------------|
+| Not yet extracted | "No knowledge report for this source yet.", **Report depth** (S-1.15.3: Auto, Brief, Standard, Deep, starting at the depth the surface prefers) and **Generate report**. Opening the drawer starts nothing, because a report is a metered, minute-long run. |
+| Extracting | Spinner, "Extracting topics and generating report…". The drawer can still be closed. |
+| Extracted | "Written at <depth> depth.", **Report depth** and **Regenerate** (calls the endpoint with `?force=true`). A report that stopped at its token budget shows `KnowledgeCutOffNote`. Under the report, **You might ask** for this source (context `document:<id>`, S-8.4.2), noted "Asked about this source only." (T-8.4.2.4): a click opens library Q&A scoped to this source with the question filled in, and a Shift-click asks it there; hidden while library Q&A is down. Below the report: "Your notes on this report" (section-variant notes panel, target `knowledge_artifact`; the target only exists once extraction has run). |
+| Could not load | "Couldn't load the knowledge report. Try generating it again." |
+| LLM down | A note that extraction resumes once the service recovers. The row's **Knowledge** button is disabled with a tooltip. |
 
 ---
 
 ## Cross-cutting page concerns
 
 ### Command palette (every protected page)
-`components/palette/` (S-8.2.2), mounted once in `AppLayout`. **Mod-K** or **Ctrl-Alt-K** anywhere, or the sidebar's **Search…** button (a search icon in the mobile bar). An input with combobox / listbox semantics (focus stays in the input; arrows move `aria-activedescendant`; Enter opens; Escape closes and returns focus). With no query: **Recent** (the last six items opened from it, per browser) and **Go to and do** (every page in the nav, **Getting started** for the first-run wizard, export notes as Markdown or JSON-LD, switch theme, turn single-key shortcuts off / on). Typing filters the actions on the client and, after 180 ms, asks `GET /search` (superseded requests are cancelled), showing **Runs**, **Sources**, **Channels**, **Questions** and **Knowledge reports** groups; empty groups are hidden. States: "Searching…" while the debounce or request is pending, "Nothing in your library matches “…”", and "Search is unavailable" (actions still work); the result count is announced politely. The panel and `cmdk` load on first open (a 19.6 kB-gzip chunk).
+`components/palette/` (S-8.2.2), mounted once in `AppLayout`. **Mod-K** or **Ctrl-Alt-K** anywhere, or the sidebar's **Search…** button (a search icon in the mobile bar). An input with combobox / listbox semantics (focus stays in the input; arrows move `aria-activedescendant`; Enter opens; Escape closes and returns focus). With no query: **Recent** (the last six items opened from it, per browser) and **Go to and do** (every page in the nav, **Getting started** for the first-run wizard, export notes as Markdown or JSON-LD, switch theme, turn single-key shortcuts off / on). Typing filters the actions on the client and, after 180 ms, asks `GET /search` (superseded requests are cancelled), showing **Runs**, **Sources**, **Channels**, **Questions** and **Knowledge reports** groups; empty groups are hidden. States: "Searching…" while the debounce or request is pending, "Nothing in your library matches “…”", and "Search is unavailable" (actions still work); the result count is announced politely. The panel and `cmdk` load on first open.
 
 Where results land: a run → `/jobs/<id>`; a question → its page with `?exchange=<id>`, which scrolls to the exchange card, focuses it and outlines it briefly (job page, library Q&A, Q&A history; the history page also keeps its `#exchange-<id>` links); a source → `/library?document=<id>`, the library narrowed to that row with "Show all sources"; a knowledge report → `/knowledge/<id>`; a channel → its page.
 
@@ -494,9 +575,10 @@ The conversation lasts for the session: each answer is already saved where it wa
 `components/notifications/NotificationBell.tsx` (S-8.3.3), beside **Search…** in the sidebar and before the search icon in the mobile bar. The button names its unread count ("Notifications, 2 unread") and shows it as a badge. It opens a panel (dialog role) with the latest notices, newest first, unread ones tinted: title, body, how long ago. Opening one marks it read and goes to its `href`; **Mark all read** clears the count; Escape or a click outside closes it and focus returns to the bell. Empty: "Nothing new. A saved search tells you here when its answer changes." The list refetches the moment a notification arrives over `/ws/jobs` (T-8.3.3.8, `useLiveNotifications`, mounted once in the layout since the bell renders twice), and still polls every minute and on focus as the fallback.
 
 ### Layout (`AppLayout`)
-- Today: top horizontal tab bar with the protected pages.
-- Post-redesign (per [branding.md](branding.md) §sidebar-mockup): slim left sidebar grouped by purpose (Library / Research / Knowledge / Author/future / Settings).
-- Persistent global elements: top-right user avatar + sign-out, top-right LLM-status dot (green/yellow/red), `ToastContainer`.
+- Desktop: a 240 px left sidebar, sticky, holding the brand lockup, **Search…** and the notification bell, the navigation groups, then the chrome: **Add to Echo**, the signed-in email, the theme switch and **Sign out**.
+- Small screens: the sidebar gives way to a top bar (brand, Echo, the bell, search, a hamburger) and a drawer holding the same navigation and chrome.
+- Groups, top to bottom: **Start here** (below), **Research** (New research, Active runs), **Library**, **Shelves**, **Knowledge** (Echoes (Q&A history), Your notes, Exports), **Generate** (Author Studio, Echo, each for tiers with it), **Account** (Subscription with a tier pill, AI models, Security, System status).
+- Persistent global elements: `SystemStatusBanner` above the page, the command palette, the Echo bubble and panel for Studio, and `ToastContainer`.
 - **Add to Echo** (S-3.7.1, tiers with `echo_personal_brain` only): a dashed button above the user chrome in the sidebar and the mobile drawer. It opens `QuickShare`'s dialog: one box (a single http(s) link becomes a link share; anything else is text), **Attach a file instead** (up to 25 MB), an optional "why", and **These are my own words** (off by default; the hint explains context-only). Shares go straight into the inbox.
 
 While the wizard is unfinished and not skipped, a **Start here** group at the top of the sidebar holds **Getting started** (`/welcome`); it disappears on finish or skip (the palette action remains).
@@ -504,20 +586,22 @@ While the wizard is unfinished and not skipped, a **Start here** group at the to
 The **Library** group holds All sources, Ask the library and **Library map** (`/library/graph`, S-8.9.2; it navigates by path). The sidebar's **Shelves** group (after Library) lists the reader's shelves with a colour dot, the first eight then "Show all N", plus **Manage shelves** (or **Start a shelf** when there are none); it is hidden for a reader who has no shelves and no `shelves` capability. Shelf entries navigate by path because the `AppTab` union is fixed.
 
 ### Auth context
-- `AuthContext` holds `{ token, user, isAuthenticated, login, logout }`. Token persists in `localStorage` under `pratidhvani_token` (was `vrp_token`; rename pending). Axios interceptor attaches it on every request and bounces 401 → `/login`.
+- `AuthContext` holds `{ token, user, isAuthenticated, isLoading, login, completeMfa, completeOAuth, register, logout }`. The token and the cached user persist in `localStorage` under `videoresearchpro.authToken` and `videoresearchpro.authUser`. Those names stay: renaming them signs every browser out. Axios attaches the token on every request and bounces a 401 → `/login`, except on the sign-in pages, where a 401 is the page's own answer. `logout` revokes the session at the server first (`POST /auth/logout`), and a failed call still signs this browser out.
 
 ### Real-time (WebSocket)
-- The `/jobs` and `/jobs/:jobId` pages mount `useJobProgress(jobId)`, which subscribes via the multiplexed `/ws/jobs` connection and invalidates the relevant React Query caches on every event.
-- Connection is shared across the app (singleton `wsClient`). Reconnect backoff is exponential, capped at 30 s, with a heartbeat at 30 s.
+- The job page and the wizard mount `useJobProgress(jobId)`, which subscribes via the multiplexed `/ws/jobs` connection and updates the job in the React Query cache on every event. The `/jobs` list does not subscribe: it refetches every 10 s, and the job page every 5 s as well, so a dropped socket costs seconds.
+- `useLiveNotifications`, mounted once in the layout, listens for `topic: "notifications"` so the bell refetches at once.
+- Connection is shared across the app (singleton `wsClient`). Reconnect backoff is exponential, capped at 30 s, with a ping every 30 s.
 
 ### Health-driven banners
-- A small `useHealth()` hook polls `GET /api/v1/health` every 60 s.
-- When `llm.status != 'ok'`, an editorial banner appears in `AppLayout` near the top: pull-quote style, citing the failed feature(s).
-- When YouTube quota crosses 80%, a softer warning banner appears on `SubmitJobPage` only.
-- When the backend is unreachable for >30 s, a "Reconnecting…" banner appears globally.
+- `useSystemStatus`, mounted in `AppLayout`, polls `GET /api/v1/health` every 60 s into `systemStatusStore`, along with the install's capabilities.
+- When `llm.status` is `degraded` or `down`, `SystemStatusBanner` appears above the page with the status, the unavailable features and **Retry now**.
+- A failed health call changes nothing: the last known status stands, and it raises no toast. There is no banner for an unreachable backend: other requests fail with a toast until it returns.
+- YouTube quota raises no banner. `/account/system` shows today's usage, and the submit form shows an estimate of the one run.
 
 ### Error boundaries
-- Each page is wrapped in a route-level error boundary that renders an editorial error state with a "Reload" button. The toast queue surfaces transient errors (network blips, 500s) without nuking the page.
+- The lazy routes carry `RouteLoadError` as their `errorElement`: "This page could not be loaded" with **Reload**, inside the app layout, so a chunk that failed after a restart or a redeploy does not end in a stack trace. It also catches a render error in those pages. The eager pages have no boundary of their own and fall to React Router's default.
+- The React Query caches send every failed query and mutation to the toast queue, except a document-cap refusal, which the page shows where the action started.
 
 ### Notes (inline, M5)
 `frontend/src/components/notes/` — `NotesPanel` (two variants: `inline`, a one-line "N notes · + Add a note" control that expands inside a row or card; `section`, an always-open list with a heading for page-level cards), `NoteCard` ("You wrote this on <date>", Markdown body, edit / delete with an inline confirm) and `NoteEditor` (plain textarea with Write / Preview tabs through `react-markdown`; Ctrl+Enter saves, Escape cancels). Data: one `GET /notes?target_type=…` per type per page, shared by every panel on the page through React Query; each panel selects its own target's notes, matching on the canonical id or, for documents, the legacy `video_id`. The panel stops click and key events so it can live inside cards that open on click or Enter.
@@ -525,10 +609,10 @@ The **Library** group holds All sources, Ask the library and **Library map** (`/
 ### Empty states (editorial voice)
 Every page has at least one purposeful empty state. The voice is consistent (per [branding.md](branding.md) §voice): "library", "volumes", "echoes". No "No data." or "Empty list".
 
-The S-8.10.2 audit (2026-10-19, NN/g and Atlassian empty-state guidance, plan [m10-onboarding](plans/m10-onboarding.md)) holds every list to four distinct states: **loading** (skeletons shaped like the content, never "nothing here" while loading), **error** (says the fetch failed and offers **Retry**), **zero data** (what the space is for and the one action that fills it), and **nothing matches** (a filter is set; offers **Clear filters**). Audited: runs, library sources and channels, library Q&A, Q&A history, exports; the author, Echo, Echo inbox, shelves, shelf, notes and templates pages already met it. There is no saved-searches page to audit. `pages/__tests__/emptyStates.test.tsx` pins the jobs page's three states, the checklist and the library Q&A empty state, and fails if a page uses generic copy ("No data", "No results", "Empty list", "Nothing here").
+The S-8.10.2 audit (2026-10-19, NN/g and Atlassian empty-state guidance, plan [m10-onboarding](plans/m10-onboarding.md)) holds every list to four distinct states: **loading** (skeletons shaped like the content, never "nothing here" while loading), **error** (says the fetch failed and offers **Retry**), **zero data** (what the space is for and the one action that fills it), and **nothing matches** (a filter is set; offers **Clear filters**). Audited: runs, library sources and channels, library Q&A, Q&A history, exports; the author, Echo, Echo inbox, shelves, shelf, notes and templates pages already met it. The saved-searches page came after this audit and meets the same four states. `pages/__tests__/emptyStates.test.tsx` pins the jobs page's three states, the checklist and the library Q&A empty state, and fails if a page uses generic copy ("No data", "No results", "Empty list", "Nothing here").
 
 ### Loading states
-Skeletons match content shape. No bare spinners on data-bearing pages. Action buttons show inline spinners during their action.
+Skeletons match content shape on list pages. A reader, or a lazy route while its chunk loads, shows a spinner with a line saying what is opening, and the notes page uses a bare spinner. Action buttons show inline spinners during their action.
 
 ### Accessibility (post-redesign target)
 - Visible focus rings on every interactive element.
@@ -546,13 +630,13 @@ These pages are defined ahead of time so today's components have a place to land
 |-----------------|--------|-----------|
 | `/shelves` | **built** (2026-10-19), see [`ShelvesPage`](#shelvespage--shelves) | [plans/m1-shelves.md](plans/m1-shelves.md) |
 | `/shelves/:slug` | **built** (2026-10-19) as `/shelves/:shelfId` (ids, not slugs: names are renameable), see [`ShelfPage`](#shelfpage--shelvesshelfid) | [plans/m1-shelves.md](plans/m1-shelves.md) |
-| `/notes` | M5 | [feature-roadmap.md](feature-roadmap.md) |
+| `/notes` | **built** (2026-10-19), see [`NotesPage`](#notespage--notes) | [feature-roadmap.md](feature-roadmap.md) |
 | `/author` | **built** (2026-10-19) as a single page, see [`AuthorPage`](#authorpage--author-pro) | [feature-roadmap.md](feature-roadmap.md) |
 | `/author/books` / `/author/sites` / `/author/decks` | L2; per-kind sub-routes only if the single page outgrows its kind filter | [feature-roadmap.md](feature-roadmap.md) |
 | `/brain` | **built** (2026-10-19) as `/echo`, see [`EchoPage`](#echopage--echo-studio) | [personal-brain.md](personal-brain.md) |
-| `/brain/context` / `/brain/activity` / `/brain/voice` | L3; context and voice signals (S-3.3.1) live on `/echo` today, activity awaits E-3.2 | [personal-brain.md](personal-brain.md) |
-| `/settings` | M (foundational) | [ui-design.md](ui-design.md) |
-| `/billing` | L5 (SaaS) | [saas-roadmap.md](saas-roadmap.md) |
+| `/brain/context` / `/brain/activity` / `/brain/voice` | L3; context, voice signals (S-3.3.1) and the activity timeline (S-3.2.1) all live on `/echo` today | [personal-brain.md](personal-brain.md) |
+| `/settings` | **built** as the four `/account/*` pages, see the route table | [ui-design.md](ui-design.md) |
+| `/billing` | L5 (SaaS): `/account/subscription` switches plans with no real payment until E-5.3 | [saas-roadmap.md](saas-roadmap.md) |
 
 ---
 

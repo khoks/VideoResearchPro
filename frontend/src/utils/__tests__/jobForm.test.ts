@@ -322,7 +322,35 @@ describe('source types (S-1.5.13)', () => {
     );
     expect(
       heldSourcesNote({ bluesky_post: { status: 403, until }, hn_story: { status: 401, until } }),
-    ).toBe('Bluesky, Hacker News refused their last search from this install, so they are not offered for now.');
+    ).toBe('Hacker News, Bluesky refused their last search from this install, so they are not offered for now.');
+  });
+
+  it('says plainly that a source put in this run refused its last search, and what its answer does', () => {
+    const until = '2026-11-05T12:00:00+00:00';
+    const holds = { bluesky_post: { status: 403, until } };
+    expect(heldSourcesNote(holds, ['video', 'bluesky_post'])).toBe(
+      'Bluesky refused its last search from this install. This run tries it anyway: an answer puts it back on offer, and another refusal keeps it off for now.',
+    );
+    expect(
+      heldSourcesNote({ ...holds, hn_story: { status: 401, until } }, ['bluesky_post', 'hn_story']),
+    ).toBe(
+      'Hacker News, Bluesky refused their last search from this install. This run tries them anyway: an answer puts them back on offer, and another refusal keeps them off for now.',
+    );
+  });
+
+  it('says both when one held source is in this run and another is not', () => {
+    const until = '2026-11-05T12:00:00+00:00';
+    const holds = { bluesky_post: { status: 403, until }, hn_story: { status: 401, until } };
+    expect(heldSourcesNote(holds, ['bluesky_post'])).toBe(
+      'Hacker News refused its last search from this install, so it is not offered for now. ' +
+        'Bluesky refused its last search from this install. This run tries it anyway: an answer puts it back on offer, and another refusal keeps it off for now.',
+    );
+  });
+
+  it('does not call a source on hold unset up: the server takes it', () => {
+    const holds = { bluesky_post: { status: 403, until: '2026-11-05T12:00:00+00:00' } };
+    const caps = { bluesky_search_enabled: false, twitter_search_enabled: false };
+    expect(unavailableSourceTypes(['video', 'bluesky_post', 'tweet'], caps, holds)).toEqual(['tweet']);
   });
 
   it('flags a carried source the install no longer has, once capabilities are known', () => {

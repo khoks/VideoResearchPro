@@ -77,6 +77,67 @@ describe('SourceTypePicker', () => {
   it('has no such note when nothing is on hold', () => {
     mount(['video'], {});
     expect(host.querySelector('[data-testid="source-type-held-note"]')).toBeNull();
+    expect(host.querySelector('[data-testid="source-type-try-held"]')).toBeNull();
+  });
+
+  describe('try it anyway (T-1.5.14.6)', () => {
+    const until = '2026-11-05T12:00:00+00:00';
+    const held = { bluesky_post: { status: 403, until } };
+    const caps = { bluesky_search_enabled: false };
+    const tryButton = (value: string) => host.querySelector<HTMLButtonElement>(`button[data-try-held="${value}"]`);
+
+    it('offers the held source, and choosing it puts it in this run', () => {
+      const { onChange, chip } = mount(['video'], caps, 10, held);
+      expect(chip('bluesky_post')).toBeUndefined();
+      expect(tryButton('bluesky_post')?.textContent).toBe('Try Bluesky anyway');
+
+      act(() => tryButton('bluesky_post')!.click());
+
+      expect(onChange).toHaveBeenCalledWith(['video', 'bluesky_post']);
+    });
+
+    it('shows a held source in this run as chosen, and says plainly that it refused', () => {
+      const { chip } = mount(['video', 'bluesky_post'], caps, 10, held);
+      expect(chip('bluesky_post')?.getAttribute('aria-pressed')).toBe('true');
+      expect(chip('bluesky_post')?.style.textDecoration).not.toBe('line-through');
+      expect(host.querySelector('[data-testid="source-type-held-note"]')?.textContent).toContain(
+        'Bluesky refused its last search from this install. This run tries it anyway',
+      );
+      expect(tryButton('bluesky_post')).toBeNull();
+    });
+
+    it('does not ask for a held source to be removed before submitting', () => {
+      mount(['video', 'bluesky_post'], caps, 10, held);
+      expect(host.querySelector('[data-testid="source-type-note"]')?.textContent).not.toContain('not set up');
+      expect(host.querySelector('[role="alert"]')).toBeNull();
+    });
+
+    it('still shares the budget with it, because the run will ask it', () => {
+      mount(['video', 'bluesky_post'], caps, 10, held);
+      expect(host.querySelector('[data-testid="source-type-note"]')?.textContent).toContain('YouTube 5, Bluesky 5');
+    });
+
+    it('takes it back out with the chip', () => {
+      const { onChange, chip } = mount(['video', 'bluesky_post'], caps, 10, held);
+      act(() => chip('bluesky_post')!.click());
+      expect(onChange).toHaveBeenCalledWith(['video']);
+    });
+
+    it('offers only the held sources left out, one button each', () => {
+      const both = { ...held, hn_story: { status: 401, until } };
+      mount(['bluesky_post'], { ...caps, hn_search_enabled: false }, 10, both);
+      expect(tryButton('hn_story')).not.toBeNull();
+      expect(tryButton('bluesky_post')).toBeNull();
+    });
+
+    it('still flags a source that is simply not set up', () => {
+      const { chip } = mount(['video', 'bluesky_post', 'tweet'], { ...caps, twitter_search_enabled: false }, 10, held);
+      expect(chip('tweet')?.style.textDecoration).toBe('line-through');
+      expect(chip('bluesky_post')?.style.textDecoration).not.toBe('line-through');
+      expect(host.querySelector('[role="alert"]')?.textContent).toBe(
+        'X / Twitter is not set up on this install. Remove it to submit.',
+      );
+    });
   });
 
   it('strikes through a carried source that a blank base URL took away', () => {

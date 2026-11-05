@@ -66,8 +66,8 @@ def test_the_refusal_says_whose_limit_it_is(client, db, test_user, limit):
 
 
 def test_the_refusal_states_the_count_when_syncs_took_it_past_the_limit(client, db, test_user, limit):
-    """A channel sync starts without passing through this limit, so a user can
-    be over it, and the number must be theirs, not the cap repeated."""
+    """Syncs from before T-5.2.15, or a lowered setting, can leave a user over
+    the limit, and the number must be theirs, not the cap repeated."""
     _hold(db, test_user.id, limit + 2)
 
     assert "You have 7 active jobs" in client.post("/api/v1/jobs", json=BODY).json()["detail"]

@@ -324,7 +324,10 @@ def _whisper_transcribe_audio(
 
     Fail-soft: any error (HTTP fetch / Whisper call / file IO) is
     logged + caught here, and the function returns None. Caller
-    treats None as "text unavailable".
+    treats None as "text unavailable". The exception is a split episode
+    that fails part-way: `_transcribe_in_chunks` raises
+    `TranscriptionCutShort`, which goes up to the job, so its Whisper
+    limits count the chunks that were billed (T-1.7.1.5).
     """
     if not audio_url:
         return None

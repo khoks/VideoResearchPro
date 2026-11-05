@@ -11,11 +11,12 @@ import {
 } from '../hooks/useChannels';
 import { useJob } from '../hooks/useJobs';
 import { ChannelTabs } from '../components/channel/ChannelTabs';
+import { SyncNote } from '../components/channel/SyncNote';
 import { Badge, Button, Card, EmptyState, Skeleton, Spinner } from '../components/primitives';
 import { useColors } from '../hooks/useTheme';
 import { fonts, fontSize, fontWeight, lineHeight, measure, radius, space } from '../theme';
 import { formatDate } from '../utils/formatters';
-import type { Channel } from '../services/channelsApi';
+import type { Channel, SubscribeResponse } from '../services/channelsApi';
 import { apiErrorMessage } from '../utils/apiError';
 
 const CHANNELS_TAB_HREF = '/library?tab=channels';
@@ -45,6 +46,8 @@ export function ChannelPage() {
   // A subscribe or sync dispatches a subscription job; watch it so the
   // button reads "Syncing…" until the worker is done, then refresh counts.
   const [syncJobId, setSyncJobId] = useState<string | null>(null);
+  // Why a subscribe or sync started no job (T-5.2.15).
+  const [syncNote, setSyncNote] = useState<string | null>(null);
   const { data: syncJob } = useJob(syncJobId);
   const syncStatus = syncJob?.status;
 
@@ -64,24 +67,23 @@ export function ChannelPage() {
     isAxiosError(channelQuery.error) &&
     channelQuery.error.response?.status === 404;
 
+  const watchSync = (resp: SubscribeResponse) => {
+    setSyncNote(resp.sync_note);
+    if (resp.job_id) setSyncJobId(resp.job_id);
+  };
+
   const handleToggleSubscribe = (ch: Channel) => {
+    setSyncNote(null);
     if (ch.subscribed) {
       unsubscribeMut.mutate(ch.channel_id);
     } else {
-      subscribeMut.mutate(ch.channel_id, {
-        onSuccess: (resp) => {
-          if (resp.job_id) setSyncJobId(resp.job_id);
-        },
-      });
+      subscribeMut.mutate(ch.channel_id, { onSuccess: watchSync });
     }
   };
 
   const handleSync = (ch: Channel) => {
-    syncMut.mutate(ch.channel_id, {
-      onSuccess: (resp) => {
-        if (resp.job_id) setSyncJobId(resp.job_id);
-      },
-    });
+    setSyncNote(null);
+    syncMut.mutate(ch.channel_id, { onSuccess: watchSync });
   };
 
   const subscribeBusy = subscribeMut.isPending || unsubscribeMut.isPending;
@@ -140,6 +142,7 @@ export function ChannelPage() {
             subscribeBusy={subscribeBusy}
             syncBusy={syncBusy}
             actionError={actionError}
+            syncNote={syncNote}
             onToggleSubscribe={() => handleToggleSubscribe(channel)}
             onSync={() => handleSync(channel)}
           />
@@ -159,6 +162,7 @@ function ChannelHeader({
   subscribeBusy,
   syncBusy,
   actionError = null,
+  syncNote = null,
   onToggleSubscribe,
   onSync,
 }: {
@@ -166,6 +170,7 @@ function ChannelHeader({
   subscribeBusy: boolean;
   syncBusy: boolean;
   actionError?: string | null;
+  syncNote?: string | null;
   onToggleSubscribe: () => void;
   onSync: () => void;
 }) {
@@ -308,6 +313,11 @@ function ChannelHeader({
           }}
         >
           {actionError}
+        </div>
+      )}
+      {syncNote && (
+        <div style={{ marginTop: space['3'] }}>
+          <SyncNote text={syncNote} />
         </div>
       )}
     </header>

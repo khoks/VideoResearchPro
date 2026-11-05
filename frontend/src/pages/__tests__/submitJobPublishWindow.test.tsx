@@ -358,4 +358,36 @@ describe('a source that refused this install (T-1.5.14.1)', () => {
     await mount();
     expect(host.querySelector('button[data-source-type="bluesky_post"]')).not.toBeNull();
   });
+
+  it('can be tried anyway: the request carries it, and it says the source refused (T-1.5.14.6)', async () => {
+    useSystemStatusStore.setState({
+      capabilities: { bluesky_search_enabled: false },
+      sourceHolds: { bluesky_post: { status: 403, until: '2026-11-05T12:00:00+00:00' } },
+    });
+    await mount();
+    expect(host.querySelector('button[data-source-type="bluesky_post"]')).toBeNull();
+    type(topicInput(), 'tariffs');
+
+    act(() => buttonLabelled('Try Bluesky anyway').click());
+    expect(host.querySelector('[data-testid="source-type-held-note"]')?.textContent).toContain(
+      'Bluesky refused its last search from this install. This run tries it anyway',
+    );
+    await submit();
+
+    expect(host.querySelector('[role="alert"]')).toBeNull();
+    expect(submitted().source_types).toEqual(['video', 'bluesky_post']);
+  });
+
+  it('leaves it out of the request unless the reader asks', async () => {
+    useSystemStatusStore.setState({
+      capabilities: { bluesky_search_enabled: false },
+      sourceHolds: { bluesky_post: { status: 403, until: '2026-11-05T12:00:00+00:00' } },
+    });
+    await mount();
+    type(topicInput(), 'tariffs');
+
+    await submit();
+
+    expect(submitted()).not.toHaveProperty('source_types');
+  });
 });

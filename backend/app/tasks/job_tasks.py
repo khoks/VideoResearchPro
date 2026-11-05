@@ -28,12 +28,24 @@ from app.services import (
 )
 from app.services.quota_service import QuotaExceededError as YouTubeQuotaExceededError
 from app.sources import connector_for
-from app.sources.types import DEFAULT_AUDIO_LANGUAGE, Candidate, SourceMetadata
+from app.sources.types import DEFAULT_AUDIO_LANGUAGE, Candidate, ExtractedText, SourceMetadata
 from app.tasks.celery_app import celery_app
 from app.utils.chunking import chunk_transcript
 from app.utils.html_builder import build_report_html, save_report
 
 logger = logging.getLogger(__name__)
+
+# SQLite caps the parameters in one statement; keep an IN list well under it.
+_IN_LIST_SIZE = 500
+
+# What a video's details add to a row, beyond its id and its channel.
+_SYNC_DETAIL_KEYS = (
+    "title", "url", "duration_seconds", "thumbnail_url", "published_at", DEFAULT_AUDIO_LANGUAGE,
+)
+
+# The title of a row whose video the details left out, a private one say. The
+# row is shared, so a later read has to be able to correct it for every tenant.
+_PLACEHOLDER_TITLE = "Unknown"
 
 
 def _parse_published_at(value) -> datetime | None:
@@ -124,6 +136,27 @@ def _source_metadata_to_legacy_dict(sm: SourceMetadata) -> dict:
     return legacy
 
 
+def _videos_in_library(db, video_ids: list[str]) -> set[str]:
+    """Which of these YouTube ids already have a row in the global library
+    that holds their details.
+
+    The legacy ``video_id`` column is what they match: ``Document``'s primary
+    key is a UUID (E-1.10), so ``db.get(Document, vid)`` never finds a video.
+    A placeholder row does not count. Its video may have gone public since,
+    and at 1 unit per 50 videos a read is the cheap way to find out.
+    """
+    found: set[str] = set()
+    for start in range(0, len(video_ids), _IN_LIST_SIZE):
+        batch = video_ids[start : start + _IN_LIST_SIZE]
+        found.update(
+            row[0]
+            for row in db.query(Document.video_id).filter(
+                Document.video_id.in_(batch), Document.title != _PLACEHOLDER_TITLE
+            )
+        )
+    return found
+
+
 def _upsert_video_and_link(db, job_id: str, data: dict) -> None:
     """Insert/refresh a global Document, its Channel, and the JobVideo link.
 
@@ -168,7 +201,7 @@ def _upsert_video_and_link(db, job_id: str, data: dict) -> None:
             video = Document(
                 video_id=video_id,
                 channel_id=channel_id,
-                title=data.get("title", "Unknown"),
+                title=data.get("title", _PLACEHOLDER_TITLE),
                 url=data.get("url", f"https://www.youtube.com/watch?v={video_id}"),
                 duration_seconds=data.get("duration_seconds", 0),
                 published_at=_parse_published_at(data.get("published_at")),
@@ -441,11 +474,32 @@ class WhisperMinutes:
         )
         self.used_seconds += max(heard, float(document.duration_seconds or 0))
 
+    def charge_part(self, seconds: float) -> None:
+        """Add a recording that failed part-way, by how far it got (T-1.7.1.5).
+        Its declared length was never heard, so it does not count here."""
+        self.used_seconds += seconds
+
     def note(self) -> dict | None:
         """What the run should say, if the limit cost it anything."""
         if not self.skipped:
             return None
         return run_notes.whisper_minutes_spent(self.used_seconds, self.cap_minutes, self.skipped)
+
+
+def _fetch_text(connector, candidate: Candidate, **kwargs) -> tuple[ExtractedText | None, float | None]:
+    """``connector.fetch_text`` for an extraction loop: the text or None, and
+    the seconds of a transcription that failed part-way, which the loop
+    charges to its Whisper limits. ``None`` when there was no such failure:
+    a part that reached 0 seconds was still a paid recording (T-1.7.1.5).
+    """
+    try:
+        return connector.fetch_text(candidate, **kwargs), None
+    except source_failure.TranscriptionCutShort as cut:
+        logger.warning(
+            "[job:%s] %s: %s; recording unavailable",
+            kwargs.get("job_id", ""), candidate.source_id, cut,
+        )
+        return None, cut.seconds
 
 
 def _cache_document_text(db, document: Document, extracted) -> None:
@@ -1683,7 +1737,8 @@ def resume_job_after_approval(self, job_id: str) -> None:
                 # The submitter's BYOK context, as for the search agent and
                 # the report: a social connector classifies inline (D-023).
                 with llm_service.byok_context(job.tenant_id, db):
-                    extracted = connector.fetch_text(
+                    extracted, part_paid = _fetch_text(
+                        connector,
                         Candidate(
                             source_type=video.source_type,
                             source_id=video.source_id,
@@ -1699,6 +1754,9 @@ def resume_job_after_approval(self, job_id: str) -> None:
                 if extracted is not None and extracted.text_source in _WHISPER_TEXT_SOURCES:
                     whisper_used += 1
                     whisper_minutes.charge(video, extracted)
+                elif part_paid is not None:
+                    whisper_used += 1
+                    whisper_minutes.charge_part(part_paid)
                 if extracted is None and fetch_kwargs.get("allow_whisper") is False and whisper_minutes.spent:
                     whisper_minutes.skipped += 1
 
@@ -2063,7 +2121,8 @@ def _run_extraction_and_rag(self, db, job) -> None:
             # their key when they brought one (T-5.6.13). The task's own scope
             # is joined, so the seconds are recorded as before.
             with llm_service.byok_context(job.tenant_id, db):
-                extracted = connector.fetch_text(
+                extracted, part_paid = _fetch_text(
+                    connector,
                     Candidate(
                         source_type=video.source_type,
                         source_id=video.source_id,
@@ -2078,6 +2137,9 @@ def _run_extraction_and_rag(self, db, job) -> None:
             if extracted is not None and extracted.text_source in _WHISPER_TEXT_SOURCES:
                 whisper_used += 1
                 whisper_minutes.charge(video, extracted)
+            elif part_paid is not None:
+                whisper_used += 1
+                whisper_minutes.charge_part(part_paid)
             if extracted is None and whisper_barred:
                 if whisper_minutes.spent:
                     whisper_minutes.skipped += 1
@@ -2395,12 +2457,12 @@ def execute_subscription_job(self, job_id: str) -> None:
             )
 
             if unlinked_ids:
-                # Fetch details for videos not yet in the global library so we
-                # populate Document rows with accurate metadata. _upsert_video_and_link
-                # tolerates pre-existing Document rows and just creates the JobVideo.
-                missing_from_library = [
-                    vid for vid in unlinked_ids if db.get(Document, vid) is None
-                ]
+                # Fetch details only for videos the global library has not
+                # read (T-1.11.11.6). A video another tenant already ingested
+                # costs no units: _upsert_video_and_link links its Document
+                # row, and the grant below makes it this tenant's too (D-063).
+                in_library = _videos_in_library(db, unlinked_ids)
+                missing_from_library = [vid for vid in unlinked_ids if vid not in in_library]
                 details: dict = {}
                 if missing_from_library:
                     details_meta = connector.fetch_metadata(
@@ -2412,19 +2474,15 @@ def execute_subscription_job(self, job_id: str) -> None:
                     }
                 for vid in unlinked_ids:
                     info = details.get(vid) or {}
+                    # Only what the details said. A default written here would
+                    # replace a library document's real title with "Unknown".
                     row = {
                         "video_id": vid,
-                        "title": info.get("title", "Unknown"),
                         "channel_id": info.get("channel_id", channel_id),
                         "channel_name": info.get("channel_name", name),
-                        "url": info.get("url", f"https://www.youtube.com/watch?v={vid}"),
-                        "duration_seconds": info.get("duration_seconds", 0),
-                        "thumbnail_url": info.get("thumbnail_url"),
-                        "published_at": info.get("published_at"),
                         "selection_reason": "subscription",
+                        **{key: info[key] for key in _SYNC_DETAIL_KEYS if key in info},
                     }
-                    if DEFAULT_AUDIO_LANGUAGE in info:
-                        row[DEFAULT_AUDIO_LANGUAGE] = info[DEFAULT_AUDIO_LANGUAGE]
                     _upsert_video_and_link(db, job_id, row)
                     linked_video_ids.add(vid)
                     total_ingested += 1

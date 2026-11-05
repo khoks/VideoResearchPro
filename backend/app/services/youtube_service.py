@@ -22,6 +22,7 @@ from app.database import SessionLocal
 from app.models.transcript_cache import TranscriptCache
 from app.services import quota_service, usage_service
 from app.services.quota_service import QuotaExceededError
+from app.services.source_failure import TranscriptionCutShort
 from app.utils.rate_limiter import RateLimiter
 from app.utils.youtube_helpers import parse_iso8601_duration
 
@@ -318,7 +319,7 @@ def get_default_audio_languages(video_ids: list[str], job_id: str = "") -> dict[
                 id=",".join(batch),
                 fields="items(id,snippet(defaultAudioLanguage))",
             ),
-            "videos",
+            quota_service.OPERATION_VIDEOS_AUDIO_LANGUAGE,
         )
         for item in response.get("items", []):
             out[item["id"]] = (item.get("snippet") or {}).get("defaultAudioLanguage") or None
@@ -1637,7 +1638,9 @@ def _transcribe_in_chunks(
     canonical ``{text, start, duration}`` shape.
 
     Returns (segments, language), or None when the audio cannot be split or
-    any chunk fails: a transcript with a hole in it would read as complete.
+    the first chunk fails: a transcript with a hole in it would read as
+    complete. A later chunk failing raises ``TranscriptionCutShort``, because
+    the chunks before it were billed and the job's Whisper limits count them.
     """
     chunks = _split_audio_for_whisper(audio_path, tmpdir, tag)
     if not chunks:
@@ -1653,6 +1656,7 @@ def _transcribe_in_chunks(
     language = "unknown"
     n = len(chunks)
     chunk_len_estimate = 0.0
+    reached = 0.0  # Where the finished chunks end on the recording's timeline.
     for idx, (chunk_path, chunk_start) in enumerate(chunks):
         chunk_mb = os.path.getsize(chunk_path) / (1024 * 1024)
         try:
@@ -1663,10 +1667,13 @@ def _transcribe_in_chunks(
             logger.error(
                 f"{tag} Whisper failed on chunk {idx + 1}/{n} of {source_id}: {whisper_error_text(e)}"
             )
-            return None
+            response = None
         if response is None:
+            if per_chunk:
+                raise TranscriptionCutShort(reached)
             return None
         segs, lang, dur = _whisper_response_to_segments(response, tag, source_id)
+        reached = max(reached, chunk_start + dur)
         if lang != "unknown":
             language = lang
         # Chunk length (sans tail overlap) — from the response duration.

@@ -389,6 +389,14 @@ def _resolve_source_types(job: Job) -> list[str]:
 _WHISPER_FALLBACK_SOURCE_TYPES = frozenset({"video", "podcast_episode"})
 _WHISPER_TEXT_SOURCES = frozenset({"whisper", "podcast_whisper"})
 
+# What YouTube failing looks like on the way out of the search agent. Anything
+# else out of it is the agent's model, or a bug.
+_YOUTUBE_SEARCH_FAILURES = (
+    YouTubeQuotaExceededError,
+    HttpError,
+    source_failure.SearchFailed,
+)
+
 
 class WhisperMinutes:
     """``WHISPER_MAX_MINUTES_PER_JOB`` for one run (T-1.7.1.1).
@@ -1190,14 +1198,23 @@ def execute_topic_job(self, job_id: str) -> None:
                         candidates_out=candidate_pool,
                         published_after_days=job.published_after_days,
                     )
-            except (YouTubeQuotaExceededError, HttpError) as e:
-                # YouTube itself said no. One source of the run, reported as
-                # the others are. Never `str(e)`: an HttpError's message holds
-                # the request URL, and the API key is in its query string.
+            except _YOUTUBE_SEARCH_FAILURES as e:
+                # YouTube failed. One source of the run, reported as the
+                # others are. Never `str(e)`: an HttpError's message holds the
+                # request URL, and the API key is in its query string.
                 logger.warning(
                     "[job:%s] YouTube search unavailable: %s", job_id, type(e).__name__
                 )
                 failures["video"] = source_failure.classify(e)
+            except Exception:
+                # The agent's model, or a bug, which says nothing about
+                # YouTube, so not `classify`: an LLM SDK's 401 would read as
+                # YouTube refusing. What the other sources found stands; with
+                # nothing to keep, the handler below reports this as itself.
+                if not any(found.values()):
+                    raise
+                logger.exception("[job:%s] YouTube search failed", job_id)
+                failures["video"] = source_failure.SourceFailure(source_failure.FAILED)
             logger.info(
                 f"[job:{job_id}] Search Agent complete: found "
                 f"{len(curated_videos)} candidate videos "

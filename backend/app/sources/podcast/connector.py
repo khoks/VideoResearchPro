@@ -20,6 +20,7 @@ from typing import Any, Iterator
 import httpx
 
 from app.config import settings
+from app.services.source_failure import SearchFailed
 from app.sources import registry
 from app.sources._topic_terms import term_keys, topic_keys, topic_queries
 from app.sources.base import BaseConnector
@@ -442,7 +443,9 @@ class PodcastConnector(BaseConnector):
 
         A failure stays raised, so the dispatcher can tell it from "nothing
         found" (T-1.5.14.1): iTunes itself, or every feed it pointed at. One
-        feed failing out of three only costs that show.
+        feed failing out of three only costs that show. Feeds fail as
+        ``SearchFailed``: each is some show's own host, and a 403 from one
+        says nothing about the search, which iTunes has already answered.
         """
         client = podcast_client.get_client()
         results: list = []
@@ -483,7 +486,7 @@ class PodcastConnector(BaseConnector):
                 ]
             )
         if feed_failure is not None and not per_show:
-            raise feed_failure
+            raise SearchFailed("no feed iTunes named could be read") from feed_failure
         in_turn = chain.from_iterable(zip_longest(*per_show))
         return [c for c in in_turn if c is not None][: max(0, limit)]
 

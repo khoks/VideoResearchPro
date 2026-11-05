@@ -8,14 +8,20 @@ connector did with a 403.
 """
 from __future__ import annotations
 
+import json
+import socket
+import ssl
 from datetime import datetime, timedelta, timezone
+from unittest.mock import MagicMock
 
 import httpx
+import httplib2
 import pytest
 from googleapiclient.errors import HttpError
 from httplib2 import Response
 
 from app.agents import search_agent
+from app.config import settings
 from app.models.document import Document
 from app.models.job import Job
 from app.models.job_video import JobVideo
@@ -34,10 +40,13 @@ from app.sources.base import BaseConnector
 from app.sources.bluesky import client as bluesky_client
 from app.sources.hn import client as hn_client
 from app.sources.mastodon import client as mastodon_client
-from app.sources.types import Candidate, ExtractedText
+from app.sources.podcast import client as podcast_client
+from app.sources.reddit import client as reddit_client
+from app.sources.types import Candidate, ExtractedText, SourceMetadata
 from app.tasks import job_tasks
 
 _403 = httpx.Response(403, text="<html>403 Forbidden</html>", request=httpx.Request("GET", "https://cdn.example"))
+_REAL_SEARCH_AGENT = search_agent.run_search_agent
 
 
 class _Unclosable:
@@ -150,10 +159,70 @@ def worker(db, monkeypatch):
     return state
 
 
-def _submit(client, *source_types: str, num_videos: int = 12, topic: str = "nuclear power") -> str:
+class _YouTube(_Source):
+    """YouTube for the real search agent: a broad query raises ``raises``, and
+    ``uploads`` is what a named channel has on its playlist."""
+
+    def __init__(self, raises: Exception | None = None, uploads: tuple[str, ...] = ()):
+        super().__init__("video", raises=raises)
+        self.uploads = uploads
+
+    def resolve_creator_id(self, hint: str, *, job_id: str = ""):
+        return "UC_named"
+
+    def list_creator_items(self, creator_external_id, since=None, *, limit=None, job_id=""):
+        return [
+            Candidate(source_type="video", source_id=vid, title=vid, source_url=f"https://y/{vid}")
+            for vid in self.uploads
+        ]
+
+    def fetch_metadata(self, source_ids, *, job_id=""):
+        return {
+            vid: SourceMetadata(
+                title=vid,
+                creator_external_id="UC_named",
+                creator_name="Named",
+                duration_seconds=600,
+                extra={"url": f"https://www.youtube.com/watch?v={vid}"},
+            )
+            for vid in source_ids
+        }
+
+
+@pytest.fixture
+def real_agent(worker, monkeypatch):
+    """The real graph between the job and its connectors, since what a failure
+    turns into on the way out of it is the point. Only its model is faked."""
+
+    def llm(use_case, **kwargs):
+        ranking = use_case == "search_rank_and_curate"
+        payload = ["uploaded0001"] if ranking else {"broad_queries": ["q1", "q2"], "channel_keywords": []}
+        fake = MagicMock()
+        fake.invoke.return_value = MagicMock(content=json.dumps(payload))
+        return fake
+
+    monkeypatch.setattr(search_agent, "run_search_agent", _REAL_SEARCH_AGENT)
+    monkeypatch.setattr(search_agent, "get_llm_for", llm)
+    monkeypatch.setattr(search_agent, "_lookup_known_eras", lambda ids: {})
+    monkeypatch.setattr(search_agent.youtube_service, "get_channel_subscribers", lambda ids: {})
+
+
+def _submit(
+    client,
+    *source_types: str,
+    num_videos: int = 12,
+    topic: str = "nuclear power",
+    **fields,
+) -> str:
     r = client.post(
         "/api/v1/jobs",
-        json={"job_type": "topic", "topic": topic, "num_videos": num_videos, "source_types": list(source_types)},
+        json={
+            "job_type": "topic",
+            "topic": topic,
+            "num_videos": num_videos,
+            "source_types": list(source_types),
+            **fields,
+        },
     )
     assert r.status_code == 201, r.text
     return r.json()["id"]
@@ -360,7 +429,144 @@ def test_a_youtube_error_never_puts_the_api_key_on_the_run(client, db, sources, 
     assert "refused the search (HTTP 403)" in job.error_message
 
 
-def test_broad_search_raises_a_refusal_that_found_nothing(monkeypatch):
+@pytest.mark.parametrize(
+    "raised",
+    [
+        TimeoutError("timed out"),
+        socket.gaierror("no such host"),
+        httplib2.ServerNotFoundError("Unable to find the server"),
+        ssl.SSLError("handshake failed"),
+        ValueError("a page that would not parse"),
+        RuntimeError("the model is down"),
+    ],
+    ids=lambda e: type(e).__name__,
+)
+def test_youtube_failing_any_way_leaves_the_other_sources_standing(client, db, sources, worker, raised):
+    """Hacker News has already answered by now. This caught quota and HTTP
+    errors alone, so a timeout threw its results away with the run."""
+    sources(_Source("hn_story", count=20))
+    worker.raises = raised
+    job_id = _submit(client, "video", "hn_story", num_videos=6)
+
+    worker.run(job_id)
+
+    assert db.get(Job, job_id).status == "awaiting_approval"
+    assert _kept(db, job_id) == {"hn_story": 6}
+    note = next(n for n in _notes(client, job_id) if n.get("source_type") == "video")
+    assert note["kind"] == "source_unavailable"
+    assert note["text"] == "YouTube was unavailable: the search failed."
+
+
+def test_a_model_refusing_is_not_youtube_refusing(client, db, sources, worker):
+    """An LLM SDK's errors carry a ``.response`` too, and a 401 from the
+    search agent's model must not be told as YouTube refusing the run."""
+
+    class ModelRefused(Exception):
+        response = httpx.Response(401)
+
+    sources(_Source("hn_story", count=20))
+    worker.raises = ModelRefused()
+    job_id = _submit(client, "video", "hn_story", num_videos=6)
+
+    worker.run(job_id)
+
+    assert db.get(Job, job_id).status == "awaiting_approval"
+    note = next(n for n in _notes(client, job_id) if n.get("source_type") == "video")
+    assert note["text"] == "YouTube was unavailable: the search failed."
+
+
+@pytest.mark.parametrize("others", [(), ("hn_story",)], ids=["alone", "beside_an_empty_source"])
+def test_a_model_failure_with_nothing_else_to_keep_keeps_its_own_reason(client, db, sources, worker, others):
+    """Not YouTube's doing, and "YouTube was unavailable" would hide what the
+    reader needs. The run fails as it always did."""
+    sources(_Source("hn_story", count=0))
+    worker.raises = RuntimeError("the model is down")
+    job_id = _submit(client, "video", *others, num_videos=6)
+
+    worker.run(job_id)
+
+    job = db.get(Job, job_id)
+    assert job.status == "failed"
+    assert job.error_message == "the model is down"
+
+
+def test_youtube_timing_out_through_the_real_agent_leaves_the_others_standing(
+    client, db, sources, worker, real_agent
+):
+    sources(_YouTube(raises=TimeoutError("timed out")), _Source("hn_story", count=20))
+    job_id = _submit(client, "video", "hn_story", num_videos=6)
+
+    worker.run(job_id)
+
+    assert db.get(Job, job_id).status == "awaiting_approval"
+    assert _kept(db, job_id) == {"hn_story": 6}
+    note = next(n for n in _notes(client, job_id) if n.get("source_type") == "video")
+    assert note["text"] == "YouTube was unavailable: the search failed."
+
+
+def test_youtube_alone_timing_out_says_it_was_unavailable(client, db, sources, worker, real_agent):
+    """Not "try a broader topic", which is what a run said when the agent
+    swallowed this, and not a bare "timed out"."""
+    sources(_YouTube(raises=TimeoutError("timed out")))
+    job_id = _submit(client, "video", num_videos=6)
+
+    worker.run(job_id)
+
+    job = db.get(Job, job_id)
+    assert job.status == "failed"
+    assert "YouTube was unavailable: the search failed." in job.error_message
+    assert "broader topic" not in job.error_message and "timed out" not in job.error_message
+
+
+@pytest.mark.parametrize(
+    "raised",
+    [
+        TimeoutError("timed out"),
+        HttpError(Response({"status": 500}), b"{}", uri="https://www.googleapis.com/youtube/v3/search"),
+        QuotaExceededError(),
+    ],
+    ids=lambda e: type(e).__name__,
+)
+def test_a_failed_broad_search_keeps_the_channels_the_user_named(client, db, sources, worker, real_agent, raised):
+    """search.list failing says nothing about playlistItems, which a run on
+    named channels walks at 1 unit a page."""
+    sources(_YouTube(raises=raised, uploads=("uploaded0001",)))
+    job_id = _submit(client, "video", num_videos=6, preferred_channels=["@named"])
+
+    worker.run(job_id)
+
+    assert db.get(Job, job_id).status == "awaiting_approval"
+    assert _kept(db, job_id) == {"video": 1}
+    assert [n for n in _notes(client, job_id) if n["kind"] == "source_unavailable"] == []
+
+
+def test_a_run_on_named_channels_can_be_read_back(client, db, sources, worker, real_agent):
+    """A run that names channels stores a summary object, and the response
+    only allowed a list, so reading the run or the job list was a 500."""
+    sources(_YouTube(uploads=("uploaded0001",)))
+    job_id = _submit(client, "video", num_videos=6, preferred_channels=["@named"])
+
+    worker.run(job_id)
+
+    one = client.get(f"/api/v1/jobs/{job_id}").json()
+    assert one["channel_list_resolved"] == {"resolved_count": 1, "unresolved": []}
+    assert [job["id"] for job in client.get("/api/v1/jobs").json()] == [job_id]
+
+
+def test_a_failed_broad_search_with_nothing_from_the_named_channels_is_reported(
+    client, db, sources, worker, real_agent
+):
+    sources(_YouTube(raises=TimeoutError("timed out")))
+    job_id = _submit(client, "video", num_videos=6, preferred_channels=["@named"])
+
+    worker.run(job_id)
+
+    job = db.get(Job, job_id)
+    assert job.status == "failed"
+    assert "YouTube was unavailable: the search failed." in job.error_message
+
+
+def test_broad_search_hands_back_a_refusal_that_found_nothing(monkeypatch):
     """The agent's own step: it caught everything and returned no videos."""
 
     class Refused:
@@ -368,8 +574,9 @@ def test_broad_search_raises_a_refusal_that_found_nothing(monkeypatch):
             raise QuotaExceededError()
 
     monkeypatch.setattr(search_agent, "connector_for", lambda st: Refused())
-    with pytest.raises(QuotaExceededError):
-        search_agent._run_broad_searches(["a", "b"], 5)
+    videos, failure = search_agent._run_broad_searches(["a", "b"], 5)
+    assert videos == {}
+    assert isinstance(failure, QuotaExceededError)
 
 
 def test_broad_search_stops_at_a_spent_quota_and_keeps_what_it_has(monkeypatch):
@@ -383,7 +590,8 @@ def test_broad_search_stops_at_a_spent_quota_and_keeps_what_it_has(monkeypatch):
             return [Candidate(source_type="video", source_id="v1", title="V", source_url="https://y/v1")]
 
     monkeypatch.setattr(search_agent, "connector_for", lambda st: Partly())
-    assert list(search_agent._run_broad_searches(["a", "b", "c"], 5)) == ["v1"]
+    videos, _failure = search_agent._run_broad_searches(["a", "b", "c"], 5)
+    assert list(videos) == ["v1"]
     assert calls == ["a", "b"], "every later query would get the same answer"
 
 
@@ -395,7 +603,8 @@ def test_broad_search_still_skips_one_bad_query(monkeypatch):
             return [Candidate(source_type="video", source_id="v1", title="V", source_url="https://y/v1")]
 
     monkeypatch.setattr(search_agent, "connector_for", lambda st: Flaky())
-    assert list(search_agent._run_broad_searches(["a", "b"], 5)) == ["v1"]
+    videos, _failure = search_agent._run_broad_searches(["a", "b"], 5)
+    assert list(videos) == ["v1"]
 
 
 # ---------------------------------------------------------------------------
@@ -413,10 +622,24 @@ def test_broad_search_still_skips_one_bad_query(monkeypatch):
         (RuntimeError("anything"), "failed", None),
         (QuotaExceededError(), "quota_spent", 403),
         (HttpError(Response({"status": 403}), b"{}", uri="https://x"), "refused", 403),
+        (source_failure.SearchFailed("x"), "failed", None),
     ],
 )
 def test_classify(exc, kind, status):
     assert source_failure.classify(exc) == source_failure.SourceFailure(kind, status)
+
+
+def test_classify_keeps_the_status_of_a_target_that_refused_without_calling_it_a_refusal():
+    """A 403 from one feed host: the reader can have the status, but only a
+    refusal starts a hold."""
+    cause = httpx.HTTPStatusError("x", request=httpx.Request("GET", "https://x"), response=httpx.Response(403))
+    try:
+        try:
+            raise cause
+        except httpx.HTTPError as inner:
+            raise source_failure.SearchFailed("one feed") from inner
+    except source_failure.SearchFailed as wrapped:
+        assert source_failure.classify(wrapped) == source_failure.SourceFailure("failed", 403)
 
 
 def test_classify_looks_through_a_wrapper():
@@ -448,6 +671,93 @@ def test_a_refusal_takes_the_source_off_the_form(client, db, sources, worker):
     health = client.get("/api/v1/health").json()
     assert health["capabilities"]["bluesky_search_enabled"] is False
     assert health["source_holds"]["bluesky_post"]["status"] == 403
+
+
+def _podcast_search(feed_answer: httpx.Response):
+    """iTunes names one show, and its RSS host answers ``feed_answer``."""
+
+    def http_get(url, params=None, headers=None, timeout=None, follow_redirects=False):
+        if "itunes.apple.com" in url:
+            show = {"collectionName": "A show", "feedUrl": "https://feeds.example/show.rss"}
+            return httpx.Response(200, json={"results": [show]}, request=httpx.Request("GET", url))
+        return feed_answer
+
+    return http_get
+
+
+@pytest.fixture
+def podcasts(monkeypatch):
+    monkeypatch.setattr(podcast_client.PodcastClient, "__init__", _no_pacing, raising=True)
+    podcast_client._reset_for_tests()
+    yield
+    podcast_client._reset_for_tests()
+
+
+@pytest.fixture
+def reddit(monkeypatch):
+    token = httpx.Response(200, json={"access_token": "t"}, request=httpx.Request("POST", "https://reddit"))
+    monkeypatch.setattr(settings, "REDDIT_CLIENT_ID", "id")
+    monkeypatch.setattr(settings, "REDDIT_CLIENT_SECRET", "secret")
+    monkeypatch.setattr(settings, "REDDIT_RATE_LIMIT_RPM", 6_000_000)
+    monkeypatch.setattr(reddit_client.httpx, "post", lambda *a, **kw: token)
+    reddit_client._reset_for_tests()
+    yield
+    reddit_client._reset_for_tests()
+
+
+def test_one_feed_host_refusing_is_not_the_service_refusing(client, db, worker, monkeypatch, podcasts):
+    """iTunes answered. A 403 from the host of the one show it named says
+    nothing about podcasts, and a hold reaches every tenant, so any one user's
+    topic could take the source off everyone's form."""
+    monkeypatch.setattr(podcast_client.httpx, "get", _podcast_search(_403))
+    job_id = _submit(client, "podcast_episode", num_videos=4)
+
+    worker.run(job_id)
+
+    job = db.get(Job, job_id)
+    assert job.status == "failed"
+    assert "Podcasts was unavailable: the search failed (HTTP 403)." in job.error_message
+    assert "refused" not in job.error_message
+    assert _caps(client)["podcast_search_enabled"] is True
+    assert client.get("/api/v1/health").json()["source_holds"] == {}
+    assert db.query(SourceRefusal).count() == 0
+
+
+def test_itunes_itself_refusing_still_takes_podcasts_off_the_form(client, db, worker, monkeypatch, podcasts):
+    monkeypatch.setattr(podcast_client.httpx, "get", lambda *a, **kw: _403)
+    job_id = _submit(client, "podcast_episode", num_videos=4)
+
+    worker.run(job_id)
+
+    assert "it refused the search (HTTP 403)" in db.get(Job, job_id).error_message
+    assert _caps(client)["podcast_search_enabled"] is False
+    assert client.get("/api/v1/health").json()["source_holds"]["podcast_episode"]["status"] == 403
+
+
+def test_a_private_subreddit_is_not_reddit_refusing(client, db, worker, monkeypatch, reddit):
+    """A user can scope a topic to a subreddit, and a private or quarantined
+    one answers 403. That is about the subreddit, not this install."""
+    monkeypatch.setattr(reddit_client.httpx, "get", lambda *a, **kw: _403)
+    job_id = _submit(client, "reddit_post", num_videos=4, topic="subreddit:someprivatesub climate")
+
+    worker.run(job_id)
+
+    job = db.get(Job, job_id)
+    assert job.status == "failed"
+    assert "Reddit was unavailable: the search failed (HTTP 403)." in job.error_message
+    assert _caps(client)["reddit_search_enabled"] is True
+    assert db.query(SourceRefusal).count() == 0
+
+
+def test_a_site_wide_reddit_refusal_still_holds(client, db, worker, monkeypatch, reddit):
+    monkeypatch.setattr(reddit_client.httpx, "get", lambda *a, **kw: _403)
+    job_id = _submit(client, "reddit_post", num_videos=4)
+
+    worker.run(job_id)
+
+    assert _caps(client)["reddit_search_enabled"] is False
+    assert client.get("/api/v1/health").json()["source_holds"]["reddit_post"]["status"] == 403
+    assert "it refused the search (HTTP 403)" in db.get(Job, job_id).error_message
 
 
 def test_a_hold_leaves_the_api_open_so_a_saved_recipe_still_runs(client, db, sources, worker):

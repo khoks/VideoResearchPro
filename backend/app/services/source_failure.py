@@ -11,12 +11,25 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 # "refused" is the one that says something about this install: 401 or 403
-# means the service will not answer it, so asking again will not help
-# (`source_refusal_service`).
+# from the service's search means it will not answer this install, so asking
+# again will not help (`source_refusal_service`).
 REFUSED = "refused"
 RATE_LIMITED = "rate_limited"
 QUOTA_SPENT = "quota_spent"
 FAILED = "failed"
+
+
+class SearchFailed(Exception):
+    """A search failed, and the service did not refuse this install.
+
+    Whatever is behind it, this classifies as ``FAILED``, with the status if
+    there was one, so it never starts a hold. A hold reaches every tenant, so
+    a connector raises this ``from`` the cause when a 401 or 403 is about one
+    target of the search and not the service: one podcast's feed host, or one
+    private subreddit. The search agent raises it for a failure with no
+    answer from YouTube behind it, such as a timeout, which lets the job tell
+    YouTube being out of reach from its own model failing.
+    """
 
 
 @dataclass(frozen=True)
@@ -47,6 +60,8 @@ def classify(exc: BaseException) -> SourceFailure:
     if isinstance(exc, QuotaExceededError):
         return SourceFailure(QUOTA_SPENT, 403)
     status = _http_status(exc)
+    if isinstance(exc, SearchFailed):
+        return SourceFailure(FAILED, status)
     if status in (401, 403):
         return SourceFailure(REFUSED, status)
     if status == 429:

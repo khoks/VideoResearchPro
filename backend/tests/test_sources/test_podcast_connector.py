@@ -21,7 +21,7 @@ import feedparser
 import httpx
 import pytest
 
-from app.services import youtube_service
+from app.services import source_failure, youtube_service
 from app.sources import registry
 from app.sources.podcast import client as podcast_client_mod
 from app.sources.podcast import connector as podcast_connector_mod
@@ -1271,11 +1271,43 @@ def test_every_feed_failing_is_a_failure_not_an_empty_answer(podcast, fake_clien
     fake_client.itunes_search.return_value = {
         "results": [{"collectionName": "A", "feedUrl": "https://a.example.com/f.rss"}]
     }
-    fake_client.fetch_feed.side_effect = httpx.ConnectError("down")
+    down = httpx.ConnectError("down")
+    fake_client.fetch_feed.side_effect = down
     with patch.object(
         podcast_connector_mod.podcast_client, "get_client", return_value=fake_client
-    ), pytest.raises(httpx.ConnectError):
+    ), pytest.raises(source_failure.SearchFailed) as caught:
         podcast.search("anything")
+    assert caught.value.__cause__ is down
+
+
+def test_a_feed_host_refusing_never_reads_as_the_service_refusing(podcast, fake_client):
+    """Each feed is a different host, and iTunes has already answered."""
+    fake_client.itunes_search.return_value = {
+        "results": [{"collectionName": "A", "feedUrl": "https://a.example.com/f.rss"}]
+    }
+    fake_client.fetch_feed.side_effect = httpx.HTTPStatusError(
+        "403",
+        request=httpx.Request("GET", "https://a.example.com/f.rss"),
+        response=httpx.Response(403),
+    )
+    with patch.object(
+        podcast_connector_mod.podcast_client, "get_client", return_value=fake_client
+    ), pytest.raises(source_failure.SearchFailed) as caught:
+        podcast.search("anything")
+    assert source_failure.classify(caught.value) == source_failure.SourceFailure("failed", 403)
+
+
+def test_itunes_refusing_stays_a_refusal(podcast, fake_client):
+    fake_client.itunes_search.side_effect = httpx.HTTPStatusError(
+        "403",
+        request=httpx.Request("GET", "https://itunes.apple.com/search"),
+        response=httpx.Response(403),
+    )
+    with patch.object(
+        podcast_connector_mod.podcast_client, "get_client", return_value=fake_client
+    ), pytest.raises(httpx.HTTPStatusError) as caught:
+        podcast.search("anything")
+    assert source_failure.classify(caught.value).kind == "refused"
 
 
 def test_a_sentence_itunes_cannot_answer_falls_back_to_its_words(podcast, fake_client):

@@ -32,6 +32,7 @@ import logging
 import math
 from datetime import date, datetime, timedelta, timezone
 
+from googleapiclient.errors import HttpError
 from langchain_core.messages import HumanMessage
 from langgraph.graph import END, StateGraph
 
@@ -44,6 +45,7 @@ from app.agents.state import SearchAgentState
 from app.services import language_service, temporal_service, youtube_service
 from app.services.llm_service import get_llm_for, response_text
 from app.services.quota_service import QuotaExceededError
+from app.services.source_failure import SearchFailed
 from app.sources import connector_for
 from app.sources.types import Candidate, SourceMetadata
 from app.utils.youtube_helpers import format_duration
@@ -373,8 +375,12 @@ def plan_searches(state: SearchAgentState) -> dict:
     }
 
 
-def _run_broad_searches(queries: list[str], target: int) -> dict[str, dict]:
-    """Run each broad query against YouTube, deduping by video_id."""
+def _run_broad_searches(queries: list[str], target: int) -> tuple[dict[str, dict], Exception | None]:
+    """Run each broad query against YouTube, deduping by video_id.
+
+    Returns the videos and the last failure, if a query failed. The failure
+    is not raised here, since only the caller knows what else the search has.
+    """
     per_query_max = max(target * 3, 50)
     connector = connector_for("video")
     all_videos: dict[str, dict] = {}
@@ -399,12 +405,7 @@ def _run_broad_searches(queries: list[str], target: int) -> dict[str, dict]:
                 all_videos[vid] = v
         if len(all_videos) >= target * 5:
             break
-    # With nothing found a failure stays raised, so the run can tell "YouTube
-    # refused" from "nothing found" (T-1.5.14.1). With something found, the
-    # search goes on with what it has.
-    if failure is not None and not all_videos:
-        raise failure
-    return all_videos
+    return all_videos, failure
 
 
 def _keyword_score(text: str, keywords: list[str]) -> int:
@@ -521,7 +522,7 @@ def execute_searches(state: SearchAgentState) -> dict:
     # ['channelTypeUnspecified', 'any', 'show']. Don't forward user-facing
     # semantic filters to the API — let the rank prompt use them.
 
-    all_videos: dict[str, dict] = _run_broad_searches(queries, target)
+    all_videos, broad_failure = _run_broad_searches(queries, target)
 
     # Preferred-channel path: walks uploads directly, sidestepping the
     # "stuff channel names into the search query" pathology.
@@ -533,6 +534,15 @@ def execute_searches(state: SearchAgentState) -> dict:
         # the ranker knows this video comes from a channel the user asked for).
         for vid, v in preferred_videos.items():
             all_videos[vid] = v
+
+    # With nothing found a failure stays raised, so the run can tell "YouTube
+    # refused" from "nothing found" (T-1.5.14.1). With something found, from
+    # either path, the search goes on with what it has: search.list failing
+    # says nothing about the playlists a named channel is walked through.
+    if broad_failure is not None and not all_videos:
+        if isinstance(broad_failure, (QuotaExceededError, HttpError)):
+            raise broad_failure
+        raise SearchFailed("YouTube could not be searched") from broad_failure
 
     # Fetch detailed metadata for any video we haven't already enriched.
     missing_ids = [

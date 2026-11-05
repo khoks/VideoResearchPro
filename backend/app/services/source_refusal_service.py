@@ -1,15 +1,19 @@
 """When a source refuses this install, stop offering it (T-1.5.14.1).
 
-A 401 or 403 from a search says the service will not answer this install. It
-may want credentials the install does not have, or it may be blocking the
-address. Either way the next run would get the same answer, so the submit form
-stops offering the source until one of three things happens:
+A 401 or 403 from a source's search says the service will not answer this
+install. It may want credentials the install does not have, or it may be
+blocking the address. Either way the next run would get the same answer, so
+the submit form stops offering the source until one of three things happens:
 
 - the settings that reach it change, which is how credentials arrive;
 - ``HOLD_HOURS`` pass, because a block can lift with nothing changing here
   and nothing else would ever try again. The next run that names the source
   tries it, and a second refusal starts another hold;
 - a search answers, which a run sent straight to the API can do.
+
+A refusal about one target of a search is not this: one podcast's feed host,
+or one private subreddit, says nothing about the service, and a hold reaches
+every tenant. Connectors raise those as ``source_failure.SearchFailed``.
 
 A hold only takes the source off the form. ``POST /jobs`` still accepts it:
 that check reads settings, and a hold is one run's evidence, so an API caller

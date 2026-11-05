@@ -195,7 +195,7 @@ Overall app status plus a summary of LLM probe results.
 
 The `*_search_enabled` flags come from `job_source_types`, the same check that refuses a source on `POST /jobs`, so the submit form never offers what the API would reject (S-1.5.13). Mastodon and Bluesky are not set up when their base URL is blank (T-1.5.13.6).
 
-A source that answered a run's search with 401 or 403 is also on hold (T-1.5.14.1): its flag reads false and it is listed in `source_holds`, so the form stops offering it. A hold ends when the settings that reach the source change, after 24 hours, or when a search answers. `POST /jobs` still accepts a held source, since that check reads settings: the run tries it, and says so if it is refused again.
+A source that answered a run's search with 401 or 403 is also on hold (T-1.5.14.1): its flag reads false and it is listed in `source_holds`, so the form stops offering it. A hold ends when the settings that reach the source change, after 24 hours, or when a search answers. `POST /jobs` still accepts a held source, since that check reads settings: the run tries it, and says so if it is refused again. A 403 about one target of a search starts no hold, because a hold reaches every user: every feed a podcast search found refusing, or a `subreddit:name` topic naming a private subreddit, reads on the run as a failed search.
 
 ### `GET /api/v1/health/llm`
 Per-use-case LLM probe detail: the result of the startup smoke check (probes deduped by `(provider, model, vision)`; each use case reports its own reasoning level). `use_cases` is keyed by use-case name and is empty until the first probe completes.

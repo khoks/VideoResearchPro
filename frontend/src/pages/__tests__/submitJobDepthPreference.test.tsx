@@ -11,7 +11,9 @@
  * - `withPreferredDepth` ignoring `depthChosen` fails "lets Auto win" and "a
  *   duplicated run";
  * - the select's `onChange` not setting `depthChosen` fails "lets Auto win";
- * - `saveFormAsTemplate` reading the preference fails "freezes nothing".
+ * - `saveFormAsTemplate` reading the preference fails "freezes nothing";
+ * - `withPreferredDepth` dropping its job-type check fails "from the Channels tab",
+ *   "from the Subscription tab" and "leaves a Channels".
  */
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -73,8 +75,13 @@ const labelFor = (text: string) =>
 const depthField = () => host.querySelector<HTMLSelectElement>(`[id="${labelFor('Report depth')?.htmlFor}"]`)!;
 const topicInput = () => host.querySelector<HTMLInputElement>('input[placeholder^="e.g. Quantum"]')!;
 
-function type(el: HTMLInputElement, value: string) {
-  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!;
+const channelsField = () => host.querySelector<HTMLTextAreaElement>('textarea[placeholder^="@3blue1brown"]')!;
+const tab = (label: string) =>
+  Array.from(host.querySelectorAll<HTMLButtonElement>('[role="tab"]')).find((t) => t.textContent?.trim() === label)!;
+
+function type(el: HTMLInputElement | HTMLTextAreaElement, value: string) {
+  const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+  const setter = Object.getOwnPropertyDescriptor(proto, 'value')!.set!;
   act(() => {
     setter.call(el, value);
     el.dispatchEvent(new Event('input', { bubbles: true }));
@@ -195,6 +202,39 @@ describe('SubmitJobPage: the account default depth', () => {
     expect(depthField().value).toBe('standard');
   });
 
+  it.each([
+    ['Channels', 'channel'],
+    ['Subscription', 'subscription'],
+  ])('sends no depth from the %s tab, which shows none', async (label, jobType) => {
+    await mount('deep');
+    act(() => tab(label).click());
+    expect(labelFor('Report depth')).toBeUndefined();
+    type(channelsField(), '@3blue1brown');
+    await submit();
+    expect(submitted().job_type).toBe(jobType);
+    expect('output_length' in submitted()).toBe(false);
+  });
+
+  it('shows the preference again on coming back to the Topic tab', async () => {
+    await mount('deep');
+    act(() => tab('Channels').click());
+    act(() => tab('Topic').click());
+    expect(depthField().value).toBe('deep');
+  });
+
+  it("still copies a duplicated channel run's own depth: that one is the run's", async () => {
+    const job = {
+      id: 'j0',
+      job_type: 'channel',
+      channel_list: ['@3blue1brown'],
+      videos_per_channel: 10,
+      output_length: 'standard',
+    } as unknown as Job;
+    await mount('deep', { cloneFrom: job });
+    await submit();
+    expect(submitted().output_length).toBe('standard');
+  });
+
   it('freezes nothing in a saved template: a preference is one person\'s', async () => {
     createTemplate.mockResolvedValue({
       id: 't1',
@@ -235,6 +275,13 @@ describe('withPreferredDepth', () => {
 
   it('returns the form as it is with no preference', () => {
     expect(withPreferredDepth(DEFAULT_FORM, null)).toBe(DEFAULT_FORM);
+  });
+
+  it('leaves a Channels or Subscription form as it is: neither has the select', () => {
+    for (const jobType of ['channel', 'subscription'] as const) {
+      const form = { ...DEFAULT_FORM, jobType };
+      expect(withPreferredDepth(form, 'deep')).toBe(form);
+    }
   });
 
   it('never replaces a depth the form already holds', () => {

@@ -13,7 +13,9 @@
  * "goes straight to the library"; removing the mounted check fails "asks
  * nothing"; removing the stripe, or `askQuestion.isPending` from the input's
  * disabled state, fails "shows the direct ask running"; letting
- * `handleSkipAndAsk` rethrow fails "keeps the question".
+ * `handleSkipAndAsk` rethrow fails "keeps the question". Each control below dropping
+ * `asking` (the depth select, the language select, the depth note's Clear, the
+ * source chip's way out) fails "holds what the direct ask carries".
  */
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -73,12 +75,12 @@ const button = (label: string) =>
 
 const questionInput = () => host.querySelector<HTMLInputElement>('input[aria-label="Question"]')!;
 
-async function mountAndClarify() {
+async function mountPage(entry: string | { pathname: string; state: unknown } = '/library/qa') {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   act(() =>
     root.render(
       <QueryClientProvider client={qc}>
-        <MemoryRouter initialEntries={['/library/qa']}>
+        <MemoryRouter initialEntries={[entry]}>
           <Routes>
             <Route path="/library/qa" element={<LibraryQAPage />} />
           </Routes>
@@ -87,6 +89,9 @@ async function mountAndClarify() {
     ),
   );
   await flush();
+}
+
+async function sendToClarify() {
   typeInto(questionInput(), 'What changed in rates?');
   const form = host.querySelector('form')!;
   act(() => {
@@ -94,6 +99,24 @@ async function mountAndClarify() {
   });
   await flush();
   expect(clarifyMock).toHaveBeenCalledWith({ question: 'What changed in rates?' });
+}
+
+async function mountAndClarify() {
+  await mountPage();
+  await sendToClarify();
+}
+
+const depthSelect = () => host.querySelector<HTMLSelectElement>('select[aria-label="Answer depth"]')!;
+const languageSelect = () =>
+  Array.from(host.querySelectorAll('label'))
+    .find((l) => l.textContent?.includes('Answer language'))!
+    .querySelector('select')!;
+
+function choose(select: HTMLSelectElement, value: string) {
+  act(() => {
+    select.value = value;
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+  });
 }
 
 const answerFields = () =>
@@ -200,6 +223,33 @@ describe('LibraryQAPage when clarify fails', () => {
     await flush();
     expect(host.textContent).not.toContain('Searching the library and generating answer…');
     expect(questionInput().disabled).toBe(false);
+  });
+
+  it('holds what the direct ask carries while clarify runs, so it sends what the page shows', async () => {
+    let fail: (reason: Error) => void = () => undefined;
+    clarifyMock.mockReturnValue(new Promise((_, reject) => (fail = reject)));
+    await mountPage({ pathname: '/library/qa', state: { question: 'Seed', source: { id: 'd1', title: 'The memo' } } });
+    choose(depthSelect(), 'brief');
+    choose(languageSelect(), 'hi');
+    await sendToClarify();
+
+    expect(depthSelect().disabled).toBe(true);
+    expect(languageSelect().disabled).toBe(true);
+    expect(button('Clear').disabled).toBe(true);
+    expect(button('Ask the whole library').disabled).toBe(true);
+
+    await act(async () => fail(new Error('clarify is down')));
+    await flush();
+    expect(askMock).toHaveBeenCalledTimes(1);
+    expect(askMock).toHaveBeenCalledWith({
+      question: 'What changed in rates?',
+      answer_language: 'hi',
+      document_id: 'd1',
+      output_length: 'brief',
+    });
+    expect(depthSelect().disabled).toBe(false);
+    expect(languageSelect().disabled).toBe(false);
+    expect(button('Ask the whole library').disabled).toBe(false);
   });
 
   it('keeps the question when the direct ask fails too', async () => {

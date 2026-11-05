@@ -14,7 +14,8 @@
  * on 2026-11-04: `finishAsk` setting null in place of the reset fails "goes back to
  * the preference"; starting from the preference on a run with a depth fails
  * "leaves a run's own depth alone"; the card not passing `runDepth` fails "a run
- * asked for at Deep".
+ * asked for at Deep"; the offer not reading clarify's pending state fails "holds the
+ * offer".
  */
 import { act, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -30,6 +31,7 @@ import { useQACutOffStore } from '../../stores/qaCutOffStore';
 let job: Job;
 let history: QAExchange[] = [];
 let streamStatus = 0; // 0: the stream answers; otherwise it fails with this HTTP status
+let clarifyPending = false;
 const streamed: QARequest[] = [];
 const posted: QARequest[] = [];
 const clarify = vi.fn(async () => ({ interpretation: 'You mean tidal storage costs.', clarifications: [] }));
@@ -71,7 +73,7 @@ vi.mock('../../hooks/useQA', () => ({
     stage: null,
     isStreaming: false,
   }),
-  useClarifyQuestion: () => ({ mutateAsync: clarify, isPending: false }),
+  useClarifyQuestion: () => ({ mutateAsync: clarify, isPending: clarifyPending }),
   QAStreamHttpError: StreamError,
 }));
 vi.mock('../../hooks/useFeatureAvailable', () => ({ useFeatureAvailable: () => true }));
@@ -190,6 +192,7 @@ beforeEach(() => {
   history = [];
   useQACutOffStore.setState({ answers: {} });
   streamStatus = 0;
+  clarifyPending = false;
   streamed.length = 0;
   posted.length = 0;
   clarify.mockClear();
@@ -232,6 +235,15 @@ describe('JobDetailPage Q&A: a cut-off answer (T-1.15.4.5)', () => {
     job = { ...JOB, output_length: 'deep' };
     history = [CUT];
     useQACutOffStore.getState().note('q1', null);
+    mount();
+    expect(host.querySelector('#exchange-q1')!.textContent).toContain(NOTE);
+    expect(buttonLabelled(OFFER)).toBeUndefined();
+  });
+
+  it('holds the offer while clarify runs: its reply would land on the offered question', () => {
+    history = [CUT];
+    useQACutOffStore.getState().note('q1', null);
+    clarifyPending = true;
     mount();
     expect(host.querySelector('#exchange-q1')!.textContent).toContain(NOTE);
     expect(buttonLabelled(OFFER)).toBeUndefined();

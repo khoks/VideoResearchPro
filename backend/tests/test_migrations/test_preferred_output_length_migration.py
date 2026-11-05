@@ -10,7 +10,7 @@ from alembic import command
 from alembic.config import Config
 from sqlalchemy import create_engine, inspect, text
 
-PREVIOUS = "c62da1d081c6"
+PREVIOUS = "8e4b1f6c2a37"
 THIS = "869754146393"
 
 _BACKEND = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))

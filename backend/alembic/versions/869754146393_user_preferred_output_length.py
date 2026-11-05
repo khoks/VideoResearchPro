@@ -1,7 +1,7 @@
 """users.preferred_output_length: one person's default depth (T-1.15.3.9)
 
 Revision ID: 869754146393
-Revises: c62da1d081c6
+Revises: 8e4b1f6c2a37
 Create Date: 2026-11-04
 
 One additive, nullable column. NULL is Auto, which is every account until its
@@ -13,7 +13,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision = "869754146393"
-down_revision = "c62da1d081c6"
+down_revision = "8e4b1f6c2a37"
 branch_labels = None
 depends_on = None
 

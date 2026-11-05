@@ -125,7 +125,7 @@ Set the caller's default depth (T-1.15.3.9). Open to every tier.
 { "output_length": "deep" }
 ```
 
-`output_length` is `auto`, `brief`, `standard`, `deep` or null; `auto` and null clear it, and the response is then null. 422 for anything else. The server never applies this value: the submit form, the knowledge drawer and the Q&A panels start from it, and a request carries a depth only when the page's control shows one. So a request that omits `output_length` behaves the same with a preference set or not.
+`output_length` is `auto`, `brief`, `standard`, `deep` or null; `auto` and null clear it, and the response is then null. 422 for anything else. The server never applies this value: the submit form's Topic tab, the knowledge drawer and the Q&A panels start from it, and a request carries a depth only when the page's control shows one. So a request that omits `output_length` behaves the same with a preference set or not.
 
 ### `PUT /api/v1/auth/me/tier`
 Switch the caller's tier (mock payment, [D-050](decisions.md#d-050--self-service-tier-flip-with-mock-payment-until-e-53-stripe-ships-2026-05-15)). **Operator only** since T-5.2.8 ([D-111](decisions.md#d-111--operator-only-tier-switching-and-an-honest-pricing-page-2026-10-25)): any other account gets 403 `Only this install's operator can do this.` and nothing changes. Body `{ "tier": "free" | "pro" | "studio", "mock_payment"?: {...} }` (`mock_payment` is accepted and ignored); 422 for another tier. Returns `{ "tier", "message", "mock_payment_mode": true }` and writes a `tier_changed` audit event.

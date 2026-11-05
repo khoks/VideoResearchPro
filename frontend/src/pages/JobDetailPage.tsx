@@ -1210,7 +1210,7 @@ function QASection({ jobId, jobDepth }: { jobId: string; jobDepth?: string | nul
               key={qa.id}
               qa={qa}
               runDepth={runDepth}
-              onAskAgain={qaAvailable && !answering ? askAtDeep : undefined}
+              onAskAgain={qaAvailable && !answering && !clarifyQuestion.isPending ? askAtDeep : undefined}
             />
           ))}
         </QAThread>

@@ -50,7 +50,7 @@ export function DepthPreferenceCard() {
               maxWidth: '75ch',
             }}
           >
-            Where new runs, knowledge reports and questions start. Auto sizes each one to its material. A depth you
+            Where new topic runs, knowledge reports and questions start. Auto sizes each one to its material. A depth you
             pick on a page wins over this one, and so does the depth a run was given, on that run&apos;s page.
           </p>
         </div>

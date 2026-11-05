@@ -32,7 +32,7 @@ import {
   radius,
   space,
 } from '../theme';
-import type { AnswerLanguage, SourceScope } from '../types/qa';
+import type { AnswerLanguage, QAScope, SourceScope } from '../types/qa';
 import { buildClarifyContext } from '../utils/clarifyContext';
 import { withDepth } from '../utils/depth';
 
@@ -81,7 +81,10 @@ export function LibraryQAPage() {
   const scoped = (body: { question: string; answer_language: AnswerLanguage; context?: string }) =>
     source ? { ...body, document_id: source.id } : body;
 
-  const askInputDisabled = clarifyQuestion.isPending || askQuestion.isPending || !libraryQAAvailable;
+  // S-8.13.3: a failed clarify asks from the render that started it, so what that
+  // ask carries is held, not only the question: the page must show what it sends.
+  const asking = clarifyQuestion.isPending || askQuestion.isPending;
+  const askInputDisabled = asking || !libraryQAAvailable;
   const askButtonDisabled = askInputDisabled || !question.trim();
   const clarifyButtonsDisabled = askQuestion.isPending || !libraryQAAvailable;
 
@@ -109,14 +112,21 @@ export function LibraryQAPage() {
     resetToAsk();
   };
 
-  // T-1.15.4.5: a cut-off answer's offer; see `AnswerCutOffNote`.
+  // T-1.15.4.5: a cut-off answer's offer; see `AnswerCutOffNote`. Not while a
+  // clarify runs: its reply would land on the question the offer put here.
   const askAtDeep = (q: string) => {
     resetToAsk();
     setQuestion(q);
     setDepth('deep');
     setTimeout(() => questionInput.current?.focus(), 0);
   };
-  const askAgain = libraryQAAvailable && !askQuestion.isPending ? askAtDeep : undefined;
+  const askAgain = libraryQAAvailable && !asking ? askAtDeep : undefined;
+  // The offer only fills this composer, so the next ask runs over this page's
+  // scope. The history also holds shelf and one-source exchanges, and offering on
+  // those would widen or narrow the question without a word. They get the note
+  // alone, and their scope note links back to where they were asked.
+  const asksHere = (scope: QAScope | null | undefined) =>
+    !scope?.shelf_id && (scope?.document_id ?? null) === (source?.id ?? null);
 
   const handleAsk = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -267,6 +277,7 @@ export function LibraryQAPage() {
                 value={language}
                 onChange={(e) => setLanguage(e.target.value as AnswerLanguage)}
                 style={{ width: 'auto', minWidth: 140 }}
+                disabled={asking}
               >
                 {LANGUAGE_OPTIONS.map((opt) => (
                   <option key={opt.value} value={opt.value}>
@@ -293,14 +304,14 @@ export function LibraryQAPage() {
                 unsetLabel="Default"
                 aria-label="Answer depth"
                 title="Default: sized to how much of your library the question draws on."
-                disabled={askQuestion.isPending}
+                disabled={asking}
               />
             </label>
           </div>
         </div>
 
         {source && (
-          <SourceScopeChip source={source} onClear={() => setSource(null)} disabled={askQuestion.isPending} />
+          <SourceScopeChip source={source} onClear={() => setSource(null)} disabled={asking} />
         )}
 
         {step === 'ask' && (
@@ -323,7 +334,7 @@ export function LibraryQAPage() {
               </div>
             )}
             <DockedComposer>
-            <ComposerDepthNote depth={depth} onClear={() => setDepth(null)} />
+            <ComposerDepthNote depth={depth} onClear={() => setDepth(null)} disabled={asking} />
             <form
               onSubmit={handleAsk}
               style={{
@@ -400,7 +411,7 @@ export function LibraryQAPage() {
             }}
           >
             {history.map((qa) => (
-              <LibraryQAExchangeCard key={qa.id} qa={qa} onAskAgain={askAgain} />
+              <LibraryQAExchangeCard key={qa.id} qa={qa} onAskAgain={asksHere(qa.scope) ? askAgain : undefined} />
             ))}
           </QAThread>
         )}

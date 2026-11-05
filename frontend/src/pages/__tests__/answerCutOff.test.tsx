@@ -11,7 +11,12 @@
  * - any hook dropping `rememberCutOff` fails its "says so" test;
  * - `AnswerCutOffNote` keeping the offer at Deep fails "note alone";
  * - the offer sending an ask fails "fills the composer";
- * - `askAtDeep` not picking Deep fails the same test.
+ * - `askAtDeep` not picking Deep fails the same test;
+ * - `asksHere` always true fails "a shelf's answer", "another source" and "while
+ *   the page is on one source";
+ * - `asksHere` dropping its shelf check fails "a shelf's answer";
+ * - `asksHere` comparing nothing but "no source" fails "on that same source";
+ * - `askAgain` not reading `asking` fails "while clarify runs".
  */
 import { act, useEffect, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -73,6 +78,9 @@ import { useQACutOffStore } from '../../stores/qaCutOffStore';
 
 const QUESTION = 'What changed in rates?';
 const NOTE = 'This answer stopped at its length limit';
+const OFFER = 'Ask again at Deep depth';
+/** How the knowledge drawer lands on this page: asking about one source. */
+const ONE_SOURCE = { pathname: '/library/qa', state: { question: 'Seed', source: { id: 'd1', title: 'The RBI memo' } } };
 
 function stored(id: string): LibraryQAExchange {
   return { id, question: QUESTION, answer: 'The RBI cut', references: [], created_at: '2026-11-04T00:00:00Z', scope: null };
@@ -89,13 +97,13 @@ async function flush() {
   }
 }
 
-async function render(node: ReactNode) {
+async function render(node: ReactNode, entry: string | { pathname: string; state: unknown } = '/library/qa') {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   qc.setQueryData(['auth', 'me'], { preferred_output_length: null });
   act(() =>
     root.render(
       <QueryClientProvider client={qc}>
-        <MemoryRouter initialEntries={['/library/qa']}>
+        <MemoryRouter initialEntries={[entry]}>
           <Routes>
             <Route path="*" element={node} />
           </Routes>
@@ -134,6 +142,19 @@ function pickDepth(value: string) {
   });
 }
 
+async function submitQuestion() {
+  await act(async () => {
+    host.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+  });
+  await flush();
+}
+
+/** One card in the history, whose answer this session saw being cut. */
+function cutCard(scope: LibraryQAExchange['scope']) {
+  historyMock.mockResolvedValue([{ ...stored('e1'), scope }]);
+  useQACutOffStore.getState().note('e1', null);
+}
+
 /** Ask on the library page; the reply is `reply`, the refetch a stored row. */
 async function askLibrary(reply: Partial<LibraryQAExchange>, depth?: string) {
   historyMock.mockResolvedValueOnce([]).mockResolvedValue([stored('e1')]);
@@ -141,10 +162,7 @@ async function askLibrary(reply: Partial<LibraryQAExchange>, depth?: string) {
   await render(<LibraryQAPage />);
   if (depth) pickDepth(depth);
   type(libraryInput(), QUESTION);
-  await act(async () => {
-    host.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
-  });
-  await flush();
+  await submitQuestion();
   await press('Skip clarifications');
 }
 
@@ -209,6 +227,87 @@ describe('library Q&A', () => {
   it('offers Deep to an answer asked at Standard, not the next step up', async () => {
     await askLibrary({ answer_cut_off: true }, 'standard');
     expect(button('Ask again at Deep depth')).toBeDefined();
+  });
+
+  it("gives a shelf's answer the note alone: this page cannot ask over a shelf", async () => {
+    cutCard({ shelf_id: 's1' });
+    await render(<LibraryQAPage />);
+    expect(host.querySelector('#exchange-e1')!.textContent).toContain(NOTE);
+    expect(host.querySelector('[data-qa-scope]')!.textContent).toContain('Asked on shelf');
+    expect(button(OFFER)).toBeUndefined();
+  });
+
+  it("gives a shelf's answer the note alone even when it also named this page's source", async () => {
+    cutCard({ shelf_id: 's1', document_id: 'd1' });
+    await render(<LibraryQAPage />, ONE_SOURCE);
+    expect(host.querySelector('#exchange-e1')!.textContent).toContain(NOTE);
+    expect(button(OFFER)).toBeUndefined();
+  });
+
+  it("gives one source's answer the note alone on the whole library: the ask would widen", async () => {
+    cutCard({ document_id: 'd1' });
+    await render(<LibraryQAPage />);
+    expect(host.querySelector('#exchange-e1')!.textContent).toContain(NOTE);
+    expect(button(OFFER)).toBeUndefined();
+  });
+
+  it("gives another source's answer the note alone", async () => {
+    cutCard({ document_id: 'd2' });
+    await render(<LibraryQAPage />, ONE_SOURCE);
+    expect(button(OFFER)).toBeUndefined();
+  });
+
+  it('offers it on that same source, and the ask stays on the source', async () => {
+    cutCard({ document_id: 'd1' });
+    askMock.mockResolvedValue(stored('e2'));
+    await render(<LibraryQAPage />, ONE_SOURCE);
+    await press(OFFER);
+    expect(libraryInput().value).toBe(QUESTION);
+
+    await submitQuestion();
+    await press('Skip clarifications');
+    expect(askMock).toHaveBeenCalledTimes(1);
+    expect(askMock).toHaveBeenCalledWith({
+      question: QUESTION,
+      answer_language: 'en',
+      document_id: 'd1',
+      output_length: 'deep',
+    });
+  });
+
+  it('takes the offer back when the reader leaves that source', async () => {
+    cutCard({ document_id: 'd1' });
+    await render(<LibraryQAPage />, ONE_SOURCE);
+    expect(button(OFFER)).toBeDefined();
+    await press('Ask the whole library');
+    expect(button(OFFER)).toBeUndefined();
+  });
+
+  it("gives a whole-library answer the note alone while the page is on one source, or it would narrow", async () => {
+    cutCard(null);
+    await render(<LibraryQAPage />, ONE_SOURCE);
+    expect(host.querySelector('#exchange-e1')!.textContent).toContain(NOTE);
+    expect(button(OFFER)).toBeUndefined();
+
+    await press('Ask the whole library');
+    expect(button(OFFER)).toBeDefined();
+  });
+
+  it('holds the offer while clarify runs: its reply would land on the offered question', async () => {
+    cutCard(null);
+    let land: (value: unknown) => void = () => undefined;
+    clarifyMock.mockReturnValue(new Promise((resolve) => (land = resolve)));
+    await render(<LibraryQAPage />);
+    expect(button(OFFER)).toBeDefined();
+
+    type(libraryInput(), 'Another question');
+    await submitQuestion();
+    expect(host.querySelector('#exchange-e1')!.textContent).toContain(NOTE);
+    expect(button(OFFER)).toBeUndefined();
+
+    await act(async () => land({ interpretation: 'You mean the RBI.', clarifications: [] }));
+    await flush();
+    expect(button(OFFER)).toBeDefined();
   });
 });
 

@@ -185,6 +185,7 @@ export function ShelfQAPanel({ shelfId, shelfName }: { shelfId: string; shelfNam
                       value={language}
                       onChange={(e) => setLanguage(e.target.value as AnswerLanguage)}
                       style={{ width: 'auto', minWidth: 140 }}
+                      disabled={ask.isPending || clarify.isPending}
                     >
                       {LANGUAGE_OPTIONS.map((o) => (
                         <option key={o.value} value={o.value}>

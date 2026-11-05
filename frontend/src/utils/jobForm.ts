@@ -221,9 +221,15 @@ function outputLengthOf(value: string | null | undefined): OutputLength {
  * because a preference is not something the reader typed: it must not turn an
  * empty form into a draft, and a saved template must not freeze it. So only the
  * select and the run read this, and `formToTemplateParameters` reads the form.
+ *
+ * Topic runs only, because that is the tab with the select, and a request carries
+ * a depth only when the page shows one. A depth sent with a run is the run's own
+ * from then on: unseen on a Channels or Subscription form, it would set every
+ * answer and knowledge report on that run, and changing the preference back
+ * would not undo it.
  */
 export function withPreferredDepth(form: JobFormState, preferred: Depth | null): JobFormState {
-  return preferred && !form.depthChosen && form.outputLength === 'auto'
+  return preferred && form.jobType === 'topic' && !form.depthChosen && form.outputLength === 'auto'
     ? { ...form, outputLength: preferred }
     : form;
 }

@@ -17,7 +17,8 @@
  * T-1.15.4.6: the same depth control as the job and library panels. Mutation
  * checks, run by hand on 2026-11-04: `send` dropping `withDepth` fails "sends the
  * picked depth"; `send` not resetting fails "for that one ask"; dropping the
- * select's `disabled` fails "while the answer runs".
+ * select's `disabled` fails "while the answer runs"; dropping the language
+ * select's `disabled` fails "holds the language".
  */
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -305,6 +306,13 @@ describe('ShelfQAPanel', () => {
     expect(askMock).toHaveBeenCalledTimes(1);
     expect(askMock).toHaveBeenCalledWith('s1', { question: 'What about rates?', answer_language: 'en' });
     expect(host.querySelector('textarea')!.value).toBe('');
+  });
+
+  it('holds the language while clarify runs: a failed clarify asks with it', async () => {
+    clarifyMock.mockReturnValue(new Promise(() => undefined));
+    await clarifyQuestion();
+    const label = Array.from(host.querySelectorAll('label')).find((l) => l.textContent?.includes('Answer in'));
+    expect(host.querySelector<HTMLSelectElement>(`[id="${label?.htmlFor}"]`)!.disabled).toBe(true);
   });
 
   it('shows the direct ask running', async () => {

@@ -7,7 +7,9 @@
  * The offer fills the composer and picks Deep; it does not ask. A question goes
  * through its page's own scope and clarify step, and what the reader told the
  * clarify step the first time is not stored, so re-sending it blind could answer
- * a different question. Nothing is spent until they press Ask.
+ * a different question. Nothing is spent until they press Ask. The next ask runs
+ * over the page's scope, so a page offers this only on a card asked over that
+ * same scope.
  *
  * Shows nothing for an answer this session did not see being cut, which is every
  * answer after a reload (`qaCutOffStore`).
@@ -24,7 +26,10 @@ interface Props {
   exchangeId: string;
   /** The depth an ask that carried none ran at: a run's own, on the job page. */
   inheritedDepth?: Depth | null;
-  /** Left out while asking is unavailable or an answer is on its way. */
+  /**
+   * Left out while asking is unavailable, while a question or an answer is on its
+   * way, and on a card asked over a different scope from the page's.
+   */
   onAskAgain?: () => void;
 }
 

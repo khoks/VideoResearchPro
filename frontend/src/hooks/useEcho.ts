@@ -351,6 +351,9 @@ export function useCreateDraft() {
   return useMutation({
     mutationFn: (payload: CreateDraftPayload) => echoApi.createDraft(payload),
     onSettled: () => qc.invalidateQueries({ queryKey: DRAFTS_KEY }),
+    // The panel answers each failure, in better words than the global toast has
+    // for a request that got no answer at all (T-3.4.1.15).
+    meta: { errorsShownHere: true },
   });
 }
 

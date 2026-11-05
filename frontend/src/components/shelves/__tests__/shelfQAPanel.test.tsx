@@ -22,6 +22,7 @@
  */
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
+import { AxiosError, AxiosHeaders } from 'axios';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -306,6 +307,17 @@ describe('ShelfQAPanel', () => {
     expect(askMock).toHaveBeenCalledTimes(1);
     expect(askMock).toHaveBeenCalledWith('s1', { question: 'What about rates?', answer_language: 'en' });
     expect(host.querySelector('textarea')!.value).toBe('');
+  });
+
+  it('asks nothing when clarify failed because the session ended (T-5.4.22)', async () => {
+    const headers = new AxiosHeaders();
+    clarifyMock.mockRejectedValue(
+      new AxiosError('refused', 'ERR_BAD_REQUEST', undefined, undefined, {
+        status: 401, statusText: '', headers, config: { headers }, data: { detail: 'Could not validate credentials' },
+      }),
+    );
+    await clarifyQuestion();
+    expect(askMock).not.toHaveBeenCalled();
   });
 
   it('holds the language while clarify runs: a failed clarify asks with it', async () => {

@@ -300,7 +300,7 @@ A small, opinionated set of primitives lives at `frontend/src/components/primiti
 | Charts (`components/charts/`) | `ColumnChart` (single or stacked columns over an ordered axis: ≤24px marks with a 4px rounded data-end and square baseline, 2px surface gaps, hairline grid, a legend only for ≥2 series, a hover and keyboard readout — focus the chart, then ←/→, Home, End, Escape — and a **Show as table** view), `BarList` (ranked horizontal bars, value at the tip, rows that open for drill-down), `ChartTable`. Colours come from `chartColors` (§1.1); text never wears them. |
 | `LabelPill` | A user-applied label (shelf, tag) in one of the ten label-palette colours (§1.1): bordered pill, text always present. Optional `to` (router link, clicks never bubble to an enclosing card) and `onRemove` (a small ×). |
 | `StatusPill` | Specialized Badge with semantic statuses for jobs (pending, searching, awaiting_approval, etc.). |
-| `Tabs`, `Tab` | Underlined active tab in `accent`, on the library, submit and channel pages. The active tab and its panel are the parent's state. Reached with the Tab key; arrow keys are not wired. Echo's mode switch keeps its own pill-shaped `ModeTab`, the only one of its look. |
+| `Tabs`, `Tab` | Underlined active tab in `accent`, on the library, submit and channel pages. The active tab and its panel are the parent's state. One stop for the Tab key, on the active tab; the arrow keys, Home and End move along the row, wrap, and open the tab they land on (the ARIA tabs pattern with a roving tabindex). Echo's mode switch keeps its own pill-shaped `ModeTab`, the only one of its look. |
 | `Modal` | Centered, `surface` fill, `shadow.floating`, focus trap, ESC-to-close, scroll lock on body. |
 | `Drawer` | Slides from right, `shadow.floating`, focus trap. Not a primitive yet: `VideoKnowledgeDrawer` is its own component. |
 | `Tooltip` | Not a primitive: controls use the `title` attribute, and the one custom hover card (`CitationCard`) has no second call site to share it with. |
@@ -330,10 +330,11 @@ Driven by `useSystemStatus()` (polls `/api/v1/health` every 60 s).
 - **LLM degraded or down** → `SystemStatusBanner` with the status, the `unavailable_features` list and **Retry now**. It sits above the page. `/account/system` has the detail.
 - **YouTube quota** → no banner. `/account/system` shows today's usage; the submit form shows an estimate of the one run.
 - **Network** → no banner. Requests fail with a toast until the backend returns.
+- **A share waiting on this device** → `WaitingShareNotice`, a line under the status banner with **Review it**, on every page but `/` and the review page, which have the share in hand already. A link and nothing more: it moves nobody, and posts nothing.
 
 ### 4.3. Toast queue
 
-Triggered by errors (the React Query caches' global `onError`), and by success notifications from the action that succeeded. The rules are in `components/primitives/Toast.tsx` and `stores/jobStore.ts`.
+Triggered by errors (the React Query caches' global `onError`, in `services/queryClient.ts`), and by success notifications from the action that succeeded. A mutation whose caller answers every failure sets `meta: { errorsShownHere: true }`, or the reader gets two toasts. A 401 shows none: the reader is on the way to the sign-in page. The rules are in `components/primitives/Toast.tsx` and `stores/jobStore.ts`.
 
 ---
 

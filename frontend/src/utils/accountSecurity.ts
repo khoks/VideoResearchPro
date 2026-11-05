@@ -69,21 +69,6 @@ export function groupKey(secret: string): string {
   return secret.replace(/\s+/g, '').replace(/(.{4})(?=.)/g, '$1 ');
 }
 
-/**
- * The public sign-in pages. A 401 there is the page's own answer (wrong
- * password, wrong code, a refused OAuth sign-in), so the API client must
- * not bounce the reader to /login and lose the message.
- */
-export function isPublicAuthPath(path: string): boolean {
-  return (
-    path === '/login' ||
-    path.startsWith('/login/') ||
-    path === '/register' ||
-    path === '/forgot-password' ||
-    path === '/reset-password'
-  );
-}
-
 const PROVIDER_NAMES: Record<string, string> = { google: 'Google', github: 'GitHub' };
 
 export function providerName(provider: string): string {

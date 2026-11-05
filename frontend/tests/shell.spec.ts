@@ -1,8 +1,9 @@
 /**
- * The app shell in a real browser: a deep link through sign-in (T-5.4.20) and
- * the error screen (T-4.11.2.3). The vitest suites settle everything between
- * steps, so a race between the route guard and a sign-in page, or the real
- * trip through an OAuth provider, can only show here.
+ * The app shell in a real browser: a deep link through sign-in (T-5.4.20), a
+ * session that expires under an open page (T-5.4.22), the error screen
+ * (T-4.11.2.3) and the tab keyboard (T-2.2.5). The vitest suites settle
+ * everything between steps, so a race between the route guard and a sign-in
+ * page, or the real trip through an OAuth provider, can only show here.
  * Hermetic like palette.spec.ts: `/api/v1` from fixtures, WebSocket closed. The
  * "provider" is a redirect straight back to the app's callback address, so the
  * page really does unload and load again.
@@ -149,6 +150,159 @@ test('a sign-out in another tab leaves no page behind here either', async ({ pag
   await expect(page).toHaveURL(/\/login$/);
   await signIn(page);
   await expect(page).toHaveURL(/\/submit$/);
+});
+
+test.describe('a session that expires while a page is open', () => {
+  const OLD_TOKEN = 'fixture-token-yesterday';
+  const REFUSED = 'Could not validate credentials';
+
+  /** Yesterday's token, in this tab's storage on its first load only. */
+  async function holdYesterdaysToken(page: Page) {
+    await page.addInitScript((token) => {
+      if (!window.sessionStorage.getItem('booted')) {
+        window.sessionStorage.setItem('booted', '1');
+        window.localStorage.setItem('videoresearchpro.authToken', token);
+      }
+    }, OLD_TOKEN);
+  }
+
+  /** From now on the server refuses yesterday's token, and only that one. */
+  async function serverStopsAccepting(page: Page) {
+    await page.route('**/api/v1/**', (route) => {
+      if (route.request().headers().authorization === `Bearer ${OLD_TOKEN}`) {
+        return route.fulfill({ status: 401, json: { detail: REFUSED } });
+      }
+      return route.fallback();
+    });
+  }
+
+  async function askAQuestion(page: Page) {
+    await page.getByPlaceholder('Ask a question about the research…').fill('What does a lagoon cost?');
+    await page.getByRole('button', { name: 'Ask', exact: true }).click();
+  }
+
+  test('an email link a day later comes back to its page', async ({ page }) => {
+    await holdYesterdaysToken(page);
+    await boot(page);
+    await serverStopsAccepting(page);
+    await page.goto(DEEP);
+    await expect(page).toHaveURL(/\/login$/);
+    await expect(page.getByText(REFUSED)).toHaveCount(0);
+    await signIn(page);
+    await arriveAtTheRun(page);
+  });
+
+  test('an old tab comes back to its page, with no error on the way', async ({ page }) => {
+    await holdYesterdaysToken(page);
+    await boot(page);
+    await page.goto(DEEP);
+    await arriveAtTheRun(page);
+
+    await serverStopsAccepting(page);
+    await askAQuestion(page);
+    await expect(page).toHaveURL(/\/login$/);
+    await expect(page.getByText(REFUSED)).toHaveCount(0);
+    await signIn(page);
+    await arriveAtTheRun(page);
+  });
+
+  test('the streaming ask, which does not use the API client, ends the session the same way', async ({ page }) => {
+    await holdYesterdaysToken(page);
+    await boot(page, { answers: { [`POST /api/v1/jobs/${JOB}/qa/clarify`]: { interpretation: 'Lagoon costs.', clarifications: [] } } });
+    await page.goto(DEEP);
+    await arriveAtTheRun(page);
+    await askAQuestion(page);
+
+    await serverStopsAccepting(page);
+    await page.getByRole('button', { name: 'Skip clarifications' }).click();
+    await expect(page).toHaveURL(/\/login$/);
+    await expect(page.getByText('Q&A stream request failed')).toHaveCount(0);
+    await signIn(page);
+    await arriveAtTheRun(page);
+  });
+
+  test('a wrong password stays put, shows the message and keeps the page', async ({ page }) => {
+    await holdYesterdaysToken(page);
+    await boot(page);
+    await serverStopsAccepting(page);
+    await page.goto(DEEP);
+    await expect(page).toHaveURL(/\/login$/);
+
+    let attempts = 0;
+    await page.route('**/api/v1/auth/login', (route) => {
+      attempts += 1;
+      if (attempts === 1) return route.fulfill({ status: 401, json: { detail: 'Invalid email or password' } });
+      return route.fallback();
+    });
+    let loads = 0;
+    page.on('load', () => (loads += 1));
+    await signIn(page);
+    await expect(page.getByText('Invalid email or password')).toBeVisible();
+    await expect(page).toHaveURL(/\/login$/);
+    expect(loads, 'a wrong password does not reload the page').toBe(0);
+
+    await signIn(page);
+    await arriveAtTheRun(page);
+  });
+
+  test('across tabs: the tab that met the 401 keeps its page, the other cannot tell and gives its up', async ({ page, context }) => {
+    await holdYesterdaysToken(page);
+    await boot(page);
+    await page.goto(DEEP);
+    await arriveAtTheRun(page);
+
+    const other = await context.newPage();
+    await boot(other);
+    await other.goto(`/jobs/${JOB}`);
+    await expect(other.getByRole('heading', { level: 1 })).toContainText('pratidhvani smoke test');
+
+    await serverStopsAccepting(page);
+    await askAQuestion(page);
+    await expect(page).toHaveURL(/\/login$/);
+    await expect(other).toHaveURL(/\/login$/);
+
+    // Signing in there starts a session here too, and each goes where it may.
+    await signIn(other);
+    await expect(other).toHaveURL(/\/submit$/);
+    await arriveAtTheRun(page);
+  });
+});
+
+test('the tab bar is one stop, and the arrows, Home and End move along it', async ({ page }) => {
+  await page.addInitScript(() => window.localStorage.setItem('videoresearchpro.authToken', 'fixture-token'));
+  await boot(page);
+  await page.goto('/library');
+  const tabs = page.getByRole('tablist', { name: 'Library sections' }).getByRole('tab');
+  await expect(tabs).toHaveText(['Sources', 'Channels', 'Add sources']);
+
+  const channels = page.getByRole('tab', { name: 'Channels' });
+  const add = page.getByRole('tab', { name: 'Add sources' });
+  const sources = page.getByRole('tab', { name: 'Sources', exact: true });
+  await sources.focus();
+
+  await page.keyboard.press('ArrowRight');
+  await expect(channels).toBeFocused();
+  await expect(channels).toHaveAttribute('aria-selected', 'true');
+
+  await page.keyboard.press('End');
+  await expect(add).toBeFocused();
+  await expect(add).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByRole('tab', { selected: true })).toHaveCount(1);
+
+  await page.keyboard.press('ArrowRight');
+  await expect(sources).toBeFocused();
+  await expect(sources).toHaveAttribute('aria-selected', 'true');
+
+  await page.keyboard.press('ArrowLeft');
+  await expect(add).toBeFocused();
+  await page.keyboard.press('Home');
+  await expect(sources).toBeFocused();
+
+  // Tab leaves the row from the active tab, in one press.
+  await page.keyboard.press('Tab');
+  await expect(tabs.and(page.locator(':focus'))).toHaveCount(0);
+  await page.keyboard.press('Shift+Tab');
+  await expect(sources).toBeFocused();
 });
 
 test('a sign-in from a marketing page ends at the gate, not back on that page', async ({ page }) => {

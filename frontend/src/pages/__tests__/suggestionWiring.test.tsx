@@ -2,7 +2,9 @@
  * S-8.4.2 wiring: library Q&A mounts the suggestion card for its context,
  * a click fills its composer, and a question handed over from the
  * knowledge drawer (route state) arrives in the composer. These fail if the
- * card exists but no page uses it.
+ * card exists but no page uses it. T-8.13.4.2: the card goes while clarify runs,
+ * or a click would change the question under clarify's reply. Mutation check, run
+ * by hand on 2026-11-05: `{!askQuestion.isPending && <SuggestionCard` fails it.
  */
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -14,6 +16,7 @@ import type { SuggestionsResponse } from '../../services/suggestionsApi';
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 const getMock = vi.fn<(context: string) => Promise<SuggestionsResponse>>();
+let clarifyPending = false;
 vi.mock('../../services/suggestionsApi', () => ({
   suggestionsApi: { get: (c: string) => getMock(c), feedback: async () => undefined },
 }));
@@ -21,7 +24,7 @@ vi.mock('../../hooks/useLibrary', () => ({ useLibraryVideos: () => ({ data: [{ i
 vi.mock('../../hooks/useLibraryQA', () => ({
   useLibraryQAHistory: () => ({ data: [] }),
   useAskLibraryQA: () => ({ mutateAsync: vi.fn(async () => undefined), isPending: false }),
-  useClarifyLibraryQA: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useClarifyLibraryQA: () => ({ mutateAsync: vi.fn(), isPending: clarifyPending }),
 }));
 vi.mock('../../hooks/useFeatureAvailable', () => ({ useFeatureAvailable: () => true }));
 vi.mock('../../components/notes', () => ({ NotesPanel: () => null }));
@@ -59,6 +62,7 @@ async function mount(state?: unknown) {
 const composer = () => host.querySelector<HTMLInputElement>('form input, form textarea')!;
 
 beforeEach(() => {
+  clarifyPending = false;
   host = document.createElement('div');
   document.body.appendChild(host);
   root = createRoot(host);
@@ -77,6 +81,14 @@ afterEach(() => {
 });
 
 describe('LibraryQAPage suggestions', () => {
+  it('goes while clarify runs: a click would change the question under its reply', async () => {
+    await mount();
+    expect(host.textContent).toContain('What changed in agent tooling this year?');
+    clarifyPending = true;
+    await mount();
+    expect(host.textContent).not.toContain('What changed in agent tooling this year?');
+  });
+
   it('asks for the library context and a click fills the composer', async () => {
     await mount();
     expect(getMock).toHaveBeenCalledWith('library');

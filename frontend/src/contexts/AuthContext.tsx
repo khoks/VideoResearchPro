@@ -2,8 +2,11 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import type { ReactNode } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import api, { AUTH_TOKEN_KEY } from '../services/api';
+import { onSessionExpired } from '../services/sessionExpiry';
 import { clearPendingShares } from '../services/shareTarget';
 import { wsClient } from '../services/wsClient';
+import { useEchoPanelStore } from '../stores/echoPanelStore';
+import { useJobStore } from '../stores/jobStore';
 
 export interface AuthUser {
   id?: string;
@@ -38,9 +41,11 @@ interface AuthContextValue {
   token: string | null;
   isAuthenticated: boolean;
   /**
-   * A session ended while this tab was open, here or in another tab, and none
-   * has begun since. The next sign-in may be someone else's, so it starts at
-   * `/` rather than on the page that was left.
+   * A session ended while this tab was open, by a sign-out here or by anything
+   * in another tab, and none has begun since. The next sign-in may be someone
+   * else's, so it starts at `/` rather than on the page that was left. A session
+   * the server stopped accepting in this tab does not count: that reader never
+   * left, and gets the page back (T-5.4.22).
    */
   signedOut: boolean;
   isLoading: boolean;
@@ -91,7 +96,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [signedOut, setSignedOut] = useState(false);
 
   // Keep state in sync with storage if another tab logs out. A 401 there that
-  // drops the token reads the same from here, and is treated the same.
+  // drops the token reads the same from here, and is treated the same (D-140):
+  // this tab cannot tell them apart, so it gives up its page.
   useEffect(() => {
     const onStorage = (e: StorageEvent) => {
       if (e.key === AUTH_TOKEN_KEY) {
@@ -109,6 +115,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener('storage', onStorage);
   }, []);
 
+  // T-5.4.22: the server stopped accepting this session while a page was open.
+  // Nobody chose to leave, so `ProtectedRoute` carries the page to the sign-in.
+  // During a sign-out any request can come back 401 once the server has revoked
+  // the session, and that is still a sign-out, which leaves no page.
+  const signingOut = useRef(false);
+  useEffect(
+    () =>
+      onSessionExpired(() => {
+        localStorage.removeItem(USER_STORAGE_KEY);
+        setSignedOut(signingOut.current);
+        setToken(null);
+        setUser(null);
+      }),
+    [],
+  );
+
   // T-8.3.3.8: the socket outlives every page, so it closes here, on any way
   // a sign-in ends (this tab or another). The layout cannot do it: signing
   // out unmounts the layout, which only drops its listener.
@@ -121,7 +143,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // queries of its own, and this effect runs after theirs start.
   const hadToken = useRef(token);
   useEffect(() => {
-    if (hadToken.current && !token) queryClient.clear();
+    if (hadToken.current && !token) {
+      queryClient.clear();
+      // No page load follows, so what memory holds goes too: the Echo thread,
+      // and whatever a page said about the request that ended the session.
+      useEchoPanelStore.setState({ open: false, askText: '', turns: [] });
+      useJobStore.setState({ toasts: [] });
+    }
     hadToken.current = token;
   }, [token, queryClient]);
 
@@ -209,6 +237,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(async () => {
     let timer: ReturnType<typeof setTimeout> | undefined;
+    signingOut.current = true;
     try {
       // T-5.4.7: revoke the session row, so the token stops working even if
       // a copy of it outlives this browser's storage. Bounded twice: axios
@@ -230,6 +259,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setSignedOut(true);
       setToken(null);
       setUser(null);
+      signingOut.current = false;
     }
   }, []);
 

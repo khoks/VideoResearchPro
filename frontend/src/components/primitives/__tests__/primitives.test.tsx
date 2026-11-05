@@ -2,8 +2,13 @@
  * T-2.2.2 to T-2.2.4: the primitives the pages' own copies moved into. The
  * styles are pinned because the move had to leave every page rendering as it
  * did, and the device baselines do not reach the tab bars.
+ *
+ * T-2.2.5: the ARIA tabs keyboard on `Tabs`. Mutation checks, run by hand on
+ * 2026-11-05: `tabIndex` left off fails "is one stop"; the wrap taken out fails
+ * "wraps"; `preventDefault` gone fails "keeps the page still"; the modifier check gone
+ * fails "leaves a modifier to the browser"; `next.click()` gone fails "opens".
  */
-import { act, createRef } from 'react';
+import { act, createRef, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { IconButton, Tab, Tabs, ToastContainer } from '..';
@@ -24,6 +29,98 @@ afterEach(() => {
   act(() => root.unmount());
   host.remove();
   useJobStore.setState({ toasts: [] });
+});
+
+describe('Tabs keyboard', () => {
+  function Row({ onPick }: { onPick: (name: string) => void }) {
+    const [active, setActive] = useState('Sources');
+    return (
+      <Tabs label="Library sections">
+        {['Sources', 'Channels', 'Add'].map((name) => (
+          <Tab
+            key={name}
+            active={active === name}
+            onClick={() => {
+              setActive(name);
+              onPick(name);
+            }}
+          >
+            {name}
+          </Tab>
+        ))}
+      </Tabs>
+    );
+  }
+
+  const tabs = () => Array.from(host.querySelectorAll<HTMLButtonElement>('[role="tab"]'));
+  const named = (name: string) => tabs().find((t) => t.textContent === name)!;
+  const press = (key: string, init: KeyboardEventInit = {}) => {
+    const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...init });
+    act(() => {
+      (document.activeElement as HTMLElement).dispatchEvent(event);
+    });
+    return event;
+  };
+  const start = (from = 'Sources') => {
+    const onPick = vi.fn();
+    act(() => root.render(<Row onPick={onPick} />));
+    act(() => named('Sources').click());
+    if (from !== 'Sources') act(() => named(from).click());
+    onPick.mockClear();
+    act(() => named(from).focus());
+    return onPick;
+  };
+
+  it('is one stop for the Tab key, on the active tab', () => {
+    start('Channels');
+    expect(tabs().map((t) => t.tabIndex)).toEqual([-1, 0, -1]);
+  });
+
+  it('opens the next and the previous tab with the arrows, and focus goes along', () => {
+    const onPick = start();
+    press('ArrowRight');
+    expect(onPick).toHaveBeenLastCalledWith('Channels');
+    expect(document.activeElement).toBe(named('Channels'));
+    expect(named('Channels').getAttribute('aria-selected')).toBe('true');
+    expect(tabs().map((t) => t.tabIndex)).toEqual([-1, 0, -1]);
+    press('ArrowLeft');
+    expect(onPick).toHaveBeenLastCalledWith('Sources');
+    expect(document.activeElement).toBe(named('Sources'));
+  });
+
+  it('wraps at both ends', () => {
+    const onPick = start();
+    press('ArrowLeft');
+    expect(onPick).toHaveBeenLastCalledWith('Add');
+    press('ArrowRight');
+    expect(onPick).toHaveBeenLastCalledWith('Sources');
+  });
+
+  it('goes to the ends with Home and End', () => {
+    const onPick = start('Channels');
+    press('End');
+    expect(onPick).toHaveBeenLastCalledWith('Add');
+    expect(document.activeElement).toBe(named('Add'));
+    press('Home');
+    expect(onPick).toHaveBeenLastCalledWith('Sources');
+    expect(document.activeElement).toBe(named('Sources'));
+  });
+
+  it('keeps the page still for the keys it uses, and only those', () => {
+    start();
+    expect(press('End').defaultPrevented).toBe(true);
+    expect(press('Home').defaultPrevented).toBe(true);
+    expect(press('ArrowDown').defaultPrevented).toBe(false);
+    expect(press('Enter').defaultPrevented).toBe(false);
+  });
+
+  it.each([{ altKey: true }, { ctrlKey: true }, { metaKey: true }, { shiftKey: true }])('leaves a modifier to the browser: %j', (mod) => {
+    const onPick = start();
+    const event = press('ArrowRight', mod);
+    expect(onPick).not.toHaveBeenCalled();
+    expect(event.defaultPrevented).toBe(false);
+    expect(document.activeElement).toBe(named('Sources'));
+  });
 });
 
 describe('Tabs', () => {

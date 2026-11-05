@@ -219,6 +219,8 @@ frontend/
 │   │   ├── api.ts               # axios instance, token attach, error normalization
 │   │   ├── apiFiles.ts          # file downloads with the bearer header, opened from blob: URLs
 │   │   ├── wsClient.ts          # /ws/jobs WS with reconnect + heartbeat
+│   │   ├── sessionExpiry.ts     # what a 401 does: ends the session, keeps the page
+│   │   ├── queryClient.ts       # the app's one query client, with the global error toast
 │   │   └── *Api.ts              # one file per resource (jobsApi.ts, libraryApi.ts, etc.)
 │   ├── stores/                  # Zustand: UI state only (Echo panel, palette, reader, ...)
 │   ├── config/features.ts       # UI switches decided by the owner (visual analysis is off)

@@ -76,5 +76,7 @@ def configure_logging() -> None:
     root = logging.getLogger()
     root.handlers[:] = [handler]
     use_json_format(root)
+    # A library's DeprecationWarning would otherwise be a bare line on stderr.
+    logging.captureWarnings(True)
     for name in _UVICORN_LOGGERS:
         use_json_format(logging.getLogger(name))

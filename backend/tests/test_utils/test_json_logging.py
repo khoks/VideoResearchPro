@@ -8,7 +8,8 @@ Mutation checks (each failed the named test when this shipped): dropping the
 ``configure_logging`` call from ``app/__init__.py``
 (``test_the_api_writes_json_lines``), or moving it to the end of
 ``app/main.py``'s imports (the same test: passlib logs while they run);
-dropping it from ``alembic/env.py``
+dropping ``captureWarnings`` (the same test); dropping
+the call from ``alembic/env.py``
 (``test_json_survives_a_migration_at_startup``); not connecting
 ``after_setup_logger`` (``test_the_worker_writes_json_lines``); not connecting
 ``after_setup_task_logger`` (the same test); copying a record's ``job_id`` in
@@ -162,11 +163,14 @@ def _run(script: str, tmp_path: Path, log_format: str | None) -> list[str]:
 
 _API = """
 import logging
+import warnings
+
 import uvicorn
 
 config = uvicorn.Config("app.main:app", log_level="info")
 config.load()
 
+warnings.warn("from a library", FutureWarning)
 logging.getLogger("app.probe").info("from the app")
 try:
     raise ValueError("boom")
@@ -217,6 +221,8 @@ def test_the_api_writes_json_lines(tmp_path):
     assert ("uvicorn.access", '127.0.0.1:1 - "GET /x HTTP/1.1" 200') in by_logger
     failed = next(e for e in entries if e["message"] == "it failed")
     assert failed["level"] == "ERROR" and "ValueError: boom" in failed["exception"]
+    warned = next(e for e in entries if e["logger"] == "py.warnings")
+    assert "from a library" in warned["message"]
 
 
 def test_text_leaves_the_api_as_it_was(tmp_path):

@@ -12,7 +12,6 @@ export interface MfaCodeStepProps {
   mfaToken: string;
   /** The address typed at the first step, when there was one. */
   email?: string;
-  onSignedIn: () => void;
   /** Back to the first step: the ticket expired or the reader changed their mind. */
   onStartOver: () => void;
 }
@@ -26,9 +25,10 @@ const EXHAUSTED_DETAIL = 'Too many codes tried for this sign-in. Start over and 
  * one of the recovery codes shown when two-step verification was turned on.
  * Both go to `POST /auth/login/mfa`; a recovery code works once. The ticket
  * takes five codes (T-5.4.13); after that even the right one is refused, so
- * this step sends the reader back to the first one.
+ * this step sends the reader back to the first one. A code that works sets the
+ * session, and `PublicOnlyRoute` takes it from there.
  */
-export function MfaCodeStep({ mfaToken, email, onSignedIn, onStartOver }: MfaCodeStepProps) {
+export function MfaCodeStep({ mfaToken, email, onStartOver }: MfaCodeStepProps) {
   const c = useColors();
   const { completeMfa, isLoading } = useAuth();
   const [code, setCode] = useState('');
@@ -42,7 +42,6 @@ export function MfaCodeStep({ mfaToken, email, onSignedIn, onStartOver }: MfaCod
     const value = useRecovery ? code.trim() : code.replace(/\s+/g, '');
     try {
       await completeMfa(mfaToken, value, email);
-      onSignedIn();
     } catch (err) {
       const detail = isAxiosError(err) ? err.response?.data?.detail : undefined;
       if (detail === EXPIRED_DETAIL) {

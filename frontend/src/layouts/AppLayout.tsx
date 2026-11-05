@@ -1,6 +1,5 @@
 import { useState, type CSSProperties, type ReactNode } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { useQueryClient } from '@tanstack/react-query';
 import { useJobStore, type AppTab } from '../stores/jobStore';
 import { useAuth } from '../contexts/AuthContext';
 import { useSystemStatus } from '../hooks/useSystemStatus';
@@ -16,6 +15,7 @@ import { SearchButton } from '../components/palette/SearchButton';
 import { NotificationBell } from '../components/notifications/NotificationBell';
 import { useLiveNotifications } from '../hooks/useNotifications';
 import { useShowGettingStarted } from '../hooks/useOnboarding';
+import { IconButton } from '../components/primitives';
 import { useColors } from '../hooks/useTheme';
 import { fonts, fontSize, fontWeight, lineHeight, radius, space, motion } from '../theme';
 
@@ -37,7 +37,6 @@ export function AppLayout() {
   const theme = useJobStore((s) => s.theme);
   const toggleTheme = useJobStore((s) => s.toggleTheme);
   const { user, logout } = useAuth();
-  const queryClient = useQueryClient();
   const { refetch: refetchSystemStatus } = useSystemStatus();
   const { has, tier } = useTierCapabilities();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
@@ -71,10 +70,8 @@ export function AppLayout() {
 
   const handleLogout = async () => {
     // Revokes the session at the server first; a failed call still signs
-    // this browser out. The cache goes too, so the next account to sign in
-    // here never sees this one's data.
+    // this browser out.
     await logout();
-    queryClient.clear();
     navigate('/login', { replace: true });
   };
 
@@ -605,16 +602,12 @@ function HamburgerButton({ open, onClick }: { open: boolean; onClick: () => void
     transition: `transform ${motion.duration.fast}ms ${motion.easing.standard}, opacity ${motion.duration.fast}ms`,
   };
   return (
-    <button
-      type="button"
+    <IconButton
+      label={open ? 'Close navigation' : 'Open navigation'}
       onClick={onClick}
-      aria-label={open ? 'Close navigation' : 'Open navigation'}
       aria-expanded={open}
       style={{
-        background: 'transparent',
-        border: 'none',
         padding: space['2'],
-        cursor: 'pointer',
         display: 'flex',
         flexDirection: 'column',
         gap: 4,
@@ -624,6 +617,6 @@ function HamburgerButton({ open, onClick }: { open: boolean; onClick: () => void
       <span style={{ ...bar, transform: open ? 'translateY(6px) rotate(45deg)' : 'none' }} />
       <span style={{ ...bar, opacity: open ? 0 : 1 }} />
       <span style={{ ...bar, transform: open ? 'translateY(-6px) rotate(-45deg)' : 'none' }} />
-    </button>
+    </IconButton>
   );
 }

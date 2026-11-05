@@ -203,7 +203,7 @@ describe('ShelfQAPanel: answer depth', () => {
     type(host.querySelector('textarea')!, 'What about rates?');
     await press('Ask this shelf');
     await press('Skip clarifications');
-    await press('Edit');
+    await press('← Edit');
     expect(depthSelect()!.value).toBe('brief');
   });
 

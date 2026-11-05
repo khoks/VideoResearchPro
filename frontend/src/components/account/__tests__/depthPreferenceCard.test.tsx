@@ -4,9 +4,15 @@
  * every page reading `usePreferredDepth` without a refetch. Auto clears the
  * preference with an explicit `auto`.
  *
+ * `usePreferredDepth` subscribes to the `useMe` query and must never fetch on its
+ * own: `AppLayout` already does, so a page gains no request. It still needs the
+ * `queryFn`: without one TanStack logs an error in the console on every page, which
+ * the device suite showed and no vitest did, hence "fetches nothing".
+ *
  * Mutation checks, run by hand on 2026-11-04: sending `null` in place of `auto`
  * fails "Auto clears it" (the route takes both, so this pins the body we chose);
- * dropping the cache write fails "reaches the pages at once".
+ * dropping the cache write fails "reaches the pages at once"; removing the
+ * `queryFn` or `enabled: false` from `usePreferredDepth` fails "fetches nothing".
  */
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -80,6 +86,30 @@ beforeEach(() => {
 afterEach(() => {
   act(() => root.unmount());
   host.remove();
+});
+
+describe('usePreferredDepth', () => {
+  it('fetches nothing, logs nothing, and follows what the account query holds', async () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    act(() =>
+      root.render(
+        <QueryClientProvider client={client}>
+          <PageReading />
+        </QueryClientProvider>,
+      ),
+    );
+    await flush();
+    expect(reading()).toBe('none');
+    expect(getMock).not.toHaveBeenCalled();
+
+    act(() => client.setQueryData(['auth', 'me'], { preferred_output_length: 'brief' }));
+    await flush();
+    expect(reading()).toBe('brief');
+    expect(getMock).not.toHaveBeenCalled();
+    expect(logged).not.toHaveBeenCalled();
+    logged.mockRestore();
+  });
 });
 
 describe('DepthPreferenceCard', () => {

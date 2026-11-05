@@ -24,6 +24,11 @@ export interface MeResponse {
 
 export const ME_QUERY_KEY = ['auth', 'me'] as const;
 
+async function fetchMe(): Promise<MeResponse> {
+  const { data } = await api.get<MeResponse>('/auth/me');
+  return data;
+}
+
 /**
  * Fetch the current user from `/auth/me`. Returns the same shape the
  * backend ships, including `tier`. Cached for 30s; invalidate via
@@ -34,10 +39,7 @@ export function useMe() {
   const { isAuthenticated } = useAuth();
   return useQuery<MeResponse>({
     queryKey: ME_QUERY_KEY,
-    queryFn: async () => {
-      const { data } = await api.get<MeResponse>('/auth/me');
-      return data;
-    },
+    queryFn: fetchMe,
     enabled: isAuthenticated,
     staleTime: 30_000,
   });
@@ -52,7 +54,7 @@ export function useMe() {
  * touched the control (`useDepthChoice`).
  */
 export function usePreferredDepth(): Depth | null {
-  const { data } = useQuery<MeResponse>({ queryKey: ME_QUERY_KEY, enabled: false });
+  const { data } = useQuery<MeResponse>({ queryKey: ME_QUERY_KEY, queryFn: fetchMe, enabled: false });
   return depthOf(data?.preferred_output_length);
 }
 

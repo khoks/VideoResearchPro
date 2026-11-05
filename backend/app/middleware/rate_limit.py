@@ -33,6 +33,8 @@ Override knobs in ``settings``:
 - ``RATE_LIMIT_REGISTER_PER_MIN`` — sensitive bucket for /auth/register.
 - ``TRUSTED_PROXY_IPS`` — whose ``X-Forwarded-For`` picks the per-IP
   bucket (``app/utils/client_ip.py``). Unset, the socket peer does.
+
+An IPv6 caller's per-IP bucket is its /64 (T-5.5.9, ``rate_limit_bucket``).
 """
 from __future__ import annotations
 
@@ -47,7 +49,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.config import settings
 from app.services.rate_limit_service import RateLimit, check_and_consume
-from app.utils.client_ip import client_ip
+from app.utils.client_ip import client_ip, rate_limit_bucket
 
 logger = logging.getLogger(__name__)
 
@@ -172,12 +174,13 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         ip = _client_ip(request)
+        bucket = rate_limit_bucket(ip)
 
         # 1. Sensitive-path bucket — applies BEFORE per-user bucket.
         sensitive = _match_sensitive(path)
         if sensitive is not None:
             ns, lim = sensitive
-            key = f"ip:{ip}:{ns}"
+            key = f"ip:{bucket}:{ns}"
             allowed, count, retry_after = check_and_consume(key, lim)
             if not allowed:
                 logger.info(
@@ -205,7 +208,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 requests=settings.RATE_LIMIT_PER_MIN_UNAUTH,
                 window_sec=60,
             )
-            key = f"ip:{ip}:default"
+            key = f"ip:{bucket}:default"
 
         allowed, count, retry_after = check_and_consume(key, lim)
         if not allowed:

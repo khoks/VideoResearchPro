@@ -31,6 +31,7 @@ import logging
 from typing import TYPE_CHECKING
 
 from app.config import settings
+from app.utils.json_logging import route_model_libraries
 
 if TYPE_CHECKING:
     from sentence_transformers import SentenceTransformer
@@ -50,6 +51,8 @@ def get_embedding_model() -> "SentenceTransformer":
     """
     global _model
     if _model is None:
+        route_model_libraries()
+
         # Import here so that merely importing this module does not
         # trigger the heavy sentence-transformers import chain.
         from sentence_transformers import SentenceTransformer

@@ -15,6 +15,7 @@ from unittest.mock import patch
 import pytest
 
 from app.config import settings
+from app.middleware.content_security_policy import FILE_POLICY
 from app.sources.types import ExtractedText
 
 
@@ -138,6 +139,9 @@ def test_pdf_bytes_are_served_only_to_a_tenant_who_ingested_them(client, db, upl
     own = client.get(f"/api/v1/library/pdf/{digest}.pdf")
     assert own.status_code == 200, own.text
     assert own.headers["content-type"] == "application/pdf"
+    # An attachment, and the app shows it from a blob: URL (apiFiles.ts).
+    assert own.headers["content-disposition"].startswith("attachment")
+    assert own.headers["content-security-policy"] == FILE_POLICY
 
     other = auth_service.create_user(db, email="other@example.com", password="testpass123")
     token, _ = auth_service.create_access_token(other.id)

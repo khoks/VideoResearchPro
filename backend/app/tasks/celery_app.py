@@ -2,11 +2,27 @@ import logging
 import sys
 
 from celery import Celery
-from celery.signals import worker_process_init, worker_ready
+from celery.signals import after_setup_logger, after_setup_task_logger, worker_process_init, worker_ready
+from celery.utils.log import get_multiprocessing_logger
 
 from app.config import settings
+from app.utils.json_logging import json_logs_enabled, use_json_format
 
 logger = logging.getLogger(__name__)
+
+
+@after_setup_logger.connect
+@after_setup_task_logger.connect
+def _apply_log_format(logger: logging.Logger, **_kwargs) -> None:
+    """T-4.11.2.2: Celery sets up its own handlers in the worker and in beat,
+    whatever the API did, so LOG_FORMAT=json is applied here. Celery's start
+    banner is printed, not logged, and stays as it is."""
+    if not json_logs_enabled():
+        return
+    use_json_format(logger)
+    pool_logger = get_multiprocessing_logger()
+    if pool_logger is not None:
+        use_json_format(pool_logger)
 
 celery_app = Celery(
     "videoresearchpro",

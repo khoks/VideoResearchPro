@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import time
 from collections import defaultdict
 from collections.abc import Collection, Iterable
 
@@ -24,8 +25,14 @@ _RECONNECT_DELAY_SECONDS = 5
 # T-5.4.19: how often open sockets are checked against the sessions table. A
 # revocation normally closes its socket at once over pub/sub; this bounds the
 # case where that message never arrived (Redis down when it was published, or
-# this process between two subscriptions).
+# this process between two subscriptions). T-5.4.21: the same tick closes a
+# socket whose token has expired, so that happens within this long of `exp`.
 _SESSION_RECHECK_SECONDS = 60
+
+
+def _now() -> float:
+    """Epoch seconds, the unit of a token's ``exp``. A seam for the tests."""
+    return time.time()
 
 
 def _revoked_among(jtis: Collection[str]) -> set[str]:
@@ -57,6 +64,11 @@ class ConnectionManager:
     closes the sockets it holds on those sessions with 1008. A periodic look
     at the sessions table is the net under pub/sub, so with Redis down a
     revoked socket closes within ``_SESSION_RECHECK_SECONDS``.
+
+    Since T-5.4.21 it also ends with its token. Each socket is held with the
+    token's ``exp``, and the same tick closes one past it with 1008. That
+    compares a number held here, so it needs neither the table nor Redis and
+    goes on working while either is down.
     """
 
     def __init__(self):
@@ -67,6 +79,10 @@ class ConnectionManager:
         # T-5.4.19: socket -> (tenant_id, jti) of the session that opened it.
         # A token with no `jti` predates sessions: nothing can revoke it.
         self._sessions: dict[WebSocket, tuple[str, str]] = {}
+        # T-5.4.21: socket -> the `exp` of the token that opened it, in epoch
+        # seconds. Kept apart from `_sessions`, since a token with no `jti`
+        # still expires.
+        self._expiries: dict[WebSocket, float] = {}
         self._session_check_task: asyncio.Task | None = None
         self._closing: set[asyncio.Task] = set()
         self._redis_task: asyncio.Task | None = None
@@ -78,15 +94,21 @@ class ConnectionManager:
         *,
         tenant_id: str | None = None,
         jti: str | None = None,
+        expires_at: float | None = None,
     ) -> None:
         """Accept a WebSocket connection and start Redis listener if needed.
-        ``tenant_id`` and ``jti`` name the session its token authenticated."""
+        ``tenant_id`` and ``jti`` name the session its token authenticated,
+        and ``expires_at`` is that token's ``exp``."""
         await websocket.accept()
         self._global_connections.add(websocket)
         if tenant_id and jti:
             self._sessions[websocket] = (tenant_id, jti)
-            if self._session_check_task is None or self._session_check_task.done():
-                self._session_check_task = asyncio.create_task(self._session_check_loop())
+        if expires_at is not None:
+            self._expiries[websocket] = expires_at
+        if self._has_timed_sockets() and (
+            self._session_check_task is None or self._session_check_task.done()
+        ):
+            self._session_check_task = asyncio.create_task(self._session_check_loop())
         if self._redis_task is None or self._redis_task.done():
             self._redis_task = asyncio.create_task(self._redis_listener())
 
@@ -94,6 +116,7 @@ class ConnectionManager:
         """Remove WebSocket from all subscriptions."""
         self._global_connections.discard(websocket)
         self._sessions.pop(websocket, None)
+        self._expiries.pop(websocket, None)
         for job_id in list(self._connections.keys()):
             self._connections[job_id].discard(websocket)
             if not self._connections[job_id]:
@@ -130,8 +153,9 @@ class ConnectionManager:
     async def close_sessions(self, tenant_id: str, jtis: Collection[str]) -> None:
         """Close the sockets this process holds on ``jtis`` of ``tenant_id``.
         The message goes to every process, so most hold none of them."""
-        await self._close_revoked(
-            ws for ws, (owner, jti) in list(self._sessions.items()) if owner == tenant_id and jti in jtis
+        await self._close_sockets(
+            (ws for ws, (owner, jti) in list(self._sessions.items()) if owner == tenant_id and jti in jtis),
+            reason="Session revoked",
         )
 
     async def close_revoked_sessions(self) -> None:
@@ -145,9 +169,20 @@ class ConnectionManager:
         except Exception:
             logger.exception("ws: session re-check failed; will try again")
             return
-        await self._close_revoked(ws for ws, (_, jti) in list(self._sessions.items()) if jti in revoked)
+        await self._close_sockets(
+            (ws for ws, (_, jti) in list(self._sessions.items()) if jti in revoked),
+            reason="Session revoked",
+        )
 
-    async def _close_revoked(self, websockets: Iterable[WebSocket]) -> None:
+    async def close_expired_sockets(self) -> None:
+        """Close every socket whose token has passed its ``exp`` (T-5.4.21)."""
+        now = _now()
+        await self._close_sockets(
+            (ws for ws, expires_at in list(self._expiries.items()) if expires_at <= now),
+            reason="Session expired",
+        )
+
+    async def _close_sockets(self, websockets: Iterable[WebSocket], *, reason: str) -> None:
         """Close them side by side: a close waits for the client's answer, up
         to the server's timeout, and one that never answers holds up nobody
         else."""
@@ -156,16 +191,23 @@ class ConnectionManager:
             # Dropped first, so it hears nothing more whatever close does.
             await self.disconnect(websocket)
             try:
-                await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Session revoked")
+                await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason=reason)
             except Exception:
-                logger.debug("ws: socket already gone when its session was revoked")
+                logger.debug("ws: socket already gone when its session ended")
 
         await asyncio.gather(*(_close(ws) for ws in websockets))
 
+    def _has_timed_sockets(self) -> bool:
+        """Whether any socket has a session to re-check or a token to outlive."""
+        return bool(self._sessions or self._expiries)
+
     async def _session_check_loop(self) -> None:
-        """Background task: runs while any socket holds a session."""
-        while self._sessions:
+        """Background task: runs while any socket holds a session or a token
+        that can expire. Expiry goes first: it never touches the database, so
+        a failing read cannot hold it up."""
+        while self._has_timed_sockets():
             await asyncio.sleep(_SESSION_RECHECK_SECONDS)
+            await self.close_expired_sockets()
             await self.close_revoked_sessions()
 
     async def broadcast_to_user(self, tenant_id: str, message: dict) -> None:

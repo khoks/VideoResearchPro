@@ -173,6 +173,7 @@ def test_account_events_leave_out_the_analytics_events():
 def _google(monkeypatch):
     monkeypatch.setattr(settings, "OAUTH_GOOGLE_CLIENT_ID", "google-client-id")
     monkeypatch.setattr(settings, "OAUTH_GOOGLE_CLIENT_SECRET", "google-secret")
+    monkeypatch.setattr(settings, "OAUTH_ALLOWED_REDIRECT_ORIGINS", "https://app.example.com")
 
 
 def _google_callback(client, db, monkeypatch, email: str):

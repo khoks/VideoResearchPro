@@ -30,12 +30,12 @@ function resolveWsUrl(): string {
  * to the user the token names. A socket is opened with one sign-in's token:
  * `AuthProvider` calls `disconnect()` when the token goes away, and `connect()`
  * replaces a socket whose token is no longer the stored one, so a tab never
- * keeps the old identity. A session revoked from another device is closed by
- * the server (T-5.4.19) with code 1008, after which this client does not
- * reconnect: the token would be refused, and the page's next HTTP call gets a
- * 401 and signs out.
+ * keeps the old identity. A session revoked from another device (T-5.4.19) or
+ * a token that has expired (T-5.4.21) is closed by the server with code 1008,
+ * after which this client does not reconnect: the token would be refused, and
+ * the page's next HTTP call gets a 401 and signs out.
  */
-/** What the server closes an open socket with when its session is revoked. */
+/** What the server closes an open socket with when its session has ended. */
 const SESSION_REVOKED_CLOSE_CODE = 1008;
 
 export class WSClient {

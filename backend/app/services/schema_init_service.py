@@ -266,7 +266,10 @@ def ensure_schema_at_head(
     from alembic import command
 
     cfg = cfg or _alembic_config()
-    cfg.set_main_option("sqlalchemy.url", db_url)
+    # The Config is a ConfigParser, so a bare `%` starts an interpolation and
+    # raises. `alembic/env.py` reads the value back through it, which undoes
+    # the doubling (T-4.11.2.7).
+    cfg.set_main_option("sqlalchemy.url", db_url.replace("%", "%%"))
     upgrade_fn = upgrade_fn or command.upgrade
     stamp_fn = stamp_fn or command.stamp
 

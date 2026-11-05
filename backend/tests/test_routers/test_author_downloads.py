@@ -13,6 +13,7 @@ from unittest.mock import patch
 import pytest
 
 from app.config import settings
+from app.middleware.content_security_policy import FILE_POLICY
 from app.models.job import Job
 from app.models.output import Output
 from app.services import auth_service, output_artifacts, output_service
@@ -88,6 +89,7 @@ def test_binary_artifact_downloads_with_its_media_type(unauthenticated_client, d
     assert r.headers["content-type"] == PPTX
     assert r.content == b"PK\x03\x04 fake deck bytes"
     assert 'attachment; filename="rate-cuts-deck.pptx"' in r.headers["content-disposition"]
+    assert r.headers["content-security-policy"] == FILE_POLICY
 
 
 def test_book_text_and_extra_formats(unauthenticated_client, db, monkeypatch):

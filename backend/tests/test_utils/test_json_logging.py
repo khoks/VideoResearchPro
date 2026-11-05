@@ -221,8 +221,8 @@ def test_the_api_writes_json_lines(tmp_path):
     assert ("uvicorn.access", '127.0.0.1:1 - "GET /x HTTP/1.1" 200') in by_logger
     failed = next(e for e in entries if e["message"] == "it failed")
     assert failed["level"] == "ERROR" and "ValueError: boom" in failed["exception"]
-    warned = next(e for e in entries if e["logger"] == "py.warnings")
-    assert "from a library" in warned["message"]
+    warned = [e["message"] for e in entries if e["logger"] == "py.warnings"]
+    assert any("from a library" in message for message in warned), "other libraries warn on import too"
 
 
 def test_text_leaves_the_api_as_it_was(tmp_path):

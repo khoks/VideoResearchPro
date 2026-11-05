@@ -13,6 +13,7 @@ import { fonts, fontSize, space } from '../../theme';
 import { DEPTHS, depthLabel, depthOf, type Depth } from '../../utils/depth';
 
 interface Props {
+  id?: string;
   value: Depth | null;
   onChange: (depth: Depth | null) => void;
   /** What the first option, "no preference", is called here: "Default", "Auto". */
@@ -22,9 +23,10 @@ interface Props {
   disabled?: boolean;
 }
 
-export function DepthSelect({ value, onChange, unsetLabel, title, disabled, ...rest }: Props) {
+export function DepthSelect({ id, value, onChange, unsetLabel, title, disabled, ...rest }: Props) {
   return (
     <Select
+      id={id}
       aria-label={rest['aria-label']}
       title={title}
       value={value ?? ''}
@@ -50,7 +52,15 @@ export function DepthSelect({ value, onChange, unsetLabel, title, disabled, ...r
  * Nothing on Default. Shown under 640 px only (`.qa-composer-depth`, index.css):
  * on wide screens the select is already right above the composer.
  */
-export function ComposerDepthNote({ depth, onClear }: { depth: Depth | null; onClear: () => void }) {
+export function ComposerDepthNote({
+  depth,
+  onClear,
+  disabled,
+}: {
+  depth: Depth | null;
+  onClear: () => void;
+  disabled?: boolean;
+}) {
   const c = useColors();
   if (!depth) return null;
   return (
@@ -67,7 +77,7 @@ export function ComposerDepthNote({ depth, onClear }: { depth: Depth | null; onC
       }}
     >
       <span>Answer depth: {depthLabel(depth)}</span>
-      <Button size="sm" variant="tertiary" onClick={onClear}>
+      <Button size="sm" variant="tertiary" onClick={onClear} disabled={disabled}>
         Clear
       </Button>
     </div>

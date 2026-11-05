@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import api, { AUTH_TOKEN_KEY } from '../services/api';
 import { qaApi } from '../services/qaApi';
+import { rememberCutOff } from '../stores/qaCutOffStore';
 import type { ClarifyRequest, QAExchange, QARequest } from '../types/qa';
 
 export function useQAHistory(jobId: string | null) {
@@ -16,7 +17,10 @@ export function useAskQuestion(jobId: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (data: QARequest) => qaApi.ask(jobId, data),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['qaHistory', jobId] }),
+    onSuccess: (exchange, request) => {
+      rememberCutOff(exchange, request);
+      return queryClient.invalidateQueries({ queryKey: ['qaHistory', jobId] });
+    },
   });
 }
 
@@ -162,6 +166,7 @@ export function useAskQuestionStreaming(jobId: string) {
         if (!exchange) {
           throw new Error('Q&A stream ended without a completed answer.');
         }
+        rememberCutOff(exchange, data);
         queryClient.invalidateQueries({ queryKey: ['qaHistory', jobId] });
         return exchange;
       } finally {

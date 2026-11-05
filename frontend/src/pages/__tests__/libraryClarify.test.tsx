@@ -5,6 +5,17 @@
  * clarifications" sends no context. The backend half (the route folding
  * `context` into the agent's question) is pinned in
  * backend/tests/test_routers/test_library.py; this pins what the page sends.
+ *
+ * S-8.13.3: clarifying is optional, as on the shelf panel (D-132). A failed
+ * clarify becomes a direct ask with no context, and the reader sees that ask
+ * running. Before this, an outage in the optional step stopped the question.
+ * Mutation checks, run by hand on 2026-11-04: removing the direct ask fails
+ * "goes straight to the library"; removing the mounted check fails "asks
+ * nothing"; removing the stripe, or `askQuestion.isPending` from the input's
+ * disabled state, fails "shows the direct ask running"; letting
+ * `handleSkipAndAsk` rethrow fails "keeps the question". Each control below dropping
+ * `asking` (the depth select, the language select, the depth note's Clear, the
+ * source chip's way out) fails "holds what the direct ask carries".
  */
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -62,12 +73,14 @@ function typeInto(input: HTMLInputElement, value: string) {
 const button = (label: string) =>
   Array.from(host.querySelectorAll('button')).find((b) => b.textContent?.trim() === label) as HTMLButtonElement;
 
-async function mountAndClarify() {
+const questionInput = () => host.querySelector<HTMLInputElement>('input[aria-label="Question"]')!;
+
+async function mountPage(entry: string | { pathname: string; state: unknown } = '/library/qa') {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   act(() =>
     root.render(
       <QueryClientProvider client={qc}>
-        <MemoryRouter initialEntries={['/library/qa']}>
+        <MemoryRouter initialEntries={[entry]}>
           <Routes>
             <Route path="/library/qa" element={<LibraryQAPage />} />
           </Routes>
@@ -76,13 +89,34 @@ async function mountAndClarify() {
     ),
   );
   await flush();
-  typeInto(host.querySelector<HTMLInputElement>('input[aria-label="Question"]')!, 'What changed in rates?');
+}
+
+async function sendToClarify() {
+  typeInto(questionInput(), 'What changed in rates?');
   const form = host.querySelector('form')!;
   act(() => {
     form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
   });
   await flush();
   expect(clarifyMock).toHaveBeenCalledWith({ question: 'What changed in rates?' });
+}
+
+async function mountAndClarify() {
+  await mountPage();
+  await sendToClarify();
+}
+
+const depthSelect = () => host.querySelector<HTMLSelectElement>('select[aria-label="Answer depth"]')!;
+const languageSelect = () =>
+  Array.from(host.querySelectorAll('label'))
+    .find((l) => l.textContent?.includes('Answer language'))!
+    .querySelector('select')!;
+
+function choose(select: HTMLSelectElement, value: string) {
+  act(() => {
+    select.value = value;
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+  });
 }
 
 const answerFields = () =>
@@ -159,5 +193,83 @@ describe('LibraryQAPage clarify step', () => {
     const body = askMock.mock.calls[0][0];
     expect(body).toEqual({ question: 'What changed in rates?', answer_language: 'en' });
     expect('context' in body).toBe(false);
+  });
+});
+
+describe('LibraryQAPage when clarify fails', () => {
+  beforeEach(() => {
+    clarifyMock.mockReset();
+    clarifyMock.mockRejectedValue(new Error('clarify is down'));
+  });
+
+  it('goes straight to the library with no context, and clears the composer', async () => {
+    await mountAndClarify();
+
+    expect(askMock).toHaveBeenCalledTimes(1);
+    expect(askMock).toHaveBeenCalledWith({ question: 'What changed in rates?', answer_language: 'en' });
+    expect(button('Skip clarifications')).toBeUndefined();
+    expect(questionInput().value).toBe('');
+  });
+
+  it('shows the direct ask running, and takes no second question meanwhile', async () => {
+    let land: (value: unknown) => void = () => undefined;
+    askMock.mockReturnValue(new Promise((resolve) => (land = resolve)));
+    await mountAndClarify();
+
+    expect(host.textContent).toContain('Searching the library and generating answer…');
+    expect(questionInput().disabled).toBe(true);
+
+    await act(async () => land({ id: 'x2', question: 'q', answer: 'a', references: [], created_at: '2026-10-25T00:00:00Z' }));
+    await flush();
+    expect(host.textContent).not.toContain('Searching the library and generating answer…');
+    expect(questionInput().disabled).toBe(false);
+  });
+
+  it('holds what the direct ask carries while clarify runs, so it sends what the page shows', async () => {
+    let fail: (reason: Error) => void = () => undefined;
+    clarifyMock.mockReturnValue(new Promise((_, reject) => (fail = reject)));
+    await mountPage({ pathname: '/library/qa', state: { question: 'Seed', source: { id: 'd1', title: 'The memo' } } });
+    choose(depthSelect(), 'brief');
+    choose(languageSelect(), 'hi');
+    await sendToClarify();
+
+    expect(depthSelect().disabled).toBe(true);
+    expect(languageSelect().disabled).toBe(true);
+    expect(button('Clear').disabled).toBe(true);
+    expect(button('Ask the whole library').disabled).toBe(true);
+
+    await act(async () => fail(new Error('clarify is down')));
+    await flush();
+    expect(askMock).toHaveBeenCalledTimes(1);
+    expect(askMock).toHaveBeenCalledWith({
+      question: 'What changed in rates?',
+      answer_language: 'hi',
+      document_id: 'd1',
+      output_length: 'brief',
+    });
+    expect(depthSelect().disabled).toBe(false);
+    expect(languageSelect().disabled).toBe(false);
+    expect(button('Ask the whole library').disabled).toBe(false);
+  });
+
+  it('keeps the question when the direct ask fails too', async () => {
+    askMock.mockRejectedValue(new Error('the agent is down'));
+    await mountAndClarify();
+
+    expect(askMock).toHaveBeenCalledTimes(1);
+    expect(questionInput().value).toBe('What changed in rates?');
+    expect(questionInput().disabled).toBe(false);
+  });
+
+  it('asks nothing for a reader who has left the page', async () => {
+    let fail: (reason: Error) => void = () => undefined;
+    clarifyMock.mockReturnValue(new Promise((_, reject) => (fail = reject)));
+    await mountAndClarify();
+
+    act(() => root.unmount());
+    await act(async () => fail(new Error('clarify is down')));
+    await flush();
+    expect(askMock).not.toHaveBeenCalled();
+    root = createRoot(host);
   });
 });

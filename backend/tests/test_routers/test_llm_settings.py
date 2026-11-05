@@ -73,6 +73,21 @@ def test_estimate_endpoint_defaults(client, test_user):
     assert map_row["calls"] >= 6  # 1.34M corpus / <=120K budget
 
 
+def test_estimate_follows_the_knowledge_excerpt_setting(client, test_user, monkeypatch):
+    """T-4.11.2.6: the estimate reads the setting the agent reads, not a copy of
+    its old literal. The benchmark's average document is about 6,300 tokens, so
+    only a setting under that moves it."""
+    from app.config import settings
+
+    def synthesis_input() -> int:
+        d = client.post("/api/v1/settings/llm/estimate", json={"overrides": {}}).json()
+        return next(u for u in d["per_use_case"] if u["use_case"] == "knowledge_synthesize_report")["input_tokens"]
+
+    base = synthesis_input()
+    monkeypatch.setattr(settings, "KNOWLEDGE_MAX_TRANSCRIPT_TOKENS", 1_000)
+    assert synthesis_input() < base
+
+
 def test_estimate_reacts_to_hypothetical_override(client, test_user):
     base = client.post("/api/v1/settings/llm/estimate", json={"overrides": {}}).json()
     pricier = client.post(

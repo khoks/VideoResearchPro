@@ -1,6 +1,7 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import api from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
+import { depthOf, type Depth } from '../utils/depth';
 
 export type Tier = 'free' | 'pro' | 'studio';
 
@@ -17,9 +18,16 @@ export interface MeResponse {
    * Only operators may switch tiers.
    */
   is_operator?: boolean;
+  /** T-1.15.3.9: the depth this person's pages start from; null is Auto. */
+  preferred_output_length?: string | null;
 }
 
-const ME_QUERY_KEY = ['auth', 'me'] as const;
+export const ME_QUERY_KEY = ['auth', 'me'] as const;
+
+async function fetchMe(): Promise<MeResponse> {
+  const { data } = await api.get<MeResponse>('/auth/me');
+  return data;
+}
 
 /**
  * Fetch the current user from `/auth/me`. Returns the same shape the
@@ -31,12 +39,38 @@ export function useMe() {
   const { isAuthenticated } = useAuth();
   return useQuery<MeResponse>({
     queryKey: ME_QUERY_KEY,
-    queryFn: async () => {
-      const { data } = await api.get<MeResponse>('/auth/me');
-      return data;
-    },
+    queryFn: fetchMe,
     enabled: isAuthenticated,
     staleTime: 30_000,
+  });
+}
+
+/**
+ * T-1.15.3.9: the depth this person's pages start from, null for Auto.
+ *
+ * A subscriber to the `useMe` query, not a second fetch: `AppLayout` keeps that
+ * query alive on every signed-in page, so this adds no request. Until it answers
+ * the page is on Auto, and it moves to the preference if the reader has not
+ * touched the control (`useDepthChoice`).
+ */
+export function usePreferredDepth(): Depth | null {
+  const { data } = useQuery<MeResponse>({ queryKey: ME_QUERY_KEY, queryFn: fetchMe, enabled: false });
+  return depthOf(data?.preferred_output_length);
+}
+
+/** Save the default depth; null is Auto, which clears it. */
+export function useSetPreferredDepth() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (depth: Depth | null) => {
+      const { data } = await api.patch<{ output_length: string | null }>('/auth/me/preferences', {
+        output_length: depth ?? 'auto',
+      });
+      return data.output_length;
+    },
+    onSuccess: (saved) => {
+      qc.setQueryData<MeResponse>(ME_QUERY_KEY, (me) => (me ? { ...me, preferred_output_length: saved } : me));
+    },
   });
 }
 

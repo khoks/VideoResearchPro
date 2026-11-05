@@ -46,6 +46,8 @@ class Prepared:
 class Answer:
     answer: str
     references: list[dict]
+    #: T-1.15.4.5: the answer stopped at its token budget.
+    answer_cut_off: bool = False
 
 
 def prepare(db: Session, tenant_id: str, scope) -> Prepared:
@@ -152,4 +154,8 @@ def ask(
     references = result.get("references", []) or []
     if prepared.narrowed:
         references = within_scope(db, references, prepared.document_ids, prepared.note_keys)
-    return Answer(answer=answer, references=references)
+    return Answer(
+        answer=answer,
+        references=references,
+        answer_cut_off=bool(result.get("answer_cut_off")),
+    )

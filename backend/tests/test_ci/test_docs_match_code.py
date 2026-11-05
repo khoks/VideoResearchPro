@@ -716,6 +716,15 @@ def test_the_usage_example_shows_every_amount_the_response_carries() -> None:
     assert all(set(row[w]) == set(UsageAmounts.model_fields) for row in rows for w in ("today", "last_30_days"))
 
 
+def test_architecture_states_the_knowledge_excerpt_setting_as_it_is() -> None:
+    """T-4.11.2.6: the setting is the excerpt's size, with no literal cap above it.
+    An operator sizes it from this line, and the checks above do not read prose."""
+    text = (ROOT / "docs" / "architecture.md").read_text(encoding="utf-8")
+    line = next(row for row in text.splitlines() if row.startswith("- **split_transcript**"))
+    assert f"(default {FIELDS['KNOWLEDGE_MAX_TRANSCRIPT_TOKENS'].default:,})" in line
+    assert "never above" not in line
+
+
 def test_the_reference_does_not_claim_no_doc_lists_endpoints() -> None:
     """CLAUDE.md lists every route, and the tests above hold it to the app."""
     assert "rather than duplicating endpoint lists" not in _reference()

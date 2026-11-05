@@ -9,6 +9,7 @@ import { Link } from 'react-router-dom';
 import { Markdown } from '../common/Markdown';
 import { CitationLink } from '../citation';
 import { NotesPanel } from '../notes';
+import { AnswerCutOffNote } from './AnswerCutOffNote';
 import { PinQuestionButton } from '../savedSearches/PinQuestionButton';
 import { Badge, Button, Spinner } from '../primitives';
 import { useShelves } from '../../hooks/useShelves';
@@ -87,7 +88,16 @@ export function ScopeNote({ scope }: { scope: QAScope | null | undefined }) {
   );
 }
 
-export function LibraryQAExchangeCard({ qa, showScope = true }: { qa: LibraryQAExchange; showScope?: boolean }) {
+export function LibraryQAExchangeCard({
+  qa,
+  showScope = true,
+  onAskAgain,
+}: {
+  qa: LibraryQAExchange;
+  showScope?: boolean;
+  /** T-1.15.4.5: what a cut-off answer's offer does; see `AnswerCutOffNote`. */
+  onAskAgain?: (question: string) => void;
+}) {
   const c = useColors();
   const [copied, setCopied] = useState(false);
 
@@ -168,6 +178,7 @@ export function LibraryQAExchangeCard({ qa, showScope = true }: { qa: LibraryQAE
       >
         <Markdown>{qa.answer}</Markdown>
       </div>
+      <AnswerCutOffNote exchangeId={qa.id} onAskAgain={onAskAgain && (() => onAskAgain(qa.question))} />
       {qa.references.length > 0 && (
         <div
           style={{

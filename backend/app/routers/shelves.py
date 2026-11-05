@@ -30,7 +30,7 @@ from app.routers.library import (
     library_exchange_response,
     query_library_documents,
 )
-from app.schemas.library_qa import LibraryQARequest, LibraryQAResponse
+from app.schemas.library_qa import LibraryQAAnswerResponse, LibraryQARequest, LibraryQAResponse
 from app.schemas.qa_scope import QAScope
 from app.services import job_service, qa_scope_service, shelf_service
 from app.services.shelf_service import ForeignJob, ShelfNameTaken
@@ -139,7 +139,7 @@ def list_shelf_documents(
     )
 
 
-@router.post("/{shelf_id}/qa", response_model=LibraryQAResponse)
+@router.post("/{shelf_id}/qa", response_model=LibraryQAAnswerResponse)
 def ask_shelf_question(
     shelf_id: str,
     request: LibraryQARequest,

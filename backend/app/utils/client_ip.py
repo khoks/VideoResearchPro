@@ -12,10 +12,14 @@ proxy appends what it saw: the rightmost entries are the ones our own proxies
 wrote and the leftmost is whatever the client sent. The first address that is
 not a trusted proxy is the client. A malformed entry, before any such address,
 means the header cannot be read: the caller is then the peer. So is a request
-whose every hop is trusted, which came from inside.
+whose every hop is trusted, which came from inside. Some proxies append a port
+(``1.2.3.4:5678``, ``[2001:db8::1]:443``), and such an entry reads as the
+address it carries (T-5.5.9).
 
 Everything that reports a caller's address goes through ``client_ip``: the
-per-IP limits, the audit log, and the address stored on a session.
+per-IP limits, the audit log, and the address stored on a session. Only the
+limits go on to ``rate_limit_bucket``, which gives an IPv6 caller's whole /64
+one bucket; the audit log and the session keep the full address.
 
 An ASGI server can rewrite the peer before this runs: uvicorn's own proxy
 handling is on by default for peers at 127.0.0.1, so the launchers pass
@@ -25,6 +29,7 @@ from __future__ import annotations
 
 import ipaddress
 import logging
+import re
 from functools import lru_cache
 from typing import Iterable
 
@@ -36,6 +41,16 @@ logger = logging.getLogger(__name__)
 
 _Address = ipaddress.IPv4Address | ipaddress.IPv6Address
 _Network = ipaddress.IPv4Network | ipaddress.IPv6Network
+
+# An address a proxy wrote with a port beside it. A bare IPv6 address has colons
+# of its own, so only these two shapes say which part is the port.
+_IPV4_WITH_PORT = re.compile(r"(\d{1,3}(?:\.\d{1,3}){3}):(\d{1,5})")
+_BRACKETED = re.compile(r"\[(.+)\](?::(\d{1,5}))?")
+_MAX_PORT = 65535
+
+# T-5.5.9: an IPv6 customer is routinely handed a whole /64, so one per address
+# would give them 2**64 buckets.
+_IPV6_BUCKET_PREFIX = 64
 
 
 @lru_cache(maxsize=4)
@@ -55,12 +70,20 @@ def _parse_networks(raw: str) -> tuple[_Network, ...]:
 
 
 def _parse_address(value: str) -> _Address | None:
-    """``value`` as an address, or None. An IPv4 address carried as IPv6
-    (``::ffff:10.0.0.1``, what a dual-stack listener reports) is the IPv4
-    address, so it matches an IPv4 entry in the list."""
+    """``value`` as an address, or None. A port beside it is dropped. An IPv4
+    address carried as IPv6 (``::ffff:10.0.0.1``, what a dual-stack listener
+    reports) is the IPv4 address, so it matches an IPv4 entry in the list."""
+    text = value.strip()
+    bracketed = _BRACKETED.fullmatch(text)
+    with_port = bracketed or _IPV4_WITH_PORT.fullmatch(text)
+    host, port = with_port.groups() if with_port else (text, None)
+    if port is not None and int(port) > _MAX_PORT:
+        return None
     try:
-        address = ipaddress.ip_address(value.strip())
+        address = ipaddress.ip_address(host)
     except ValueError:
+        return None
+    if bracketed and address.version != 6:
         return None
     return getattr(address, "ipv4_mapped", None) or address
 
@@ -88,3 +111,13 @@ def client_ip(connection: HTTPConnection) -> str | None:
         if not _is_trusted(address, networks):
             return str(address)
     return peer
+
+
+def rate_limit_bucket(ip: str) -> str:
+    """What the per-IP limits count ``ip`` under: its /64 for IPv6, the
+    address itself for IPv4. Anything that is not an address (a test client's
+    name, ``unknown``) is its own bucket."""
+    address = _parse_address(ip)
+    if isinstance(address, ipaddress.IPv6Address):
+        return str(ipaddress.IPv6Network((int(address), _IPV6_BUCKET_PREFIX), strict=False))
+    return str(address) if address is not None else ip

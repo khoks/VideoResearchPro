@@ -97,7 +97,7 @@ from app.services import (
 from app.services.audit_service import ACCOUNT_EVENTS, Event
 from app.services.llm_routing import UseCaseConfig, resolve_config
 from app.utils import client_ip as client_ip_module
-from app.utils.client_ip import client_ip
+from app.utils.client_ip import client_ip, rate_limit_bucket
 from app.websocket import manager as manager_module
 from app.websocket.manager import ConnectionManager
 from tests.conftest import TestingSessionLocal
@@ -838,6 +838,168 @@ def test_a_token_from_before_sessions_is_held_with_no_session():
     assert m._sessions == {} and m._session_check_task is None
 
 
+# ---------------------------------------------------------------------------
+# T-5.4.21: a socket ends when its token does
+#
+# Mutation checks (each failed the named test when this shipped): leaving
+# `close_expired_sockets` out of the timer
+# (`test_a_real_token_expiring_closes_its_real_socket`); passing no
+# `expires_at` from the route (the same test); `<` for `<=`
+# (`test_a_token_at_its_exp_is_over`); keeping the timer on `_sessions` alone
+# (`test_a_token_from_before_sessions_still_expires`); not forgetting the
+# expiry on disconnect (`test_a_closed_socket_is_forgotten`).
+# ---------------------------------------------------------------------------
+
+
+def _short_token(db, user, seconds: int) -> str:
+    token, _ = auth_service.create_access_token(user.id, db=db, expires_delta=timedelta(seconds=seconds))
+    return token
+
+
+def test_a_real_token_expiring_closes_its_real_socket(unauthenticated_client, db, live, monkeypatch):
+    """The real route, token and timer. Only the clock moves, so a slow run
+    cannot expire the token before the handshake reads it."""
+    monkeypatch.setattr(manager_module, "_SESSION_RECHECK_SECONDS", 0.05)
+    user = auth_service.create_user(db, email="sock-exp@x.com", password=PASSWORD)
+    token = _short_token(db, user, 3600)
+    with _open(unauthenticated_client, token) as ws:
+        _pong(ws)
+        time.sleep(0.2)  # several ticks, with the token still good
+        _pong(ws)
+        exp = auth_service.decode_token(token)["exp"]
+        monkeypatch.setattr(manager_module, "_now", lambda: exp + 1)
+        assert _closed_with(ws) == (1008, "Session expired")
+    assert live.manager._sessions == {} and live.manager._expiries == {}
+
+
+def test_the_look_leaves_a_live_token_open(unauthenticated_client, db, live):
+    user = auth_service.create_user(db, email="sock-exp2@x.com", password=PASSWORD)
+    with _open(unauthenticated_client, _short_token(db, user, 3600)) as ws:
+        ws.portal.call(live.manager.close_expired_sockets)
+        _pong(ws)
+
+
+def test_the_socket_is_held_with_the_tokens_own_exp(unauthenticated_client, db, live):
+    user = auth_service.create_user(db, email="sock-exp3@x.com", password=PASSWORD)
+    token = _short_token(db, user, 3600)
+    with _open(unauthenticated_client, token) as ws:
+        _pong(ws)
+        assert list(live.manager._expiries.values()) == [auth_service.decode_token(token)["exp"]]
+
+
+def test_an_expired_token_still_cannot_open_one(unauthenticated_client, db, live):
+    user = auth_service.create_user(db, email="sock-exp4@x.com", password=PASSWORD)
+    with pytest.raises(WebSocketDisconnect) as refused:
+        with _open(unauthenticated_client, _short_token(db, user, -5)):
+            pass
+    assert refused.value.code == 1008
+
+
+def test_a_token_at_its_exp_is_over(monkeypatch):
+    m = ConnectionManager()
+    socket = _Socket()
+    _connected(m, (socket, "user-a", "jti-a"))
+    m._expiries[socket] = 1000
+    monkeypatch.setattr(manager_module, "_now", lambda: 999.9)
+    asyncio.run(m.close_expired_sockets())
+    assert socket.closed is None
+    monkeypatch.setattr(manager_module, "_now", lambda: 1000.0)
+    asyncio.run(m.close_expired_sockets())
+    assert socket.closed == (1008, "Session expired")
+
+
+def test_a_token_from_before_sessions_still_expires():
+    """It has no `jti`, so `_sessions` never holds it. The timer has to run."""
+
+    async def _nothing():
+        return None
+
+    async def _go():
+        m = ConnectionManager()
+        m._redis_listener = _nothing
+        await m.connect(_Socket(), tenant_id="user-a", jti=None, expires_at=1)
+        assert m._sessions == {} and m._session_check_task is not None
+        m._session_check_task.cancel()
+
+    asyncio.run(_go())
+
+
+def test_a_token_with_no_exp_is_held_with_none():
+    """PyJWT accepts one, and nothing here issues one: no timer to run."""
+
+    async def _nothing():
+        return None
+
+    m = ConnectionManager()
+    m._redis_listener = _nothing
+    asyncio.run(m.connect(_Socket(), tenant_id="user-a", jti=None, expires_at=None))
+    assert m._expiries == {} and m._session_check_task is None
+
+
+def test_the_timer_closes_expired_sockets_and_stops(monkeypatch):
+    monkeypatch.setattr(manager_module, "_SESSION_RECHECK_SECONDS", 0.01)
+    m = ConnectionManager()
+    socket = _Socket()
+    _connected(m, (socket, None, None))
+    m._expiries[socket] = 1
+    asyncio.run(asyncio.wait_for(m._session_check_loop(), 2))
+    assert socket.closed == (1008, "Session expired")
+    assert m._expiries == {}
+
+
+def test_expiry_needs_neither_the_table_nor_redis(monkeypatch):
+    """The read failing leaves revoked sockets for the next tick. An expired
+    one goes regardless: it compares a number held here."""
+    monkeypatch.setattr(manager_module, "_SESSION_RECHECK_SECONDS", 0.01)
+
+    def _no_database(jtis):
+        raise RuntimeError("database is down")
+
+    monkeypatch.setattr(manager_module, "_revoked_among", _no_database)
+    m = ConnectionManager()
+    expired, live_one = _Socket(), _Socket()
+    _connected(m, (expired, "user-a", "jti-a"), (live_one, "user-b", "jti-b"))
+    m._expiries[expired] = 1
+    m._expiries[live_one] = 9_999_999_999
+
+    async def _go():
+        task = asyncio.create_task(m._session_check_loop())
+        await asyncio.sleep(0.1)
+        assert not task.done(), "a failing read must not end the timer"
+        task.cancel()
+
+    asyncio.run(_go())
+    assert expired.closed == (1008, "Session expired")
+    assert live_one.closed is None
+
+
+def test_one_socket_failing_to_close_stops_no_other(monkeypatch):
+    m = ConnectionManager()
+    broken, fine = _Socket(fail=True), _Socket()
+    _connected(m, (broken, "user-a", "jti-a"), (fine, "user-b", "jti-b"))
+    m._expiries.update({broken: 1, fine: 1})
+    asyncio.run(m.close_expired_sockets())
+    assert fine.closed == (1008, "Session expired")
+    assert m._expiries == {} and m._sessions == {}
+
+
+def test_a_closed_socket_is_forgotten():
+    m = ConnectionManager()
+    socket = _Socket()
+    _connected(m, (socket, "user-a", "jti-a"))
+    m._expiries[socket] = 1
+    asyncio.run(m.disconnect(socket))
+    assert m._expiries == {}
+
+
+def test_a_revocation_still_says_revoked():
+    m = ConnectionManager()
+    socket = _Socket()
+    _connected(m, (socket, "user-a", "jti-a"))
+    asyncio.run(m.close_sessions("user-a", {"jti-a"}))
+    assert socket.closed == (1008, "Session revoked")
+
+
 def test_revoked_jtis_reads_the_table(db):
     user = auth_service.create_user(db, email="sock-table@x.com", password=PASSWORD)
     live_token, _ = auth_service.create_access_token(user.id, db=db)
@@ -901,7 +1063,27 @@ def test_a_request_from_inside_is_the_peer(behind_proxy):
 
 
 @pytest.mark.parametrize(
-    "header", ["", " ", "not-an-ip", "198.51.100.7, not-an-ip", "198.51.100.7,", "198.51.100.7:443", "<script>", ", ,"]
+    "header",
+    [
+        "",
+        " ",
+        "not-an-ip",
+        "198.51.100.7, not-an-ip",
+        "198.51.100.7,",
+        "<script>",
+        ", ,",
+        # T-5.5.9: the shapes that look like an address with a port and are not.
+        "198.51.100.7:99999",
+        "198.51.100.7:",
+        "198.51.100.7:http",
+        "198.51.100.7:443:443",
+        "[2606:4700::1111]:99999",
+        "[2606:4700::1111]:",
+        "[198.51.100.7]",
+        "[198.51.100.7]:443",
+        "[not-an-ip]:443",
+        "[2606:4700::1111",
+    ],
 )
 def test_a_malformed_header_falls_back_to_the_peer(behind_proxy, header):
     assert client_ip(_request("10.0.0.1", header)) == "10.0.0.1"
@@ -924,6 +1106,50 @@ def test_ipv6_proxies_and_clients(behind_proxy):
 def test_a_dual_stack_listener_reports_an_ipv4_proxy_as_ipv6(behind_proxy):
     assert client_ip(_request("::ffff:10.0.0.1", "198.51.100.7")) == "198.51.100.7"
     assert client_ip(_request("10.0.0.1", "::ffff:198.51.100.7")) == "198.51.100.7"
+
+
+@pytest.mark.parametrize(
+    "header, expected",
+    [
+        ("198.51.100.7:5678", "198.51.100.7"),
+        ("[2606:4700::1111]:443", "2606:4700::1111"),
+        ("[2606:4700::1111]", "2606:4700::1111"),
+        ("198.51.100.7:0", "198.51.100.7"),
+        ("198.51.100.7:65535", "198.51.100.7"),
+        ("[::ffff:198.51.100.7]:443", "198.51.100.7"),
+        (" 198.51.100.7:5678 ", "198.51.100.7"),
+        # A bare IPv6 address is not address-and-port, however it ends.
+        ("2606:4700::1111:443", "2606:4700::1111:443"),
+        ("1.2.3.4, 198.51.100.7:5678", "198.51.100.7"),
+        # Our own proxy, with its port, is still our own proxy.
+        ("198.51.100.7, 10.0.0.1:8080", "198.51.100.7"),
+        ("198.51.100.7, [2001:db8::5]:443", "198.51.100.7"),
+    ],
+)
+def test_a_proxy_that_appends_a_port_is_read(behind_proxy, header, expected):
+    """T-5.5.9: it used to read as malformed, so the caller became the proxy
+    and every user shared one bucket."""
+    assert client_ip(_request("10.0.0.1", header)) == expected
+
+
+@pytest.mark.parametrize(
+    "ip, bucket",
+    [
+        ("2606:4700:1:2:3:4:5:6", "2606:4700:1:2::/64"),
+        ("2606:4700:1:2:ffff:ffff:ffff:ffff", "2606:4700:1:2::/64"),
+        ("2606:4700:1:3::1", "2606:4700:1:3::/64"),
+        ("::1", "::/64"),
+        ("fe80::1%eth0", "fe80::/64"),
+        # IPv4 keeps its own address, however the listener spelt it.
+        ("198.51.100.7", "198.51.100.7"),
+        ("::ffff:198.51.100.7", "198.51.100.7"),
+        # Not addresses: whatever was asked about is its own bucket.
+        ("testclient", "testclient"),
+        ("unknown", "unknown"),
+    ],
+)
+def test_the_rate_limit_bucket(ip, bucket):
+    assert rate_limit_bucket(ip) == bucket
 
 
 def test_a_bad_entry_in_the_setting_is_logged_and_skipped(monkeypatch):
@@ -976,6 +1202,44 @@ def test_behind_a_proxy_with_it_unset_everyone_shares_one_bucket(unauthenticated
     proxy = _from("10.0.0.1")
     statuses = [_try_login(proxy, f"198.51.100.{i}") for i in range(5)]
     assert statuses == [401, 401, 401, 429, 429]
+
+
+def test_a_whole_ipv6_64_shares_one_bucket(unauthenticated_client, limited, behind_proxy):
+    """T-5.5.9: an address per request from one customer's /64 is no escape."""
+    proxy = _from("10.0.0.1")
+    statuses = [_try_login(proxy, f"2606:4700:1:2::{i}") for i in range(1, 6)]
+    assert statuses == [401, 401, 401, 429, 429]
+    assert _try_login(proxy, "2606:4700:1:3::1") == 401, "the next /64 is someone else"
+
+
+def test_an_ipv6_peer_is_bucketed_by_its_64_too(unauthenticated_client, limited):
+    statuses = [_try_login(_from(f"2606:4700:1:2::{i}")) for i in range(1, 6)]
+    assert statuses == [401, 401, 401, 429, 429]
+
+
+def test_ipv4_callers_are_still_each_their_own(unauthenticated_client, limited):
+    statuses = [_try_login(_from(f"198.51.100.{i}")) for i in range(1, 6)]
+    assert statuses == [401] * 5
+
+
+def test_a_proxy_that_appends_a_port_keeps_clients_apart(unauthenticated_client, limited, behind_proxy):
+    """T-5.5.9, end to end: every client used to read as the proxy."""
+    proxy = _from("10.0.0.1")
+    statuses = [_try_login(proxy, f"198.51.100.{i}:5678") for i in range(1, 6)]
+    assert statuses == [401] * 5
+
+
+def test_the_full_ipv6_address_is_what_gets_written_down(unauthenticated_client, db, behind_proxy):
+    """T-5.5.9: the /64 is the limiter's alone. The audit log and the session
+    list keep the address, without the port."""
+    auth_service.create_user(db, email="ip-six@x.com", password=PASSWORD)
+    body = {"email": "ip-six@x.com", "password": PASSWORD}
+    r = _from("10.0.0.1").post(LOGIN, json=body, headers={"X-Forwarded-For": "[2606:4700:1:2:3:4:5:6]:443"})
+    assert r.status_code == 200
+    db.expire_all()
+    assert db.query(SessionRow).one().ip_address == "2606:4700:1:2:3:4:5:6"
+    audit = db.query(AuditLog).filter(AuditLog.event == Event.LOGIN_SUCCESS.value).one()
+    assert audit.ip_address == "2606:4700:1:2:3:4:5:6"
 
 
 def test_the_audit_log_and_the_session_row_use_the_same_address(unauthenticated_client, db, monkeypatch):

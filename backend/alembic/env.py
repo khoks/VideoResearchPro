@@ -5,6 +5,7 @@ from sqlalchemy import engine_from_config, pool
 
 from app.config import settings
 from app.database import Base
+from app.utils.json_logging import configure_logging
 # Wildcard re-import of every model so `--autogenerate` sees the full
 # schema. ``app.models.__init__`` is the single source of truth; if a
 # model isn't listed there it isn't in `Base.metadata` and won't be
@@ -28,6 +29,10 @@ if config.config_file_name is not None:
     # Found via a caplog assertion that passed alone and captured zero
     # records in the full suite — see docs/testing.md §3.5.
     fileConfig(config.config_file_name, disable_existing_loggers=False)
+    # fileConfig replaces the root logger's handlers, in the app's process too
+    # when it migrates at startup, so LOG_FORMAT=json has to be put back. A
+    # no-op under the default, text.
+    configure_logging()
 
 target_metadata = Base.metadata
 

@@ -162,10 +162,28 @@ TRUSTED_PROXY_IPS=10.0.0.1,172.16.0.0/12
 ```
 
 - **Unset, the default:** the header is ignored and the caller is the socket peer. That is right for an install nobody proxies. **An install behind a proxy that leaves this unset sees one address for every user:** they all share one per-IP limit, so one busy minute refuses everyone's sign-in, and the audit log and session list show the proxy's address.
-- **Set:** when the peer is one of these proxies, the header is read from the right and the first address that is not a trusted proxy is the caller. What a client puts in the header itself is on the left, so it changes nothing. A malformed header falls back to the peer.
+- **Set:** when the peer is one of these proxies, the header is read from the right and the first address that is not a trusted proxy is the caller. What a client puts in the header itself is on the left, so it changes nothing. An entry with a port, `1.2.3.4:5678` or `[2001:db8::1]:443`, reads as the address it carries. A malformed header falls back to the peer.
 - **Your proxy must append to the header**, not pass the client's copy through unchanged. In nginx that is `proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;`.
 
 uvicorn has proxy handling of its own, on by default for peers at 127.0.0.1: it rewrites the peer from the header before the app runs, so a local caller could still pick its address. `scripts/start.ps1` and `scripts/restart_services.ps1` pass `--no-proxy-headers` to turn it off. Pass it too if you start uvicorn by hand on a shared host. The app reads nothing else uvicorn's handling sets.
+
+The per-IP limits count an IPv6 caller by its /64, since one customer is routinely handed the whole range. The audit log and the session list keep the full address.
+
+### Content-Security-Policy for the app
+
+The API sets a policy on everything it serves (`backend/app/middleware/content_security_policy.py`). The app itself is static files, so whatever serves them sets its own. The Vite dev server sends none and needs none. A production host should send this on `index.html` and the assets, with your own host in `connect-src`:
+
+```
+default-src 'self'; script-src 'self'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' wss://your.host; frame-src blob:; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
+```
+
+- `script-src 'self'`: the build has no inline script.
+- `worker-src 'self' blob:`: the Android share target is a service worker, and the library map lays itself out in a worker built from a blob.
+- `style-src 'unsafe-inline'`: the job page's quick peek shows the report as a blob: document, which takes this policy, and a report is a `<style>` block and markup. Its scripts stay blocked.
+- `img-src https:`: thumbnails and channel images come from YouTube.
+- `connect-src`: the API and the `/ws/jobs` socket. An API on another origin goes here too, with its `wss://` address, as well as in `VITE_API_BASE_URL`.
+- `frame-src blob:`: the quick peek again.
+- `object-src 'none'` does not stop a PDF citation, which opens from a blob: URL in a tab of its own.
 
 ---
 

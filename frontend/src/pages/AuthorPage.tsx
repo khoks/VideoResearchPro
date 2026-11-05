@@ -79,8 +79,9 @@ function isForbidden(err: unknown): boolean {
  * Author Studio — Pro tier and up.
  *
  * Backend: `backend/app/routers/author.py` (I-6 foundation, PR #173).
- * Only `book` has an outputter today; every other kind the schema knows
- * is shown honestly as "coming later" and never offered a create button.
+ * `GET /author/kinds` says which kinds have an outputter; every other kind the
+ * schema knows is shown honestly as "coming later" and never offered a create
+ * button.
  */
 export function AuthorPage() {
   const c = useColors();

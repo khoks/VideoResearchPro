@@ -1,6 +1,6 @@
 # Pratidhvani — Feature Roadmap
 
-**Status:** approved (2026-04-24). Living document; status of each item updates as work lands. Last reconciled against the code 2026-10-19; the owner's rulings of 2026-10-25 recorded ([D-109](decisions.md#d-109--r1-is-parked-visual-analysis-stays-hidden-its-measurement-stops-the-code-stays-2026-10-25) to [D-112](decisions.md#d-112--the-remaining-rulings-of-2026-10-25-map-batching-public-sharing-the-code-mixing-threshold-and-the-quick-calls-2026-10-25)).
+**Status:** approved (2026-04-24). Living document; status of each item updates as work lands. Last reconciled against the code 2026-11-04; the owner's rulings of 2026-10-25 recorded ([D-109](decisions.md#d-109--r1-is-parked-visual-analysis-stays-hidden-its-measurement-stops-the-code-stays-2026-10-25) to [D-112](decisions.md#d-112--the-remaining-rulings-of-2026-10-25-map-batching-public-sharing-the-code-mixing-threshold-and-the-quick-calls-2026-10-25)).
 
 This is the canonical roadmap. Each entry has: motivation, sketch, schema/API impact, open questions, and status. The high-level phases live in [vision.md](vision.md).
 
@@ -47,8 +47,8 @@ Multi-week each. Foundational. Each one reshapes the schema or adds a top-level 
 **API impact.**
 
 - `POST /api/v1/jobs` body grows a `source_types` array (defaults to `["video"]` for back-compat).
-- `GET /api/v1/library/videos` joined by `GET /api/v1/library/documents` (new); old endpoint stays as a typed view.
-- New endpoints per source type for connector-specific concerns (e.g. `POST /api/v1/sources/podcast/resolve` for an Apple podcast URL → RSS feed).
+- `GET /api/v1/library/videos` lists every source type, each row carrying its `source_type`. The planned `/library/documents` route was not needed.
+- `POST /api/v1/library/upload-pdf` and `POST /api/v1/library/paste-urls` add sources with no job. No per-source-type endpoints were needed: a podcast feed resolves inside its connector.
 
 **Open questions.**
 
@@ -115,11 +115,10 @@ Reels wait on the TTS decision. Site publishing (S-6.2.2) is design only.
 - New `output_citations(output_id, document_id, segment_id, citation_text, position)`.
 - Reuse existing job lifecycle (`pending → processing → completed/failed`) for outputs.
 
-**API impact.** New top-level routes:
-- `POST /api/v1/outputs` (create)
-- `GET /api/v1/outputs` (list)
-- `GET /api/v1/outputs/{id}` (status)
-- `GET /api/v1/outputs/{id}/download` (artifact)
+**API impact.** As built, under `/api/v1/author` (the full list is in [api-reference.md](api-reference.md)):
+- `GET/POST /api/v1/author/outputs` (list, create)
+- `GET/DELETE /api/v1/author/outputs/{id}`
+- `GET /api/v1/author/outputs/{id}/content`, `/download` and `/citations`
 
 **Open questions.**
 
@@ -187,7 +186,7 @@ Below threshold: bubble dimmed, banner explains what's missing. Crossing thresho
 
 ---
 
-### L4 — Curated source ranking ⚪
+### L4 — Curated source ranking 🟡
 
 **Motivation.** The user explicitly framed Pratidhvani as a counter to mainstream-balanced encyclopedias. Today every source contributes equally to retrieval; tomorrow the user's curation must be a first-class signal everywhere — in retrieval ordering, in answer composition, in disagreement surfacing.
 
@@ -296,7 +295,7 @@ Group jobs into named projects. A job can belong to multiple shelves. Tag docume
 
 **Schema (as built):** `shelves(id, tenant_id, name, description, color, created_at, updated_at)`, `shelf_jobs(shelf_id, job_id, added_at)`, `tags(id, tenant_id, name, color, created_at)` + `taggings(id, tag_id, tenant_id, target_type, target_id, created_at)`.
 
-**API:** `GET/POST/PUT/DELETE /api/v1/shelves/*`, `POST /api/v1/jobs/{id}/shelves`.
+**API:** `GET/POST/PUT/DELETE /api/v1/shelves/*`, `POST/DELETE /api/v1/shelves/{id}/jobs/{job_id}`.
 
 **UI:** New left-sidebar section "Shelves". Shelf detail page = filtered library view.
 
@@ -360,7 +359,7 @@ Attach a free-text "your take" / annotation to any document, job, Q&A exchange, 
 
 ---
 
-### M6 — Job templates / playbooks 🟡
+### M6 — Job templates / playbooks 🟢
 
 Save a job's parameters as a template; one-click instantiate with fresh date ranges or a different topic.
 
@@ -370,7 +369,7 @@ Save a job's parameters as a template; one-click instantiate with fresh date ran
 
 **UI:** "Save as template" on submit page; "From template" picker.
 
-**Status.** 🔵 accepted 2026-10-18 as [E-8.6](initiatives.md#e-86--job-templates-m6); plan [`plans/m6-job-templates.md`](plans/m6-job-templates.md). Today's "Duplicate / re-run" already covers most of this; M6 generalizes from "duplicate one job" to "named reusable template" and seeds the starter templates M10 uses. **🟡 2026-10-19:** templates (versions, provenance, Save as template, picker, `/templates`) and five starters shipped (PRs #263, #265), with Duplicate fixed to keep depth and the visual flag. Not yet: the relative publish window (needs the search prompt), the podcast-digest and mixed-source starters (need `source_types` on job creation), and the wizard's starter step. See [D-082](decisions.md#d-082--job-templates-identity-plus-immutable-versions-provenance-without-a-foreign-key-starters-in-a-self-contained-data-migration-2026-10-19). *2026-10-25 ([D-112](decisions.md#d-112--the-remaining-rulings-of-2026-10-25-map-batching-public-sharing-the-code-mixing-threshold-and-the-quick-calls-2026-10-25)): the relative publish window is accepted as a ranking preference, built after source types on job creation (S-1.5.13), which also got its go-ahead.*
+**Status.** 🔵 accepted 2026-10-18 as [E-8.6](initiatives.md#e-86--job-templates-m6); plan [`plans/m6-job-templates.md`](plans/m6-job-templates.md). Today's "Duplicate / re-run" already covers most of this; M6 generalizes from "duplicate one job" to "named reusable template" and seeds the starter templates M10 uses. **🟡 2026-10-19:** templates (versions, provenance, Save as template, picker, `/templates`) and five starters shipped (PRs #263, #265), with Duplicate fixed to keep depth and the visual flag. **🟢 2026-11-04:** the relative publish window and the podcast-digest and mixed-source starters shipped (PR #408), and the wizard starts its first run from the Channel deep-dive starter. See [D-082](decisions.md#d-082--job-templates-identity-plus-immutable-versions-provenance-without-a-foreign-key-starters-in-a-self-contained-data-migration-2026-10-19). *2026-10-25 ([D-112](decisions.md#d-112--the-remaining-rulings-of-2026-10-25-map-batching-public-sharing-the-code-mixing-threshold-and-the-quick-calls-2026-10-25)): the relative publish window is accepted as a ranking preference, built after source types on job creation (S-1.5.13), which also got its go-ahead.*
 
 ---
 
@@ -467,7 +466,7 @@ Tracked separately because it's identity-system work, not a feature.
 | `docs/branding.md` | 🟢 shipped |
 | `docs/vision.md` | 🟢 shipped |
 | `docs/feature-roadmap.md` (this file) | 🟢 shipped |
-| Documentation refresh (architecture, ui-design, requirements, etc.) | 🟡 in-progress |
+| Documentation refresh (architecture, ui-design, requirements, etc.) | 🟢 shipped (E-4.11, PR #401 and the last pass of 2026-11-04) |
 | Frontend design tokens (`frontend/src/theme.ts`) | 🟢 shipped (E-2.1) |
 | Primitives library (`frontend/src/components/primitives/*`) | 🟢 shipped (E-2.2; Tooltip / Tabs / IconButton still open) |
 | Sidebar layout migration (top-tabs → sidebar) | 🟢 shipped (E-2.4) |

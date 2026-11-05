@@ -8,9 +8,9 @@ Pro tier @ $100/mo is the realistic floor for search-based ingest.
 
 The connector subclasses :class:`app.sources.paste_url.connector.TweetConnector`
 (the paste-only base) and adds `search()` (Twitter API v2 recent
-search) + `list_creator_items()` (user timeline) + an enriched
-`fetch_text` that pulls the full tweet thread + top-K replies via
-the Twitter API rather than just the trafilatura-extracted body.
+search) + `list_creator_items()` (user timeline). `fetch_text` is the
+base's: the thread and top-K replies S-1.5.10 asks for are not built, so
+`client.get_conversation_replies` and `TWITTER_REPLY_DEPTH_DEFAULT` wait.
 
 Same E-1.6 pattern as the article connector: when the BYOK token is
 unset, `search()` returns ``[]`` gracefully (rather than raising)

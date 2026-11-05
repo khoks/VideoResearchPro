@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Pratidhvani (प्रतिध्वनि)** — Sanskrit for "echo". A full-stack personal research wiki. Users submit jobs to ingest sources (today: YouTube by topic search, channel list, or channel subscription; future: podcasts, articles, forum threads, PDFs — see [docs/source-types.md](docs/source-types.md)), contribute them to a **global, deduplicated document library**, generate comprehensive HTML reports via LangGraph agents (map-reduce pattern), and ask citation-backed questions either scoped to a single job, across the **entire library**, or across **every Q&A they've ever asked**. Transcripts, embeddings, and knowledge artifacts are computed once per document and reused across every job that references them.
 
-> **Legacy name.** The project was previously called *VideoResearchPro*. The legacy string survives in the default database file (`DATABASE_URL`'s `sqlite:///./data/videoresearchpro.db`, which `backend/alembic.ini` repeats, grandfathered by [D-032](docs/decisions.md#d-032--operator-coordinated-runbook-vs-automatic-startup-migration-for-data-bearing-identifier-renames-2026-05-03)), in the browser's `localStorage` keys `videoresearchpro.authToken` and `videoresearchpro.authUser` (renaming them signs every browser out), in the Celery app's internal name, and in the repository's URL. The Chroma default is **not** grandfathered: `CHROMA_GLOBAL_COLLECTION_NAME` defaults to `pratidhvani_global` since T-2.6.1 (PR #106). `videoresearchpro_global` exists only on an install that embedded before then and pins that name in its `.env` ([runbook](docs/migration-code-identifiers.md)). All user-facing copy now reads `Pratidhvani`.
+> **Legacy name.** The project was previously called *VideoResearchPro*. The legacy string survives in the default database file (`DATABASE_URL`'s `sqlite:///./data/videoresearchpro.db`, which Alembic reads too, grandfathered by [D-032](docs/decisions.md#d-032--operator-coordinated-runbook-vs-automatic-startup-migration-for-data-bearing-identifier-renames-2026-05-03)), in the browser's `localStorage` keys `videoresearchpro.authToken` and `videoresearchpro.authUser` (renaming them signs every browser out), in the Celery app's internal name, and in the repository's URL. The Chroma default is **not** grandfathered: `CHROMA_GLOBAL_COLLECTION_NAME` defaults to `pratidhvani_global` since T-2.6.1 (PR #106). `videoresearchpro_global` exists only on an install that embedded before then and pins that name in its `.env` ([runbook](docs/migration-code-identifiers.md)). All user-facing copy now reads `Pratidhvani`.
 
 ## Vision & Roadmap
 
@@ -61,7 +61,7 @@ npm run build        # Production build + type check
 
 ### Tests
 ```bash
-# All backend tests (3,700+; `pytest tests/ --collect-only -q` prints the count)
+# All backend tests (4,400+; `pytest tests/ --collect-only -q` prints the count)
 cd backend && ./venv/Scripts/python -m pytest tests/ -v
 
 # Single test file
@@ -472,7 +472,7 @@ Copy `.env.example` to `backend/.env` and fill in required keys. The repository 
 | `TWITTER_BEARER_TOKEN` | No | (unset) | X / Twitter API v2 (BYOK, D-009). Set, tweet search turns on and `/health` reports `twitter_search_enabled`; unset, tweets come by pasted URL only |
 | `TWITTER_API_BASE` | No | `https://api.twitter.com/2` | X API endpoint |
 | `TWITTER_USER_AGENT` / `TWITTER_RATE_LIMIT_RPM` | No | `pratidhvani/0.1 (+https://github.com/anthropics/pratidhvani)` / `60` | X client: User-Agent and requests/minute |
-| `TWITTER_REPLY_DEPTH_DEFAULT` | No | `50` | Not read by any code yet |
+| `TWITTER_REPLY_DEPTH_DEFAULT` | No | `50` | Not read by any code yet: reserved for the top-K replies S-1.5.10 still owes (`TwitterClient.get_conversation_replies` exists, nothing calls it). Wiring it spends paid X API calls, so it waits for the owner |
 | `PDF_UPLOAD_DIR` / `PDF_MAX_BYTES` | No | `./data/uploads/pdf` / `104857600` | Where uploaded PDFs are kept, and the upload cap (100 MB) |
 | **RAG and ChromaDB** | | | |
 | `CHROMA_PERSIST_DIR` | No | `./data/chroma` | Where ChromaDB keeps its files |
@@ -488,16 +488,14 @@ Copy `.env.example` to `backend/.env` and fill in required keys. The repository 
 | `NOTE_RETRIEVAL_WEIGHT` | No | `1.5` | D-068 re-rank weight for notes, after the raw threshold. Measured before shipping (docs/notes/2026-10-19-s852-note-weight-measurement.md) |
 | **Jobs, reports and knowledge** | | | |
 | `MAX_CONCURRENT_JOBS` | No | `5` | Active jobs across the whole install, counted over every user; one more is refused |
-| `MAX_VIDEOS_PER_JOB` | No | `100` | Not read by any code (tier limits apply instead) |
 | `DEFAULT_TRANSCRIPT_LANGUAGE` | No | `en` | Language the YouTube connector asks for when nothing says what is spoken |
 | `REPORTS_DIR` | No | `./data/reports` | Where report files live |
-| `MAX_REPORT_WORDS` | No | `20000` | Not read by any code (the length policy applies instead) |
 | `REPORT_INTERMEDIATES_ENABLED` | No | `True` | Persist the report pipeline's per-batch map extractions and reduced dataset to `job_report_intermediates` (S-1.14.6), about twice the reduced dataset's size per run. Audit with `backend/scripts/audit_report_intermediates.py` |
 | `REPORT_MAP_BATCHING` / `REPORT_MAP_BATCH_TOKENS` | No | `packed` / `120000` | How report map batches are filled (S-1.14.19, D-094): `packed` fills them in source order up to the token cap, `source` never puts two sources in one call and doubles report length. The window of the resolved model also caps a batch |
 | `REPORT_MAP_CONCURRENCY` | No | `4` | Map calls in flight at once; results stay in batch order |
 | `REPORT_ATTRIBUTION_GUARD_ENABLED` | No | `True` | The deterministic attribution guard for on-screen details (S-1.18.9). A no-op without visual spans |
 | `KNOWLEDGE_EXTRACT_BATCH_TOKENS` | No | `8000` | Max tokens per extract batch |
-| `KNOWLEDGE_MAX_TRANSCRIPT_TOKENS` | No | `60000` | Max transcript size for knowledge extraction |
+| `KNOWLEDGE_MAX_TRANSCRIPT_TOKENS` | No | `60000` | Bounds the opening excerpt the synthesis prompt sees, which never exceeds 20,000 tokens. Extraction itself reads the whole text, up to a 500,000-token sanity ceiling |
 | **Author Studio** | | | |
 | `OUTPUTS_DIR` | No | `./data/outputs` | Author Studio artifacts (PDF, EPUB, PPTX, site zips), one directory per output: `<OUTPUTS_DIR>/<user_id>/<output_id>/` (S-6.7.2) |
 | `AUTHOR_PDF_ENGINE` | No | `auto` | Book PDF converter (S-6.1.5): `auto` tries WeasyPrint (needs Pango) then Chromium via Playwright; `weasyprint` / `chromium` pin one; `off` disables PDF. Both are optional (`backend/requirements-author.txt`); EPUB and Markdown need neither. Probed once per process, so restart after installing. Off for the test suite |
@@ -589,7 +587,6 @@ Copy `.env.example` to `backend/.env` and fill in required keys. The repository 
 | `LLM_PRIMARY_PROVIDER` / `LLM_PRIMARY_MODEL` | No | `openai` / (unset) | **Deprecated.** Provider and model of the legacy primary slot; a blank model falls back to `LLM_MODEL` |
 | `LLM_MODEL` | No | `gpt-5` | **Deprecated.** Legacy primary-model name retained for back-compat; per-use-case defaults live in `app/services/llm_routing.py::USE_CASE_REGISTRY` |
 | `LLM_FALLBACK_MODEL` | No | `gpt-4o` | **Deprecated.** Legacy fallback for the primary slot |
-| `LLM_MAX_CONTEXT_TOKENS` | No | `1047576` | Not read by any code (report batches are budgeted from `llm_routing.MODEL_CONTEXT_WINDOWS`) |
 | `LLM_FAST_MODEL` | No | `gpt-4.1-mini` | **Deprecated.** Legacy fast-slot model name; consulted only by `LLM_ROUTE_OVERRIDES=...=fast` fallback path |
 | `LLM_FAST_BASE_URL` | No | (unset) | **Deprecated.** Legacy alias for `LLM_LOCAL_BASE_URL`; still honored when the canonical name is unset |
 | `LLM_FAST_API_KEY` | No | `not-needed` | **Deprecated.** Legacy alias for `LLM_LOCAL_API_KEY` |
@@ -613,7 +610,6 @@ Copy `.env.example` to `backend/.env` and fill in required keys. The repository 
 | `OAUTH_GITHUB_CLIENT_ID` / `OAUTH_GITHUB_CLIENT_SECRET` | No | (unset) / (unset) | GitHub OAuth 2.0 + PKCE. |
 | `OAUTH_GITHUB_CONNECTOR_CLIENT_ID` / `OAUTH_GITHUB_CONNECTOR_CLIENT_SECRET` | No | (unset) / (unset) | Echo's GitHub connector (S-3.2.4). Unset, it uses the sign-in app above, whose callback URL must then cover both redirects (register the frontend origin) |
 | `OAUTH_GOOGLE_CONNECTOR_CLIENT_ID` / `OAUTH_GOOGLE_CONNECTOR_CLIENT_SECRET` | No | (unset) / (unset) | Reserved for the Google connectors (S-3.2.2, S-3.2.5), on their own client so a scope review never touches Google sign-in. Not read by any code yet |
-| `OAUTH_REDIRECT_BASE_URL` | No | (unset) | Not read by any code yet: the redirect comes from the request's `redirect_uri` |
 | **Rate limiting (E-5.5)** | | | |
 | `RATE_LIMIT_ENABLED` | No | `True` | Kill switch. Set `False` for dev / under-test. |
 | `RATE_LIMIT_PER_MIN_FREE` / `RATE_LIMIT_PER_MIN_PRO` / `RATE_LIMIT_PER_MIN_STUDIO` | No | `60` / `600` / `6000` | Per-user-tier caps for authenticated routes (req/min) |

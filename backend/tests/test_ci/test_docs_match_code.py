@@ -159,6 +159,21 @@ def test_a_copy_of_the_template_changes_nothing_but_secrets() -> None:
     assert {"OPENAI_API_KEY", "YOUTUBE_API_KEY", "JWT_SECRET", "BYOK_ENCRYPTION_KEY"} <= live
 
 
+def test_an_env_file_that_still_sets_a_removed_setting_starts(tmp_path, monkeypatch) -> None:
+    """T-4.11.1.4 took these four out of `Settings`, and an install's `.env` may
+    still set them. `extra = "ignore"` is what keeps that install booting: with
+    pydantic-settings' default of "forbid", each line stops the app at import."""
+    removed = ("MAX_VIDEOS_PER_JOB", "MAX_REPORT_WORDS", "LLM_MAX_CONTEXT_TOKENS", "OAUTH_REDIRECT_BASE_URL")
+    env = tmp_path / ".env"
+    env.write_text("".join(f"{name}=1\n" for name in removed), encoding="utf-8")
+    for name in FIELDS:
+        monkeypatch.delenv(name, raising=False)
+    for name in removed:
+        monkeypatch.setenv(name, "1")
+    loaded = Settings(_env_file=env, _env_file_encoding="utf-8")
+    assert not any(hasattr(loaded, name) for name in removed)
+
+
 def test_a_copy_of_the_template_boots(monkeypatch) -> None:
     """Through the loader production uses. A blank `JWT_SECRET=` must fall back
     to the development value: PyJWT refuses an empty key."""
@@ -326,12 +341,68 @@ def test_the_runbook_table_names_every_legacy_string() -> None:
     assert "signs every browser out" in table
 
 
-def test_the_runbook_says_alembic_does_not_follow_database_url() -> None:
-    """backend/alembic/env.py reads `sqlalchemy.url` from alembic.ini alone."""
+def test_the_runbook_says_alembic_follows_database_url() -> None:
+    """T-2.6.7: env.py falls back to the setting, so section B needs no second
+    edit, only a warning about a `sqlalchemy.url` line an operator added."""
     env = (ROOT / "backend" / "alembic" / "env.py").read_text(encoding="utf-8")
-    assert "DATABASE_URL" not in env and "settings" not in env
+    assert "settings.DATABASE_URL" in env
     text = (ROOT / "docs" / "migration-code-identifiers.md").read_text(encoding="utf-8")
-    assert "alembic.ini" in text[text.index("## What's renaming"):text.index("## Why these two")]
+    table = text[text.index("## What's renaming"):text.index("## Why these two")]
+    assert "Alembic reads that file" not in table
+    section_b = text[text.index("## §B"):text.index("## §C")]
+    assert "sqlalchemy.url" in section_b and "alembic current" in section_b
+
+
+# ── docs/ui-pages.md ─────────────────────────────────────────────────────
+
+
+def _frontend_routes() -> set[str]:
+    """Every path in the router. Children hang off `/`, so a bare path is under it."""
+    text = (ROOT / "frontend" / "src" / "routes" / "index.tsx").read_text(encoding="utf-8")
+    return {p if p == "*" else "/" + p.lstrip("/") for p in re.findall(r"\bpath: '([^']+)'", text)}
+
+
+def _ui_pages() -> str:
+    return (ROOT / "docs" / "ui-pages.md").read_text(encoding="utf-8")
+
+
+def _route_table() -> dict[str, str]:
+    """The route table: each path with the cell naming what renders it."""
+    text = _ui_pages()
+    section = text[text.index("## Route table"):text.index("## Page-by-page")]
+    return dict(re.findall(r"^\| `([^`]+)` \| ([^|]+) \|", section, re.M))
+
+
+def test_every_frontend_route_is_in_ui_pages() -> None:
+    """It calls itself the single source of truth for the page inventory, and
+    seven routes were missing from it, the whole of account security among them."""
+    routes = _frontend_routes()
+    assert len(routes) > 30, "the router did not parse"
+    missing = sorted(routes - set(_route_table()))
+    assert not missing, f"add to docs/ui-pages.md: {missing}"
+
+
+def test_ui_pages_lists_no_route_that_does_not_exist() -> None:
+    unknown = sorted(set(_route_table()) - _frontend_routes())
+    assert not unknown, f"no such route: {unknown}"
+
+
+def test_every_routed_page_has_a_section_in_ui_pages() -> None:
+    """`OnboardingGate` only redirects, and `*` has no component."""
+    sections = set(re.findall(r"^### `(\w+)`", _ui_pages(), re.M))
+    pages = {name for cell in _route_table().values() for name in re.findall(r"`(\w+Page)`", cell)}
+    assert len(pages) > 30
+    missing = sorted(pages - sections)
+    assert not missing, f"add a section to docs/ui-pages.md: {missing}"
+
+
+def test_ui_pages_says_how_the_session_is_kept() -> None:
+    """The key name, because a doc naming the wrong one sends a reader to rename
+    a key that is not there; renaming the real ones signs every browser out."""
+    source = (ROOT / "frontend" / "src" / "services" / "api.ts").read_text(encoding="utf-8")
+    key = re.search(r"AUTH_TOKEN_KEY = '([^']+)'", source).group(1)
+    assert key in _ui_pages()
+    assert "pratidhvani_token" not in _ui_pages()
 
 
 # ── The README ───────────────────────────────────────────────────────────
@@ -348,7 +419,7 @@ def test_the_readme_gives_the_real_collection_default() -> None:
 
 def test_the_readme_has_no_stale_test_count() -> None:
     line = next(x for x in _readme().splitlines() if "pytest tests" in x)
-    assert "3,700+" in line
+    assert "4,400+" in line
 
 
 def test_the_readme_names_every_agent() -> None:

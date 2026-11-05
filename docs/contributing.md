@@ -95,7 +95,7 @@ npm run dev                    # http://localhost:5173
 ### 2.4. Tests, lint, type-check
 
 ```bash
-# Backend tests (168 of them)
+# Backend tests (4,400+)
 cd backend && ./venv/Scripts/python -m pytest tests/ -v
 
 # Backend lint
@@ -118,7 +118,7 @@ Runbook for stress-testing LLM configs lives in [CLAUDE.md](../CLAUDE.md#llm-str
 
 ## 3. Database migrations (Alembic)
 
-Schema changes go through Alembic. The backend ships with a linear migration history under `backend/alembic/versions/`.
+Schema changes go through Alembic. The backend ships with a linear migration history under `backend/alembic/versions/`. Run these from `backend/`. They migrate the app's `DATABASE_URL`: `backend/alembic.ini` holds no URL of its own.
 
 ```bash
 cd backend

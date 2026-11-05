@@ -16,7 +16,7 @@
 | `APP_NAME` env default | `VideoResearchPro` | `Pratidhvani` | ✅ already migrated |
 | Health endpoint banner / startup log | `VideoResearchPro` | `Pratidhvani` | ✅ already migrated |
 | **`CHROMA_GLOBAL_COLLECTION_NAME`** | `videoresearchpro_global` | `pratidhvani_global` | ⚠️ **code default already `pratidhvani_global`** (T-2.6.1, PR #106). An install that embedded before then pins the legacy name or runs §A |
-| **`DATABASE_URL`** | `sqlite:///./data/videoresearchpro.db` | `sqlite:///./data/pratidhvani.db` | ⚠️ **operator-coordinated** (this runbook, §B). `backend/alembic.ini` holds its own copy, and Alembic reads that file, not `DATABASE_URL` |
+| **`DATABASE_URL`** | `sqlite:///./data/videoresearchpro.db` | `sqlite:///./data/pratidhvani.db` | ⚠️ **operator-coordinated** (this runbook, §B). Alembic reads the same setting, and `backend/alembic.ini` holds no copy (T-2.6.7) |
 | **Browser `localStorage` keys** | `videoresearchpro.authToken`, `videoresearchpro.authUser` | none planned | 🔒 **kept.** Each browser's session lives under them: renaming them signs every browser out and orphans the cached user, and the frontend's tests hard-code them |
 | Celery app name | `videoresearchpro` | none planned | 🔵 internal, no data behind it |
 | GitHub repo URL | `khoks/VideoResearchPro` | `khoks/pratidhvani` (or similar) | 🔵 outside-codebase, optional (§C) |
@@ -52,7 +52,7 @@ So the migration is operator-driven, with this runbook as the safe-execution che
 
 1. **Stop all writers**:
    - `uvicorn` (the FastAPI process)
-   - The Celery worker
+   - The Celery worker and Celery beat
    - Any cron / scheduled-task that hits the API
 2. **Verify the data exists** in the legacy collection. From the backend dir:
    ```bash
@@ -154,7 +154,7 @@ If anything looks wrong post-migration (Q&A returns nothing, chunk count mismatc
 
 ### Pre-migration checklist
 
-1. **Stop all writers** (uvicorn + Celery worker).
+1. **Stop all writers**: uvicorn, the Celery worker and Celery beat.
 2. **Confirm a backup exists** of `data/videoresearchpro.db`. The migration is a file rename, but a copy is cheap insurance.
 
 ### Migration procedure
@@ -169,11 +169,16 @@ Update `.env`:
 DATABASE_URL=sqlite:///./data/pratidhvani.db
 ```
 
+That is the only setting to change. Alembic uses the same `DATABASE_URL`: `backend/alembic/env.py` falls back to it, and `backend/alembic.ini` ships without a URL (T-2.6.7). So a manual `alembic upgrade head` follows the rename, as the app's startup always did.
+
+**If your `alembic.ini` has a `sqlalchemy.url` line, delete it.** You would have added it yourself, or kept it from a checkout older than T-2.6.7. It wins over `DATABASE_URL`, so `alembic` would build an empty database at the old path and report success, while your real database stayed behind.
+
 ### Post-migration
 
-1. Start uvicorn. The first startup will run any pending Alembic migrations against the renamed file — no schema change, just a path change.
+1. Start uvicorn. The first startup runs any pending Alembic migrations against the renamed file — no schema change, just a path change.
 2. Hit `GET /api/v1/health` to confirm the API is up.
-3. Open the Jobs page in the frontend; confirm your existing jobs are listed.
+3. From `backend/`, run `./venv/Scripts/alembic current`. It prints the head revision. No revision means Alembic is looking at a different, empty file: check for the line above.
+4. Open the Jobs page in the frontend; confirm your existing jobs are listed.
 
 ### Rollback
 
@@ -211,7 +216,8 @@ After §A + §B are complete, verify the system holistically:
 - [ ] Submit a fresh Q&A question scoped to one of those jobs; confirm the answer cites real sources.
 - [ ] Submit a fresh Q&A question scoped to the entire library; confirm same.
 - [ ] `data/pratidhvani.db` exists; `data/videoresearchpro.db.bak` exists (don't delete the backup until you've used the system for a few days).
-- [ ] ChromaDB has only `pratidhvani_global` and `qa_library_global` collections (the legacy `videoresearchpro_global` is gone).
+- [ ] `./venv/Scripts/alembic current`, from `backend/`, prints the head revision.
+- [ ] ChromaDB has no `videoresearchpro_global` collection left. Its other collections are `pratidhvani_global`, `qa_library_global`, `notes_global`, `shares_global` and `personal_context_global`.
 
 If any check fails, follow the relevant rollback section. The migration is fully reversible up to the point you delete the legacy backup.
 

@@ -1,6 +1,6 @@
 # Pratidhvani — Requirements
 
-**Status:** current as of 2026-04-24; NFR-4 amended 2026-10-19; FR-19 amended 2026-10-25. Functional requirements describe what the running system does; non-functional requirements describe the quality bars it must meet. Forward-looking requirements (multi-source, Author Studio, Personal Brain, SaaS) live in their owning docs and are not duplicated here — see [feature-roadmap.md](feature-roadmap.md).
+**Status:** written 2026-04-24; NFR-4 amended 2026-10-19; FR-19 amended 2026-10-25; re-audited against the code 2026-11-04 (T-4.11.1.5). Functional requirements describe what the running system does; non-functional requirements describe the quality bars it must meet. Forward-looking requirements (multi-source, Author Studio, Personal Brain, SaaS) live in their owning docs and are not duplicated here — see [feature-roadmap.md](feature-roadmap.md).
 
 ---
 
@@ -12,15 +12,16 @@
   - `topic` (required)
   - `search_instructions` (optional free-text steering for the Search Agent)
   - `preferred_channels` (optional list of channel handles to prefer)
-  - `max_videos` (default 25, capped at 100)
+  - `num_videos` (default 10; the plan sets the cap)
+  - `source_types`, `output_length`, duration bounds, `channel_type_filters` and `published_after_days` (all optional)
 - **FR-1.2.** Users can create **channel-based** jobs by providing:
   - `channel_urls` (1+ YouTube channel URLs or handles)
-  - `max_videos_per_channel` (default 50)
+  - `videos_per_channel`
 - **FR-1.3.** Users can create **subscription-based** jobs by providing:
   - `channel_urls` (1+ YouTube channel URLs or handles)
-  - The channels become *subscribed* and are auto-pulled by future subscription jobs.
-- **FR-1.4.** System enforces a per-user maximum of **5 concurrently active** jobs.
-- **FR-1.5.** Jobs are user-scoped: each job belongs to the user who created it; users do not see one another's jobs (the global library is the only cross-user surface today, and today is single-tenant).
+  - The channels become *subscribed* for that user.
+- **FR-1.4.** The install runs at most `MAX_CONCURRENT_JOBS` (default 5) active jobs at once, counted over every user. One more is refused.
+- **FR-1.5.** Jobs are user-scoped: each job belongs to the user who created it; users do not see one another's jobs. The `documents` table is one global cache, but a user sees only the documents they ingested ([D-063](decisions.md#d-063--per-user-isolation-shared-cache-private-catalogue-2026-07-31)).
 
 ### FR-2 — Video discovery
 
@@ -30,33 +31,33 @@
   - Ranks and deduplicates via `search_rank_and_curate` (LLM use case)
   - Returns a curated candidate list
 - **FR-2.2.** **Channel jobs** resolve channel handles → channel IDs → uploads playlist → recent videos.
-- **FR-2.3.** **Subscription jobs** loop across every subscribed channel's uploads playlist with `last_synced_at` as the cutoff.
+- **FR-2.3.** **Subscription jobs** walk every video on each channel's uploads playlist. Videos already in the library skip the fetch, transcription and embedding.
 
-### FR-3 — Video approval (topic jobs only)
+### FR-3 — Video approval (topic and channel jobs)
 
-- **FR-3.1.** Topic jobs pause at `awaiting_approval` after discovery.
+- **FR-3.1.** Topic and channel jobs pause at `awaiting_approval` after discovery.
 - **FR-3.2.** Users see a list of discovered videos with thumbnails, channel, duration, published date.
-- **FR-3.3.** Users select a subset and POST to `/jobs/{id}/approve` with the approved IDs.
-- **FR-3.4.** Approval is **passive**: the worker that ran search has already exited. A new Celery task (`resume_job_after_approval`) is dispatched.
-- **FR-3.5.** Channel and subscription jobs skip approval entirely.
+- **FR-3.3.** Users select a subset and `PUT` it to `/jobs/{id}/approve` with the approved IDs.
+- **FR-3.4.** Approval is **passive**: the worker that ran search has already exited. A new Celery task is dispatched to resume from extraction.
+- **FR-3.5.** Subscription jobs skip approval entirely.
 
 ### FR-4 — Transcript extraction
 
 - **FR-4.1.** Transcripts are fetched via `youtube-transcript-api` per video.
-- **FR-4.2.** **Multilingual.** English is preferred; on miss, any available language is accepted (Hindi, Spanish, etc.). The transcript's language is stored.
+- **FR-4.2.** **Multilingual.** The track taken is the one in the language the video is spoken in, never an auto-dub; English first applies only when nothing says what is spoken ([D-117](decisions.md#d-117--the-caption-track-is-the-one-in-the-spoken-language-auto-dubs-are-read-from-the-players-audio-tracks-2026-10-29)). The transcript's language is stored.
 - **FR-4.3.** When no caption track exists at all, the system falls back to **Whisper transcription** via `yt-dlp + whisper`. Whisper is invoked with `task="transcribe"` (not `translate`) so mixed-language audio is preserved.
 - **FR-4.4.** Failed transcripts mark the video `transcript_status='unavailable'` without blocking other videos in the job.
-- **FR-4.5.** **Cached.** A `transcript_cache` row keyed by `video_id` ensures we never re-fetch.
-- **FR-4.6.** Rate-limited (default 0.5 s between requests; configurable).
+- **FR-4.5.** **Cached.** A `transcript_cache` row keyed by `document_id` ensures we never re-fetch.
+- **FR-4.6.** Rate-limited (default 3 s between requests, with jitter; `YOUTUBE_TRANSCRIPT_RATE_LIMIT`). The pace of 0.5 s triggered an IP block at about 60 videos.
 
 ### FR-5 — RAG construction
 
-- **FR-5.1.** Transcripts are chunked at 512 tokens with 50-token overlap.
+- **FR-5.1.** Transcripts are chunked at 256 tokens with 32-token overlap (`CHUNK_SIZE` / `CHUNK_OVERLAP`).
 - **FR-5.2.** Each chunk preserves `start_time` / `end_time` derived from the source segments.
 - **FR-5.3.** Chunks are embedded with `paraphrase-multilingual-MiniLM-L12-v2` (CPU SentenceTransformer; no embedding API). A chunk of a non-English source is embedded as its English rendering, while its stored text stays the original ([D-084](decisions.md#d-084--code-mixed-retrieval-embed-an-english-rendering-keep-the-original-as-the-stored-text-2026-10-19)).
-- **FR-5.4.** Chunks live in **a single global ChromaDB collection** (`videoresearchpro_global`). Per-job scoping is a metadata filter at query time.
-- **FR-5.5.** Chunk metadata: `{video_id, job_id, chunk_index, start_time, end_time, channel_id, ingested_at}`.
-- **FR-5.6.** **One-time embedding.** Each video's `Video.embedded_in_chroma` flips to `true` after first chunking. Subsequent jobs referencing that video skip embedding.
+- **FR-5.4.** Chunks live in **a single global ChromaDB collection** (`pratidhvani_global` by default, `CHROMA_GLOBAL_COLLECTION_NAME`). Per-job scoping is a metadata filter at query time.
+- **FR-5.5.** Chunk metadata carries `document_id` for every source type, the source fields (`source_type`, `source_id`, `source_url`, `channel_id` and the like), `chunk_index`, the time span, and the temporal and language fields, which are omitted when unknown.
+- **FR-5.6.** **One-time embedding.** Each document's `Document.embedded_in_chroma` flips to `true` after first chunking. Subsequent jobs referencing that video skip embedding.
 
 ### FR-6 — Report generation
 
@@ -84,8 +85,8 @@
 
 ### FR-8 — Library-wide Q&A
 
-- **FR-8.1.** Authenticated users can ask questions against the **entire global library** at `/library/qa`.
-- **FR-8.2.** No per-job filter. The Q&A agent retrieves across `videoresearchpro_global` unfiltered.
+- **FR-8.1.** Authenticated users can ask questions across the library they can see, at `/library/qa`, or about one source (`document_id`).
+- **FR-8.2.** No per-job filter. Retrieval is limited to `document_id ∈` the asker's visible set; an empty set retrieves nothing ([D-063](decisions.md#d-063--per-user-isolation-shared-cache-private-catalogue-2026-07-31)).
 - **FR-8.3.** Same clarify / sub-query / refine / answer / extract pipeline as FR-7, with use cases prefixed `library_qa_*`.
 - **FR-8.4.** Library Q&A history persists to `library_qa_exchanges` and is indexed into `qa_library_global`.
 - **FR-8.5.** A user can delete a library Q&A exchange (`DELETE /library/qa/{exchange_id}`).
@@ -94,7 +95,7 @@
 
 - **FR-9.1.** Users can list, view, and subscribe / unsubscribe channels.
 - **FR-9.2.** Subscribing a channel optionally dispatches an immediate sync job that ingests every video on its uploads playlist.
-- **FR-9.3.** `last_synced_at` tracks the cutoff for the next subscription job's incremental pull.
+- **FR-9.3.** Subscriptions are per user (`channel_subscriptions`, [D-065](decisions.md#d-065--channel-subscriptions-become-per-tenant-transliteration-reversed-2026-07-31)). `last_synced_at` records the last sync and is shown; a sync walks the whole playlist and relies on the library's dedup.
 - **FR-9.4.** Manual sync (`POST /channels/{id}/sync`) is supported.
 - **FR-9.5.** Unsubscribing leaves already-ingested videos in the global library; cleanup is intentional, not implicit.
 
@@ -104,16 +105,16 @@
 - **FR-10.2.** Powered by the `qa_library_global` Chroma collection, which unions `qa_exchanges` + `library_qa_exchanges` + `qa_history_exchanges`.
 - **FR-10.3.** Pipeline: `retrieve_past_exchanges → qa_history_refine_context → qa_history_formulate_answer`.
 - **FR-10.4.** References cite past exchange IDs; the frontend resolves them to deep links to the originating job-detail or library-Q&A page.
-- **FR-10.5.** A worker-startup backfill idempotently upserts every existing row from the three Q&A tables into `qa_library_global`.
+- **FR-10.5.** An idempotent backfill upserts every existing row from the three Q&A tables into `qa_library_global`, in the API's startup and as a task queued when a worker starts.
 
-### FR-11 — Per-video knowledge artifacts
+### FR-11 — Per-document knowledge artifacts
 
-- **FR-11.1.** Every video can have a structured knowledge artifact extracted on demand, via `POST /videos/{id}/extract-knowledge`.
-- **FR-11.2.** The Knowledge Agent splits the cached transcript into token-budgeted batches (`KNOWLEDGE_EXTRACT_BATCH_TOKENS`, default 8000), capped at `KNOWLEDGE_MAX_TRANSCRIPT_TOKENS` (default 60000).
+- **FR-11.1.** Every document, of any source type, can have a structured knowledge artifact extracted on demand, via `POST /videos/{id}/extract-knowledge`.
+- **FR-11.2.** The Knowledge Agent splits the document's full text into token-budgeted batches (`KNOWLEDGE_EXTRACT_BATCH_TOKENS`, default 8000). The whole text is read, up to a 500,000-token sanity ceiling that marks a truncated result.
 - **FR-11.3.** **Map phase** (`knowledge_extract_batch`) returns structured `{topics, concepts, events, facts}` JSON per batch.
 - **FR-11.4.** **Merge phase** unions and deduplicates the per-batch outputs.
 - **FR-11.5.** **Synthesize phase** (`knowledge_synthesize_report`) renders a Markdown knowledge document.
-- **FR-11.6.** Output is persisted to `videos.extracted_knowledge_json`, `videos.knowledge_report_md`, `videos.knowledge_extracted_at`.
+- **FR-11.6.** Output is persisted to `documents.extracted_knowledge_json`, `documents.knowledge_report_md`, `documents.knowledge_extracted_at`.
 - **FR-11.7.** Returns 409 if already extracted unless `?force=true`.
 
 ### FR-12 — Dataset exports
@@ -129,16 +130,16 @@
 
 ### FR-13 — Auth & multi-user
 
-- **FR-13.1.** Email + password registration and login (`/auth/register`, `/auth/login`).
+- **FR-13.1.** Email + password registration and login (`/auth/register`, `/auth/login`), Google and GitHub OAuth with PKCE, and two-step verification (TOTP + recovery codes).
 - **FR-13.2.** Passwords hashed with bcrypt.
-- **FR-13.3.** Login issues a JWT; included as `Authorization: Bearer <token>` on every authenticated request.
+- **FR-13.3.** Login issues a JWT tied to a session the server can revoke; included as `Authorization: Bearer <token>` on every authenticated request.
 - **FR-13.4.** Protected endpoints fail with 401 on missing/invalid token.
-- **FR-13.5.** Resources are filtered by user ownership at query time. The global video library is the single shared corpus.
+- **FR-13.5.** Resources are filtered by user ownership at query time. The global document store is a shared cache, read through each user's visibility grants ([D-063](decisions.md#d-063--per-user-isolation-shared-cache-private-catalogue-2026-07-31)).
 
 ### FR-14 — LLM smoke + fail-soft
 
 - **FR-14.1.** On FastAPI startup, `services/llm_smoke.run_startup_probes` resolves the effective `(provider, model, reasoning)` triple for every registered LLM use case.
-- **FR-14.2.** Probes are deduped by `(provider, model)` — each unique pair is probed exactly once with a trivial one-token call.
+- **FR-14.2.** Probes are deduped by `(provider, model, vision)` — each unique config is probed exactly once with a trivial one-token call.
 - **FR-14.3.** Results are stored on a process-global `LLMStatus` singleton.
 - **FR-14.4.** `GET /health` returns overall status plus an `llm` object: `status` (`ok` / `degraded` / `down` / `unknown`) and `unavailable_features` (list of feature names whose required use cases failed).
 - **FR-14.5.** `GET /health/llm` returns full per-use-case detail: `provider`, `model`, `reasoning`, `ok`, `latency_ms`, `error`.
@@ -147,7 +148,7 @@
 ### FR-15 — LLM routing
 
 - **FR-15.1.** Every LLM call site is a **named use case** with a default `(provider, model, reasoning)` registered in `app/services/llm_routing.py::USE_CASE_REGISTRY`.
-- **FR-15.2.** Nineteen use cases ship today (full list in [CLAUDE.md](../CLAUDE.md) §LLM-configuration).
+- **FR-15.2.** Thirty-six use cases ship today (full list in [CLAUDE.md](../CLAUDE.md) §LLM-configuration).
 - **FR-15.3.** `LLM_USE_CASE_CONFIG` env var overrides any use case at runtime: `use_case=provider:model[:reasoning]`, comma-separated.
 - **FR-15.4.** Unknown use case names, providers, or reasoning levels are logged as warnings and ignored — never fatal.
 - **FR-15.5.** Supported providers: OpenAI, Anthropic, Google, local (OpenAI-compatible).
@@ -160,14 +161,14 @@
 - **FR-16.3.** Celery workers publish progress to Redis pub/sub channel `job_progress:{job_id}` at every phase boundary.
 - **FR-16.4.** WS authenticates via `?token=` query string (browsers cannot set Authorization headers on WS).
 - **FR-16.5.** Heartbeats every 30 seconds.
-- **FR-16.6.** The frontend's `useJobProgress` hook drives React Query cache invalidation off WS messages.
+- **FR-16.6.** The frontend's `useJobProgress` hook drives React Query cache updates off WS messages.
 
 ### FR-17 — Quota observability
 
 - **FR-17.1.** Every YouTube API call is logged in `api_quota_log` with cost units.
-- **FR-17.2.** A soft cap (default 8000 of the 10000 daily YouTube units) surfaces a banner when usage crosses it.
-- **FR-17.3.** A hard cap (default 10000) rejects new searches with a 429 + clear "quota exhausted" error.
-- **FR-17.4.** `GET /health/quota` returns current usage, soft cap, hard cap, and time-to-reset.
+- **FR-17.2.** Each request also counts against the user's own usage, by feature ([E-5.2](initiatives.md#e-52--subscription-tier-gating)).
+- **FR-17.3.** `YOUTUBE_DAILY_QUOTA` (default 10,000 units) is what usage is reported against. Nothing in the app refuses a search at that figure: YouTube's own 403 ends the search phase, and `QuotaExceededError` carries it.
+- **FR-17.4.** `GET /health/quota` returns today's date, units used, the daily limit and what remains.
 
 ### FR-18 — Admin & operations
 
@@ -210,7 +211,7 @@
 
 ### NFR-5 — Observability
 
-- **NFR-5.1.** Structured logs via stdlib `logging` with JSON formatter.
+- **NFR-5.1.** Logs go through stdlib `logging`, as plain text.
 - **NFR-5.2.** Celery task logs include `job_id` in every record.
 - **NFR-5.3.** YouTube API calls are tracked in `api_quota_log` with cost units.
 - **NFR-5.4.** LLM startup probes record `latency_ms` per `(provider, model)` pair on the `LLMStatus` singleton.
@@ -218,14 +219,14 @@
 ### NFR-6 — Cost / quota observability
 
 - **NFR-6.1.** YouTube API quota status is surfaced via `GET /health/quota`.
-- **NFR-6.2.** Soft warnings appear in the UI at ≥80% daily usage.
-- **NFR-6.3.** LLM token-cost accounting is **not** in scope today; deferred to the SaaS phase ([saas-roadmap.md](saas-roadmap.md)).
+- **NFR-6.2.** `/account/system` shows today's usage against the daily limit; the submit form shows an estimate of the one run. There is no banner.
+- **NFR-6.3.** LLM tokens, calls, YouTube units and Whisper audio are recorded per user and feature (`usage_records`, `GET /usage`). Nothing is enforced from those figures ([D-111](decisions.md#d-111--operator-only-tier-switching-and-an-honest-pricing-page-2026-10-25)).
 
 ### NFR-7 — Forward-compatibility with multi-tenancy
 
-- **NFR-7.1.** Every user-scoped table has — or will have, in the imminent migration — a `tenant_id` column. The single self-host instance has a single tenant.
-- **NFR-7.2.** All user-scoped queries route through a `with_tenant_scope` helper rather than ad-hoc `WHERE user_id = ...` filters. This single chokepoint becomes the per-tenant rate limiter and audit hook later.
-- **NFR-7.3.** Tier-table quotas are reserved as schema columns even though the single self-host tier ignores them.
+- **NFR-7.1.** Every user-scoped table has a `tenant_id` column. Each user is one tenant.
+- **NFR-7.2.** User-scoped queries filter on `tenant_id` where they run; there is no central helper. Reads of `documents` go through `visibility_service.visible_document_ids`.
+- **NFR-7.3.** Tier quotas are enforced per tenant (`quota_metering_service`, HTTP 429 over the limit).
 
 ### NFR-8 — Security
 
@@ -233,7 +234,7 @@
 - **NFR-8.2.** JWTs signed with HS256; secret in `.env`.
 - **NFR-8.3.** Bearer token validated on every protected request.
 - **NFR-8.4.** No user input ever passed unsanitized to the LLM prompt — the agent prompts are templated.
-- **NFR-8.5.** Reports are served as `text/html` with `Content-Security-Policy` headers blocking external script and form submissions.
+- **NFR-8.5.** A report is untrusted HTML. The job page frames it from a blob: URL in a sandboxed iframe with scripts blocked, and the reading room sanitises it with DOMPurify. The server sends no `Content-Security-Policy` header of its own.
 - **NFR-8.6.** ChromaDB queries use parameterized metadata filters; no raw query injection surface.
 
 ### NFR-9 — Privacy
@@ -241,13 +242,13 @@
 - **NFR-9.1.** Self-host stores all data locally under `data/`.
 - **NFR-9.2.** No telemetry pings third-party services.
 - **NFR-9.3.** YouTube transcripts are public content; we cite, never rehost video.
-- **NFR-9.4.** Personal Brain features (when L3 ships) follow the privacy model in [personal-brain.md](personal-brain.md), explicitly opt-in per connector.
+- **NFR-9.4.** Echo follows the privacy model in [personal-brain.md](personal-brain.md): each connector is opt-in, and export and full delete cover every store.
 
 ### NFR-10 — Maintainability
 
 - **NFR-10.1.** Backend tests run against in-memory SQLite, mocked Celery, ephemeral ChromaDB. No external service dependency.
 - **NFR-10.2.** Frontend type-checks via `npm run build` (Vite + tsc).
-- **NFR-10.3.** Alembic owns schema migrations; `Base.metadata.create_all` is the dev fallback only.
+- **NFR-10.3.** Alembic owns schema migrations: startup brings the database to head (`schema_init_service`), and nothing calls `Base.metadata.create_all`.
 - **NFR-10.4.** Code style enforced by ruff (Python) and the TS compiler (frontend); see [contributing.md](contributing.md).
 
 ---

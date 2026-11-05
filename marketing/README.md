@@ -5,11 +5,7 @@ built with [Astro](https://astro.build/). Lives outside the main app
 (`backend/` + `frontend/`) so the marketing build is independent of
 the product runtime.
 
-> **Status: scaffold (2026-04-28).** This directory exists because
-> [E-2.5](../docs/initiatives.md#e-25--marketing-landing-page-warm-editorial)
-> just kicked off — the full content (hero, "different from
-> Wikipedia" thesis, source-types matrix, install instructions, SaaS
-> waitlist hook) lands in follow-up PRs (T-2.5.2 onward).
+> **Status: shipped ([E-2.5](../docs/initiatives.md#e-25--marketing-landing-page-warm-editorial)).** One page, `src/pages/index.astro`, with the logos in `public/`. Deploying it waits on a hosting decision (M-2.5). This is a separate build from the `/landing` and `/pricing` pages inside the app.
 
 ## Why a separate sub-project
 
@@ -41,16 +37,9 @@ npm run build      # outputs to ./dist
 npm run preview    # serves dist/ locally to verify
 ```
 
-## Roadmap (per [E-2.5 in initiatives.md](../docs/initiatives.md#e-25--marketing-landing-page-warm-editorial))
+## Sections
 
-- [x] **T-2.5.1** Astro scaffold (this PR)
-- [ ] **T-2.5.2** Hero with the personal-wiki pitch + tagline
-- [ ] **T-2.5.3** "How it differs from Wikipedia" section (curation thesis)
-- [ ] **T-2.5.4** Source-types matrix (videos / podcasts / articles / etc.)
-- [ ] **T-2.5.5** "How it works" walkthrough (search → approve → embed → ask)
-- [ ] **T-2.5.6** Install instructions (open-source self-host)
-- [ ] **T-2.5.7** SaaS waitlist hook (future-only — disabled CTA today)
-- [ ] **T-2.5.8** Footer: GitHub, docs, license
+Hero, how it differs from Wikipedia, the source-types matrix, how it works, install instructions, the SaaS waitlist hook (a disabled call to action for now) and the footer. The board's [E-2.5](../docs/initiatives.md#e-25--marketing-landing-page-warm-editorial) has the history.
 
 ## Why Astro and not Next / 11ty / plain HTML
 

@@ -43,9 +43,8 @@ export function useCitationUi(): CitationUi | null {
 export interface CitationCardProviderProps {
   index: CitationIndex | null;
   /**
-   * R1 hook (T-8.8.2.3): once S-1.18.2 serves `visual_frames`, return the
-   * still nearest the cited timestamp and the card shows it. Nothing supplies
-   * one yet.
+   * R1 hook (T-8.8.2.3): returns the still nearest the cited timestamp, and the
+   * card shows it. The report reader supplies it (`useCitationStills`, S-1.18.2).
    */
   resolveStill?: (citation: ResolvedCitation) => CitationStill | null;
   children: ReactNode;

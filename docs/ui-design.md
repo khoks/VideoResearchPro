@@ -10,7 +10,7 @@ This document explicitly retires the legacy purple-blue gradient (`#667eea → #
 
 ## 1. Design tokens
 
-The token set will live at `frontend/src/theme.ts` (to be created during the redesign migration — see the 7-pass plan at the bottom of this doc). All values come from [branding.md](branding.md); this section is the **applied** version, organized by token category.
+The token set lives at `frontend/src/theme.ts`. All values come from [branding.md](branding.md); this section is the **applied** version, organized by token category.
 
 ### 1.1. Colors
 
@@ -179,47 +179,58 @@ Single source. No ad-hoc `z-index: 9999`.
 
 ### 2.1. App shell
 
-The protected pages share `AppLayout`. Today: top horizontal tab bar. Post-redesign: slim left sidebar.
+The protected pages share `AppLayout`: a left sidebar on desktop, a top bar with a drawer on small screens. Page-level detail is in [ui-pages.md](ui-pages.md#layout-applayout).
 
 ```
-┌──────────────────────────────────────────────────────────┐
-│ [प्रतिध्वनि wordmark]  ─── (right) [LLM dot]  [user ▾]   │ ← top bar (44px)
-├────────────┬─────────────────────────────────────────────┤
-│  SIDEBAR   │              CONTENT                        │
-│  (240px)   │                                             │
-│            │   max-width: 980px (reading), 1200px (grid) │
-│  collapses │                                             │
-│  → 56px    │   page-padding: space.6                     │
-│  on narrow │                                             │
+┌────────────┬─────────────────────────────────────────────┐
+│  SIDEBAR   │  [SystemStatusBanner, when something is down]│
+│  (240px)   ├─────────────────────────────────────────────┤
+│  brand     │              CONTENT                        │
+│  search    │                                             │
+│  bell      │   max-width: 980px (reading), 1200px (grid) │
+│  groups    │                                             │
+│  chrome    │   page-padding: space.6                     │
 └────────────┴─────────────────────────────────────────────┘
 ```
 
-Sidebar groups (top to bottom):
+Sidebar groups (top to bottom), each shown only when it has entries for this reader:
 
 ```
-LIBRARY
-  · Shelves          (M1 — placeholder until shipped)
-  · All sources
-  · Channels
+START HERE      (until the wizard is finished or skipped)
+  · Getting started
 
 RESEARCH
   · New research
   · Active runs
-  · History
+
+LIBRARY
+  · All sources
+  · Ask the library
+  · Library map
+  · Saved searches  (Pro+)
+
+SHELVES
+  · the reader's shelves, then Manage shelves
 
 KNOWLEDGE
-  · Knowledge reports
   · Echoes (Q&A history)
+  · Your notes
+  · Exports
 
-AUTHOR  (greyed; unlocks at L2)
-  · Books
-  · Sites
-  · Decks
+GENERATE
+  · Author Studio  (Pro+)
+  · Echo           (Studio)
+
+ACCOUNT
+  · Subscription
+  · AI models
+  · Security
+  · System status
 ─────────
-[avatar] Settings
+Add to Echo (Studio) · email · Dark/Light mode · Sign out
 ```
 
-- Width: 240 px expanded, 56 px collapsed (icons only). Collapse state persists in `uiStore`.
+- Width: 240 px. The sidebar does not collapse to icons; under its breakpoint it gives way to the top bar and drawer.
 - Active item: oxblood `accent` text + 2 px left border in `accent`. Inactive: `textSecondary`.
 - Group headers: `ui` font, `xs` size, `textMuted`, uppercase, letter-spacing 0.08em.
 - Keyboard shortcuts (`frontend/src/hooks/useShortcuts.ts`, S-8.2.2): **Mod-K** opens the command palette (Cmd on macOS, Ctrl elsewhere; macOS keeps Ctrl-K as the fields' kill-line) and **Ctrl-Alt-K** is the alternate, since Chrome and Firefox bind Ctrl-K to the address bar until the page has focus. **`/`** focuses the page's own search box (`data-page-search`) or opens the palette. **`g r`** → research, **`g l`** → library, **`g k`** → knowledge (Echoes), **`g a`** → author. Single keys and the `g` chords never fire while typing in a field, and the palette's "Turn single-key shortcuts off" switches them off per browser (WCAG 2.1 SC 2.1.4). A **Search…** button under the brand lockup (and a 44 px search icon in the mobile bar) opens the same palette for pointer and touch users. **Mod-Shift-E** opens the Echo panel for Studio users (S-3.8.1). It is not Cmd-E, which is macOS's "Use Selection for Find". It works inside text fields, and the palette's **Ask Echo** is the other way in.
@@ -255,11 +266,11 @@ Reports are the longest single piece of content. They get the most editorial tre
 - Reading-progress bar floats at bottom-right; updates from scroll position.
 - Print stylesheet flattens the outline, removes the progress bar, keeps citations as proper footnotes.
 
-### 2.4. Mobile (≤ 640 px)
+### 2.4. Small screens
 
-- Sidebar collapses to a hamburger; opens as a full-screen overlay.
-- Card grids → single column.
-- Reports: drop the outline, keep drop cap and citations.
+- Under 960 px the sidebar gives way to a top bar with a hamburger, whose drawer opens below the bar with the same navigation.
+- Under 640 px card grids go to a single column.
+- Reports: under 1200 px the outline moves into the bottom reading toolbar; drop cap and citations stay.
 - Q&A textarea: docked at bottom; chat-like.
 
 **As built (S-8.12.1, 2026-10-19).**
@@ -280,7 +291,7 @@ A small, opinionated set of primitives lives at `frontend/src/components/primiti
 | Primitive | Notes |
 |-----------|-------|
 | `Button` | Variants: `primary`, `secondary`, `tertiary`, `danger`. Sizes: `sm`, `md`, `lg`. Loading state with inline spinner. Disabled state dims to `textMuted` and disables pointer events. |
-| `IconButton` | Like `Button` but square; ARIA-label required. |
+| `IconButton` | Like `Button` but square; ARIA-label required. Not built yet. |
 | `Card` | `surface` fill, `border` outline, `radius.md`. Hover variant lifts 2 px with `shadow.hover`. Optional `as` prop for `<a>` / `<button>` semantics. |
 | `Input`, `Textarea`, `Select` | `surface` fill, focus ring in `accent`. Errors render `error`-colored border + helper text below. |
 | `FormField` | Wraps a label + control + helper text. Generates IDs for `htmlFor`. |
@@ -289,15 +300,15 @@ A small, opinionated set of primitives lives at `frontend/src/components/primiti
 | Charts (`components/charts/`) | `ColumnChart` (single or stacked columns over an ordered axis: ≤24px marks with a 4px rounded data-end and square baseline, 2px surface gaps, hairline grid, a legend only for ≥2 series, a hover and keyboard readout — focus the chart, then ←/→, Home, End, Escape — and a **Show as table** view), `BarList` (ranked horizontal bars, value at the tip, rows that open for drill-down), `ChartTable`. Colours come from `chartColors` (§1.1); text never wears them. |
 | `LabelPill` | A user-applied label (shelf, tag) in one of the ten label-palette colours (§1.1): bordered pill, text always present. Optional `to` (router link, clicks never bubble to an enclosing card) and `onRemove` (a small ×). |
 | `StatusPill` | Specialized Badge with semantic statuses for jobs (pending, searching, awaiting_approval, etc.). |
-| `Tabs` | Underlined active tab in `accent`. Keyboard accessible (arrow keys). |
+| `Tabs` | Underlined active tab in `accent`. Keyboard accessible (arrow keys). Not built yet: pages render their own tab buttons. |
 | `Modal` | Centered, `surface` fill, `shadow.floating`, focus trap, ESC-to-close, scroll lock on body. |
-| `Drawer` | Slides from right, `shadow.floating`, focus trap. Used by `VideoKnowledgeDrawer`. |
-| `Tooltip` | Hover/focus-triggered, `surface` fill, `shadow.floating`. ARIA-described. |
+| `Drawer` | Slides from right, `shadow.floating`, focus trap. Not a primitive yet: `VideoKnowledgeDrawer` is its own component. |
+| `Tooltip` | Hover/focus-triggered, `surface` fill, `shadow.floating`. ARIA-described. Not built yet: controls use the `title` attribute. |
 | `Spinner` | 14 px circular, `accent` color. |
 | `Skeleton` | Shimmer in `surfaceAlt` with `border` outline. Variants: `text`, `paragraph`, `card`, `row`. |
 | `EmptyState` | Hero-style empty state: icon + display heading + secondary line + optional CTA. The voice (per [branding.md](branding.md) §voice) is editorial — never "No data." |
-| `Toast` | Slides up from bottom-right, auto-dismisses after 5 s, click to dismiss. Status-colored left border. |
-| `BannerBar` | Pull-quote-style global banner for LLM down / quota warnings. Editorial, not modal. |
+| `Toast` (`components/common/Toast.tsx`) | Slides up from bottom-right, auto-dismisses after 5 s, click to dismiss. Status-colored left border. |
+| `SystemStatusBanner` (`components/common/`) | Pull-quote-style banner for degraded or down LLM services. Editorial, not modal. |
 | `CitationChip` | Inline citation in body text. Mono superscript number → hover popover with source + timestamp + quote. |
 
 **Popovers inside cards portal to `<body>`.** `Card` sets a `transform`, which makes every card its own stacking context, so a popover positioned inside one is painted under the next card in a list (found 2026-10-19 on the tag picker). `components/labels/LabelPicker.tsx` is the pattern: `createPortal` to `document.body`, fixed coordinates from the trigger's `getBoundingClientRect()` (re-placed on scroll and resize), and outside-click / Escape listeners in the **capture** phase, because a wrapper that stops propagation (so a click never opens the card behind) also hides bubbling events from `document`. React still bubbles portal events through the component tree, so that wrapper keeps working.
@@ -310,31 +321,28 @@ Primitives are self-contained. They don't reach into context for theme — they 
 
 ### 4.1. Top bar
 
-Top-right cluster, in order: LLM-status dot (green/yellow/red, with hover popover summarizing per-feature availability), user avatar (initials in oxblood circle) → on click, dropdown with Settings, Sign out.
+There is no top-right cluster. The theme switch and **Sign out** are at the foot of the sidebar, under the signed-in email. The LLM status shows as a banner when something is wrong, and in full on `/account/system`.
 
 ### 4.2. Banner system
 
-Driven by `useHealth()` (polls `/api/v1/health` every 60 s) plus a small `useQuota()` (60 s).
+Driven by `useSystemStatus()` (polls `/api/v1/health` every 60 s).
 
-- **LLM down** → `BannerBar` with "Some features are paused" + the `unavailable_features` list, plus a "View status" link to `/settings/system`. Sticks at the top.
-- **Quota soft warning (≥80%)** → softer warning, only on `/submit`.
-- **Quota hard cap reached** → red banner, on `/submit`, blocks the submit button.
-- **Network reconnecting** → grey banner with a spinner.
-
-Only one banner at a time; LLM > network > quota.
+- **LLM degraded or down** → `SystemStatusBanner` with the status, the `unavailable_features` list and **Retry now**. It sits above the page. `/account/system` has the detail.
+- **YouTube quota** → no banner. `/account/system` shows today's usage; the submit form shows an estimate of the one run.
+- **Network** → no banner. Requests fail with a toast until the backend returns.
 
 ### 4.3. Toast queue
 
-Triggered by errors (React Query global `onError`), success notifications (after a successful approval, after copy-to-clipboard). Max 3 stacked; oldest auto-dismisses first.
+Triggered by errors (the React Query caches' global `onError`), and by success notifications from the action that succeeded. The rules are in `components/common/Toast.tsx` and `stores/jobStore.ts`.
 
 ---
 
 ## 5. Iconography
 
-We use **Lucide** as the icon library — minimal, consistent, free. Strokes inherit `currentColor` so icons fall under the same color rules as text.
+There is no icon library: `lucide-react` was planned and never installed. Controls use text labels, and the few glyphs are inline SVG or typographic characters. Strokes inherit `currentColor`, so icons fall under the same color rules as text.
 
 Custom icons:
-- The Pratidhvani concentric-arcs glyph (per [branding.md](branding.md) §logo) lives at `frontend/src/assets/marks/echo.svg` and is the favicon + sidebar mark.
+- The Pratidhvani concentric-arcs glyph (per [branding.md](branding.md) §logo) lives at `frontend/public/logo-mark.svg`, with `logo-mark-dark.svg`, `logo-full.svg` and `logo-full-dark.svg` beside it, and `favicon.svg` is the browser tab's mark.
 
 ---
 
@@ -379,7 +387,7 @@ Per-page mapping lives in [ui-pages.md](ui-pages.md).
 Dark is full-fidelity, not a luminance flip. Every token has an explicit dark value. Behavior:
 
 1. **Default** — match `prefers-color-scheme`.
-2. **Manual override** — toggle in Settings; persists in `uiStore` + `localStorage`.
+2. **Manual override** — **Dark mode** / **Light mode** at the foot of the sidebar, or the palette's theme action; persists in `jobStore` + `localStorage`.
 3. **Theme attribute** — applied to `<html data-theme="light|dark">`. CSS variables flip in one place.
 4. **Images & illustrations** — invert SVG strokes to track text color; raster images get a subtle 0.85 brightness in dark mode to soften.
 
@@ -389,7 +397,7 @@ The dark variant is intentionally **inky**, not jet-black: `#1c1814` (warm dark 
 
 ## 10. Migration plan from legacy
 
-The current frontend is 100% inline styles with ad-hoc colors and the legacy purple-blue gradient. The redesign rolls out in passes, not pages:
+The redesign rolled out in passes, not pages, and is finished ([I-2](initiatives.md#i-2--brand--visual-identity-rollout)). This is the plan as it ran, kept for the record:
 
 1. **Pass 1 — tokens.** Land `frontend/src/theme.ts` with the full token set. Add a `<ThemeProvider>` that wires CSS variables. No page changes yet.
 2. **Pass 2 — primitives.** Implement the primitive set under `components/primitives/`. Each primitive ships with a Storybook entry (or a manual `/dev/primitives` page).
@@ -399,7 +407,7 @@ The current frontend is 100% inline styles with ad-hoc colors and the legacy pur
 6. **Pass 6 — accessibility audit.** Focus rings, keyboard nav, ARIA labels, screen-reader announcements, contrast verification.
 7. **Pass 7 — dark mode.** Audit every page in dark; fix any contrast misses; ship the toggle.
 
-The user-facing release is "warm editorial v1" once all 7 passes ship. Until then, individual pages may straddle styles — acceptable mid-migration, not acceptable past v1.
+"Warm editorial v1" shipped with all seven passes. Three pieces of the plan did not ship as written: the primitive set has no `Tabs`, `Tooltip`, `IconButton` or `Drawer`, there is no `/dev/primitives` page or Storybook, and `BannerBar` became `SystemStatusBanner`.
 
 ---
 

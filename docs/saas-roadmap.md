@@ -108,7 +108,7 @@ collection.query(
 )
 ```
 
-Today's queries already use `where={"video_id": {"$in": approved_set}}`. Adding `tenant_id` to the `$and` is mechanical.
+Today's queries use `where={"document_id": {"$in": visible_set}}`, with the set read from `document_visibility` ([D-063](decisions.md#d-063--per-user-isolation-shared-cache-private-catalogue-2026-07-31)), and the private collections carry a tenant filter that fails closed. Chunks themselves are shared across tenants, so a `tenant_id` on a chunk is not the shape this took.
 
 ---
 

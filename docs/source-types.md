@@ -6,13 +6,20 @@ type: project
 
 # Source-type abstraction
 
-**Status:** design (2026-04-24). Today only `video` exists. This doc is the contract for adding `podcast`, `article`, `tweet`, `forum_post`, `pdf`, and future source types under L1 of the [feature-roadmap](feature-roadmap.md).
+**Status:** design (2026-04-24), since built. This doc was the contract for adding source types under L1 of the [feature-roadmap](feature-roadmap.md), and it stays as written below, with the notes here saying where the build went its own way.
+
+**As built (re-audited 2026-11-04).** `app/sources/` holds connectors for `video`, `podcast`, `article`, `reddit_post`, `hn_story`, `mastodon_post`, `bluesky_post`, `tweet` and `pdf`, and paste-only `fb_post`, `ig_post` and `li_post`.
+
+- `documents` has a UUID primary key, `document_id` ([E-1.10](initiatives.md#e-110--promote-video_id-pk-to-uuid-document_id)); the legacy `video_id` column is NULL for every non-video source. `transcript_cache` and `job_documents` are keyed on it. `text_cache`, `creators` and `documents.creator_id` did not happen: `Creator` is a Python alias of `Channel`, and the table rename is a runbook ([migration-channels-to-creators.md](migration-channels-to-creators.md)).
+- The Chroma collection defaults to `pratidhvani_global`, not `videoresearchpro_global`, and it is one collection for the install, not per tenant. Visibility is a `document_id` filter from `document_visibility` ([D-063](decisions.md#d-063--per-user-isolation-shared-cache-private-catalogue-2026-07-31)).
+- Topic runs choose sources with **Sources to search** on the submit form. PDFs and pasted URLs arrive through the library's **Add sources** tab with no job. The submit form's tabs stay **Topic**, **Channels** and **Subscription**; the "Creators", "URL list" and "Upload files" tabs below were not built.
+- `tweet` fetches through the paste path: the thread and top-K replies in the table below are not built (S-1.5.10).
 
 The user-facing claim of [vision](vision.md) Ring 2 is that **the curation flow is the product**: search → approve → ingest → embed → query. New source types must plug into that flow without adding a new flow. This doc is what guarantees that.
 
 ---
 
-## Today's data model (video-only)
+## The data model this was written against (video-only, 2026-04-24)
 
 Three tables carry the document library:
 
@@ -90,7 +97,7 @@ Migration: existing `channels` rows become `creators` rows with `source_type='vi
 
 ### The Chroma collection
 
-Stays a single collection per tenant. The collection name is unchanged for back-compat (`videoresearchpro_global`, env-overridable as today). Chunk metadata grows new fields:
+Stays a single collection (`pratidhvani_global` by default, `CHROMA_GLOBAL_COLLECTION_NAME`). Chunk metadata grows new fields:
 
 ```
 {

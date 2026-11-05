@@ -98,8 +98,7 @@ def _count_tokens(text: str) -> int:
 
 def _batch_budget(use_case: str, fraction: float = _WINDOW_SAFETY_FRACTION) -> int:
     """Token budget for prompt content, derived from the RESOLVED model's
-    measured context window (S-1.12.2 / D-052) — replaces the legacy
-    model-blind ``LLM_MAX_CONTEXT_TOKENS`` global."""
+    measured context window (S-1.12.2 / D-052), not one model-blind global."""
     cfg = resolve_config(use_case)
     window = context_window_for(cfg.model)
     return min(int(window * fraction), _QUALITY_BATCH_CAP)

@@ -1188,7 +1188,7 @@ Cold-start readiness, v2 since S-3.5.1 ([D-101](decisions.md#d-101--echo-readine
   - `not_connected`, used only by activity, when there are no events and nothing is connected. It is not a failure.
 - **`missing`** is null once the domain is met.
 - **`details`** depends on the domain:
-  - activity has `first_at`, `last_at` and `sources`. Each source has `name`, `label`, `kind` (`connector` | `import`), `status` (`connected` | `not_connected` | `imported`), `available`, `reason` and `events`. A connector this install cannot offer yet reads `not_connected` with its reason; YouTube likes and Google Calendar are listed this way until the install has a Google connector OAuth client (`OAUTH_GOOGLE_CONNECTOR_CLIENT_ID`).
+  - activity has `first_at`, `last_at` and `sources`. Each source has `name`, `label`, `kind` (`connector` | `import`), `status` (`connected` | `not_connected` | `imported`), `available`, `reason` and `events`. A connector this install cannot offer yet reads `not_connected` with its reason; YouTube likes and Google Calendar are listed this way until S-3.2.2 and S-3.2.5 are built, which need a Google connector OAuth client (`OAUTH_GOOGLE_CONNECTOR_CLIENT_ID`, which nothing reads yet).
   - voice has `per_script` (pieces and words per script), `best_script`, `stability` (`measured`, `spread`, `max`, `vectors`, `reason`) and `voice_test` (`eligible`, `notes`, `notes_needed`). The voice test is D-100's user-as-judge test, reported and not gated.
   - facts has `self_authored` and `inferred`; the facts Echo inferred are kept but not counted.
   - signals has `types`; shares has `content_types` (count per type).

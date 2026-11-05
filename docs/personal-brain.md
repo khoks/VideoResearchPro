@@ -6,11 +6,11 @@ type: project
 
 # Personal Brain — L3 long-horizon design
 
-**Status:** future-work, design-only (2026-04-24). Not on the immediate roadmap. This doc exists so today's schema and connector decisions stay forward-compatible.
+**Status:** design (2026-04-24), in build since 2026-10-19. This doc is the picture being built toward, written down so day-to-day choices don't accidentally foreclose it.
 
-**Building since 2026-10-19.** Domain 1 (facts, PR #172) and the first piece of Domain 5 (the shares inbox, S-3.7.1) exist, and so do the whole-brain export and delete (S-3.10.1 / S-3.10.2). Sections below say "as built" where the shipped shape differs from the sketch. The build plan is [`plans/l3-echo-personal-brain.md`](plans/l3-echo-personal-brain.md).
+**As built.** Domain 1 (facts), Domain 2 (connectors, the activity timeline and export imports), Domain 3 (voice and personality signals) and Domain 5 (the shares inbox and its surfaces) exist, and so do readiness, the whole-brain export and delete (S-3.10.1 / S-3.10.2), the Echo panel, and "speak as me" with its voice test, which stays off until its switches are on. Sections below say "as built" where the shipped shape differs from the sketch. The build plan is [`plans/l3-echo-personal-brain.md`](plans/l3-echo-personal-brain.md).
 
-This is Ring 3 of the [vision](vision.md). It begins after Phase 4 of the [feature-roadmap](feature-roadmap.md) ships (post-2027 Q3). Nothing in this document is a commitment — it is the picture we're navigating toward, written down so day-to-day choices don't accidentally foreclose it.
+This is Ring 3 of the [vision](vision.md). Nothing in this document is a commitment.
 
 ---
 
@@ -502,13 +502,13 @@ Conformance to this interface is the *only* way new connectors enter the system.
 
 ## What this means for today's PRs
 
-Even though Personal Brain is years out, today's choices matter. Specifically:
+Every PR's choices matter to this design. Specifically:
 
 1. **Every new user-scoped table gets `tenant_id` AND `user_id`** — not just `tenant_id`. Personal-brain data is per-user even within a tenant; tables that conflate this will need migrations later. (See the [saas-roadmap](saas-roadmap.md) invariants — Personal Brain extends them.)
 2. **The `documents` table (post-L1) gets a `user_provenance` JSON column placeholder** so we can later record "the user found this via Spotify history" without a schema migration.
 3. **Connector code never lives in `app/services/`.** Even today, when we add YouTube ingestion features, we resist the temptation to colocate "fetch user's watch history" with "fetch a video's transcript." Watch history is a connector; transcripts are a service. Keep them apart.
 4. **Voice/style hints in user-facing copy stay generic.** Don't write "your library" assuming a single user — write it in a way that survives multi-user tenants.
-5. **`anthropic-skills` and similar provider-specific surfaces** (used today for PPTX generation in [feature-roadmap](feature-roadmap.md) L2) must not absorb personal-brain content into their cloud-side processing in zero-knowledge mode. Audit the skill's data flow before wiring it to brain content.
+5. **`anthropic-skills` and similar provider-specific surfaces** (none is in use: decks render locally with python-pptx) must not absorb personal-brain content into their cloud-side processing in zero-knowledge mode. Audit the skill's data flow before wiring it to brain content.
 6. **Every new Echo store is registered for export and erasure.** A table goes into `echo_privacy_service.ECHO_TABLES`, a Chroma collection into `echo_vectors.echo_collection_names()`, files under the tenant's directory. An unregistered store is neither exported nor deleted, which breaks the promise above.
 
 ---

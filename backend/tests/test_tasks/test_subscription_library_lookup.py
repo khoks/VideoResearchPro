@@ -12,7 +12,10 @@ Mutation check: put ``db.get(Document, vid) is None`` back in the task and
 ``test_a_sync_reads_details_only_for_what_the_library_lacks`` fails on
 ``fetch_metadata``, which then gets all the unlinked ids. Put the
 ``info.get("title", "Unknown")`` row back and
-``test_a_library_document_keeps_what_it_knows`` fails on the title.
+``test_a_library_document_keeps_what_it_knows`` fails on the title. Count a
+placeholder as read and ``test_a_placeholder_is_read_again_and_corrected`` fails
+on both. Match ``Document.source_id`` in ``_videos_in_library`` and
+``test_a_document_of_another_source_type_is_not_a_match`` fails.
 """
 from __future__ import annotations
 
@@ -212,6 +215,44 @@ def test_a_new_video_the_details_left_out_still_gets_a_row(db, test_user, channe
     assert _visible_videos(db, test_user.id) == {NEW}
 
 
+def test_a_placeholder_is_read_again_and_corrected(db, test_user, channel):
+    """The video was private when the first sync met it, and is public now. The
+    old id bug read every video on every sync, which corrected this row by
+    accident. A row that counted as read would stay "Unknown" for every tenant,
+    so it alone is read again, and the real row beside it is not."""
+    _library_document(db, FOREIGN, OTHER_TENANT)
+    channel.uploads = [NEW]
+    channel.details = {}
+    _run(_sync_job(db, OTHER_TENANT))
+    channel.uploads = [NEW, FOREIGN]
+    channel.details = {NEW: _details(NEW)}
+    channel.metadata.reset_mock()
+    job = _sync_job(db, test_user.id)
+
+    _run(job)
+
+    channel.metadata.assert_called_once_with([NEW], job_id=job.id)
+    db.expire_all()
+    doc = db.query(Document).filter(Document.video_id == NEW).one()
+    assert doc.title == f"Details of {NEW}"
+    assert doc.thumbnail_url == f"https://i.ytimg.com/{NEW}.jpg"
+
+
+def test_a_placeholder_the_details_still_leave_out_stays_as_it_is(db, test_user, channel):
+    """Still private: a read that finds nothing changes nothing, and links it."""
+    channel.uploads = [NEW]
+    channel.details = {}
+    _run(_sync_job(db, OTHER_TENANT))
+    channel.metadata.reset_mock()
+
+    _run(_sync_job(db, test_user.id))
+
+    channel.metadata.assert_called_once()
+    db.expire_all()
+    assert db.query(Document).filter(Document.video_id == NEW).one().title == "Unknown"
+    assert _visible_videos(db, test_user.id) == {NEW}
+
+
 def test_a_new_video_keeps_everything_its_details_said(db, test_user, channel):
     channel.uploads = [NEW]
     channel.details = {NEW: _details(NEW, default_audio_language="hi")}
@@ -238,8 +279,9 @@ def test_a_long_uploads_list_is_looked_up_in_batches(db, monkeypatch):
 
 
 def test_a_document_of_another_source_type_is_not_a_match(db):
-    """``video_id`` is NULL for every non-video source, so nothing can hit one."""
-    db.add(Document(source_type="pdf", source_id="pdf:1", title="A PDF", url="https://example.com/1"))
+    """Only ``video_id`` names a video, and it is NULL for every other source.
+    A source's own id can hold the same string, and that is no match."""
+    db.add(Document(source_type="pdf", source_id=NEW, title="A PDF", url="https://example.com/1"))
     db.commit()
 
-    assert job_tasks._videos_in_library(db, ["vNotThere"]) == set()
+    assert job_tasks._videos_in_library(db, [NEW]) == set()

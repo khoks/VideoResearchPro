@@ -43,6 +43,10 @@ _SYNC_DETAIL_KEYS = (
     "title", "url", "duration_seconds", "thumbnail_url", "published_at", DEFAULT_AUDIO_LANGUAGE,
 )
 
+# The title of a row whose video the details left out, a private one say. The
+# row is shared, so a later read has to be able to correct it for every tenant.
+_PLACEHOLDER_TITLE = "Unknown"
+
 
 def _parse_published_at(value) -> datetime | None:
     """Coerce a YouTube `publishedAt` field into a datetime.
@@ -133,15 +137,23 @@ def _source_metadata_to_legacy_dict(sm: SourceMetadata) -> dict:
 
 
 def _videos_in_library(db, video_ids: list[str]) -> set[str]:
-    """Which of these YouTube ids already have a row in the global library.
+    """Which of these YouTube ids already have a row in the global library
+    that holds their details.
 
     The legacy ``video_id`` column is what they match: ``Document``'s primary
     key is a UUID (E-1.10), so ``db.get(Document, vid)`` never finds a video.
+    A placeholder row does not count. Its video may have gone public since,
+    and at 1 unit per 50 videos a read is the cheap way to find out.
     """
     found: set[str] = set()
     for start in range(0, len(video_ids), _IN_LIST_SIZE):
         batch = video_ids[start : start + _IN_LIST_SIZE]
-        found.update(row[0] for row in db.query(Document.video_id).filter(Document.video_id.in_(batch)))
+        found.update(
+            row[0]
+            for row in db.query(Document.video_id).filter(
+                Document.video_id.in_(batch), Document.title != _PLACEHOLDER_TITLE
+            )
+        )
     return found
 
 
@@ -189,7 +201,7 @@ def _upsert_video_and_link(db, job_id: str, data: dict) -> None:
             video = Document(
                 video_id=video_id,
                 channel_id=channel_id,
-                title=data.get("title", "Unknown"),
+                title=data.get("title", _PLACEHOLDER_TITLE),
                 url=data.get("url", f"https://www.youtube.com/watch?v={video_id}"),
                 duration_seconds=data.get("duration_seconds", 0),
                 published_at=_parse_published_at(data.get("published_at")),
@@ -2445,10 +2457,10 @@ def execute_subscription_job(self, job_id: str) -> None:
             )
 
             if unlinked_ids:
-                # Fetch details only for videos not yet in the global library
-                # (T-1.11.11.6). A video another tenant already ingested costs
-                # no units: _upsert_video_and_link links its Document row, and
-                # the grant below makes it this tenant's too (D-063).
+                # Fetch details only for videos the global library has not
+                # read (T-1.11.11.6). A video another tenant already ingested
+                # costs no units: _upsert_video_and_link links its Document
+                # row, and the grant below makes it this tenant's too (D-063).
                 in_library = _videos_in_library(db, unlinked_ids)
                 missing_from_library = [vid for vid in unlinked_ids if vid not in in_library]
                 details: dict = {}

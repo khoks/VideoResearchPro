@@ -23,6 +23,13 @@ from app.sources.base import BaseConnector
 from app.sources.podcast import connector as podcast_connector
 from app.sources.types import ExtractedText
 from app.tasks import job_tasks
+from tests.test_tasks.test_usage_metering_tasks import _channel_responses, _owner
+from tests.test_tasks.test_usage_whisper_and_crash import (
+    _run_sync,
+    _split_into,
+    _sync_job,
+    no_captions,  # noqa: F401  (fixture)
+)
 from tests.usage_helpers import (
     FakeWhisperApi,  # noqa: F401  (documents what `whisper_api` yields)
     whisper_api,  # noqa: F401  (fixture)
@@ -523,3 +530,79 @@ def test_the_exception_carries_nothing_a_provider_said(db, whisper_api, monkeypa
     assert caught.value.seconds == 300.0
     assert "sk-tenant-secret" not in str(caught.value)
     assert caught.value.__context__ is None and caught.value.__cause__ is None
+
+
+# ---------------------------------------------------------------------------
+# The same, down YouTube's own path
+#
+# Most of a sync is YouTube, and every layer between the exception and the loop
+# otherwise fails soft. The tests above fake the connector or take the podcast
+# path, so a try/except around the fallback would turn the cut into None with
+# all of them still passing. Here only the network is fake: the real
+# `YouTubeConnector`, `fetch_transcript` and chunked path, with captions failing
+# and the OpenAI client failing on the second chunk. Mutation check: catch
+# Exception around `_transcribe_with_whisper` in `fetch_transcript`, or around
+# `fetch_transcript` in `YouTubeConnector.fetch_text`, and these fail.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def youtube_path(db, tasks, no_captions, whisper_api, monkeypatch, tmp_path):  # noqa: F811
+    """Recordings that split in three, 300 s each, the second request failing
+    once. Yields the ``allow_whisper`` of each ``fetch_transcript``, in order."""
+    _split_into(monkeypatch, tmp_path, 3)
+    whisper_api.seconds = 300.0
+    _fail_once_at(whisper_api, 2)
+    real = youtube_service.fetch_transcript
+    asked: list[bool] = []
+
+    def fetch_transcript(video_id, **kwargs):
+        asked.append(kwargs.get("allow_whisper", True))
+        return real(video_id, **kwargs)
+
+    monkeypatch.setattr(youtube_service, "fetch_transcript", fetch_transcript)
+    return asked
+
+
+def _run_two_videos(db, kind: str, youtube_network) -> str:  # noqa: F811
+    """Two videos declared at 10 minutes, through the task that runs them."""
+    if kind == "sync":
+        youtube_network.responses = _channel_responses(["vid0", "vid1"])
+        job = _sync_job(db, _owner(db))
+        _run_sync(job)
+        return job.id
+    job_id = _approved(db, [10 * MINUTE] * 2, videos=True)
+    _resume(job_id)
+    return job_id
+
+
+@pytest.mark.parametrize("kind", ["sync", "approved"])
+@pytest.mark.parametrize("cap_minutes, next_allowed, requests", [(5, False, 1), (6, True, 4)])
+def test_a_part_paid_video_reaches_the_minute_cap_through_the_real_connector(
+    db, youtube_path, youtube_network, whisper_api, monkeypatch,  # noqa: F811
+    kind, cap_minutes, next_allowed, requests,
+):
+    """One 300 s chunk finished. That spends a 5-minute cap and leaves room
+    under a 6-minute one, which the declared 10 minutes would have spent."""
+    monkeypatch.setattr(settings, "WHISPER_MAX_MINUTES_PER_JOB", cap_minutes)
+    monkeypatch.setattr(settings, "WHISPER_MAX_PER_JOB", 50)
+
+    job_id = _run_two_videos(db, kind, youtube_network)
+
+    assert youtube_path == [True, next_allowed]
+    assert whisper_api.sent == requests
+    if not next_allowed:
+        assert "after 5 minutes of audio" in _notes(db, job_id)[0]["text"]
+
+
+@pytest.mark.parametrize("kind", ["sync", "approved"])
+def test_a_part_paid_video_counts_as_a_recording_through_the_real_connector(
+    db, youtube_path, youtube_network, whisper_api, monkeypatch, kind  # noqa: F811
+):
+    monkeypatch.setattr(settings, "WHISPER_MAX_MINUTES_PER_JOB", 600)
+    monkeypatch.setattr(settings, "WHISPER_MAX_PER_JOB", 1)
+
+    _run_two_videos(db, kind, youtube_network)
+
+    assert youtube_path == [True, False]
+    assert whisper_api.sent == 1

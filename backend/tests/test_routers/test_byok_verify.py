@@ -285,15 +285,17 @@ def test_the_request_is_on_the_stored_key(client, db, studio, provider):
 
 
 @pytest.mark.parametrize(
-    ("name", "answer", "key_header", "budget"),
+    ("name", "answer", "budget"),
     [
-        ("openai", OPENAI_OK, "authorization", lambda b: b.get("max_completion_tokens") or b.get("max_tokens")),
-        ("anthropic", ANTHROPIC_OK, "x-api-key", lambda b: b.get("max_tokens")),
-        ("google", GOOGLE_OK, "x-goog-api-key", lambda b: b["generationConfig"]["maxOutputTokens"]),
+        ("openai", OPENAI_OK, lambda b: b.get("max_completion_tokens") or b.get("max_tokens")),
+        ("anthropic", ANTHROPIC_OK, lambda b: b.get("max_tokens")),
+        ("google", GOOGLE_OK, lambda b: b["generationConfig"]["maxOutputTokens"]),
     ],
 )
-def test_the_request_is_the_smallest_there_is(client, db, studio, provider, name, answer, key_header, budget):
-    """One request, the provider's cheap model, 16 tokens, no thinking."""
+def test_the_request_is_the_smallest_there_is(client, db, studio, provider, name, answer, budget):
+    """One request, the provider's cheap model, 16 tokens, no thinking, on the
+    stored key. Which header carries it is the SDK's business: it differs
+    between the Anthropic SDK in the dev venv and the one a clean install gets."""
     _store(db, studio, name)
     provider.answer(200, answer)
 
@@ -302,7 +304,7 @@ def test_the_request_is_the_smallest_there_is(client, db, studio, provider, name
     assert len(provider.requests) == 1
     request = provider.requests[0]
     assert budget(request.body) == 16
-    assert KEY in {k.lower(): v for k, v in request.headers.items()}[key_header]
+    assert any(KEY in value for value in request.headers.values())
     assert llm_service.KEY_CHECK_MODELS[name] in json.dumps(request.body) + request.path
     assert "thinking" not in request.body
     assert "image" not in json.dumps(request.body)

@@ -468,7 +468,7 @@ Tracked separately because it's identity-system work, not a feature.
 | `docs/feature-roadmap.md` (this file) | 🟢 shipped |
 | Documentation refresh (architecture, ui-design, requirements, etc.) | 🟢 shipped (E-4.11, PR #401 and the last pass of 2026-11-04) |
 | Frontend design tokens (`frontend/src/theme.ts`) | 🟢 shipped (E-2.1) |
-| Primitives library (`frontend/src/components/primitives/*`) | 🟢 shipped (E-2.2; Tooltip / Tabs / IconButton still open) |
+| Primitives library (`frontend/src/components/primitives/*`) | 🟢 shipped (E-2.2; `Tooltip` waits for a second call site) |
 | Sidebar layout migration (top-tabs → sidebar) | 🟢 shipped (E-2.4) |
 | Per-page warm-editorial restyle | 🟢 shipped (E-2.3) |
 | Logo SVG + favicon | 🟡 The interim echo mark ships as `logo-mark.svg`, the app favicon and the app icons (S-8.12.2, 2026-10-19). Since 2026-10-25 it is the identity ([D-112](decisions.md#d-112--the-remaining-rulings-of-2026-10-25-map-batching-public-sharing-the-code-mixing-threshold-and-the-quick-calls-2026-10-25)): the full logo and the marketing logo set were made from it on 2026-11-04 (T-2.8.2, T-2.8.4; the owner has not seen them yet), and `og.png` follows when M11 is scheduled |

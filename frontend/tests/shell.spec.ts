@@ -1,0 +1,131 @@
+/**
+ * The app shell in a real browser: a deep link through sign-in (T-5.4.20) and
+ * the error screen (T-4.11.2.3). The vitest suites settle everything between
+ * steps, so a race between the route guard and a sign-in page, or the real
+ * trip through an OAuth provider, can only show here.
+ * Hermetic like palette.spec.ts: `/api/v1` from fixtures, WebSocket closed. The
+ * "provider" is a redirect straight back to the app's callback address, so the
+ * page really does unload and load again.
+ */
+import { readFileSync } from 'node:fs';
+import { expect, test, type Page } from '@playwright/test';
+
+const JOB = '1c222ce6-086e-464d-a366-403111963d39';
+const DEEP = `/jobs/${JOB}?exchange=synthetic-qa-2`;
+
+function fixture(name: string): unknown {
+  return JSON.parse(readFileSync(new URL(`./fixtures/api/${name}.json`, import.meta.url), 'utf-8'));
+}
+
+const ROUTES: Record<string, string> = {
+  'GET /api/v1/health': 'health',
+  'GET /api/v1/auth/me': 'auth-me',
+  'GET /api/v1/shelves': 'shelves',
+  [`GET /api/v1/jobs/${JOB}`]: 'job',
+  [`GET /api/v1/jobs/${JOB}/videos`]: 'job-videos',
+  [`GET /api/v1/jobs/${JOB}/qa`]: 'job-qa',
+};
+
+const SESSION = { access_token: 'fixture-token', token_type: 'bearer', user: { id: 'u1', email: 'reader@example.com', tier: 'free' } };
+
+interface Options {
+  mfa?: boolean;
+  answers?: Record<string, unknown>;
+}
+
+async function boot(page: Page, { mfa = false, answers = {} }: Options = {}) {
+  await page.addInitScript(() => window.localStorage.setItem('vrp:theme', 'light'));
+  await page.routeWebSocket(/\/ws\//, (ws) => ws.close());
+  await page.route('**/api/v1/**', async (route) => {
+    const url = new URL(route.request().url());
+    const key = `${route.request().method()} ${url.pathname}`;
+    if (key in answers) return route.fulfill({ json: answers[key] });
+    if (ROUTES[key]) return route.fulfill({ json: fixture(ROUTES[key]) });
+    if (key === 'POST /api/v1/auth/login') {
+      return route.fulfill({ json: mfa ? { requires_mfa: true, mfa_token: 'ticket', expires_in: 300 } : SESSION });
+    }
+    if (key === 'POST /api/v1/auth/login/mfa') return route.fulfill({ json: SESSION });
+    if (key === 'GET /api/v1/auth/oauth/providers') return route.fulfill({ json: { providers: ['google'] } });
+    if (key === 'GET /api/v1/auth/oauth/google/start') {
+      const back = `${url.searchParams.get('redirect_uri')}?code=one-time&state=s`;
+      return route.fulfill({ json: { authorize_url: back } });
+    }
+    if (key === 'GET /api/v1/auth/oauth/google/callback') {
+      return route.fulfill({ json: mfa ? { requires_mfa: true, mfa_token: 'ticket', expires_in: 300 } : SESSION });
+    }
+    if (key === 'GET /api/v1/notes') return route.fulfill({ json: { items: [], total: 0, limit: 2000, offset: 0 } });
+    // Lists the pages behind this test read but it does not check.
+    return route.fulfill({ json: [] });
+  });
+}
+
+async function signIn(page: Page) {
+  await page.getByLabel('Email').fill('reader@example.com');
+  await page.getByLabel('Password').fill('correct horse');
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+}
+
+async function arriveAtTheRun(page: Page) {
+  await expect(page).toHaveURL(new RegExp(`${DEEP.replace('?', '\\?')}$`));
+  await expect(page.getByRole('heading', { level: 1 })).toContainText('pratidhvani smoke test');
+}
+
+test.describe('a deep link while signed out', () => {
+  test('comes back after a password', async ({ page }) => {
+    await boot(page);
+    await page.goto(DEEP);
+    await expect(page).toHaveURL(/\/login$/);
+    await signIn(page);
+    await arriveAtTheRun(page);
+  });
+
+  test('comes back after the second step', async ({ page }) => {
+    await boot(page, { mfa: true });
+    await page.goto(DEEP);
+    await signIn(page);
+    await page.getByLabel('Authentication code').fill('123456');
+    await page.getByRole('button', { name: 'Verify and sign in' }).click();
+    await arriveAtTheRun(page);
+  });
+
+  test('comes back from an OAuth provider, with the code gone from the address', async ({ page }) => {
+    await boot(page);
+    await page.goto(DEEP);
+    await page.getByRole('button', { name: 'Continue with Google' }).click();
+    await arriveAtTheRun(page);
+    expect(page.url()).not.toContain('one-time');
+    expect(await page.evaluate(() => window.sessionStorage.length)).toBe(0);
+  });
+
+  test('comes back from an OAuth provider through the second step', async ({ page }) => {
+    await boot(page, { mfa: true });
+    await page.goto(DEEP);
+    await page.getByRole('button', { name: 'Continue with Google' }).click();
+    await page.getByLabel('Authentication code').fill('654321');
+    await page.getByRole('button', { name: 'Verify and sign in' }).click();
+    await arriveAtTheRun(page);
+  });
+});
+
+test('a sign-in with no page to return to opens the app', async ({ page }) => {
+  await boot(page);
+  await page.goto('/login');
+  await signIn(page);
+  await expect(page).toHaveURL(/\/submit$/);
+});
+
+test('a page that throws lands on the error screen, with a way back and no stack', async ({ page }) => {
+  await page.addInitScript(() => window.localStorage.setItem('videoresearchpro.authToken', 'fixture-token'));
+  // Text where the page expects a list: rendering it throws.
+  const broken = { ...(fixture('job') as object), preferred_channels: 'not a list' };
+  await boot(page, { answers: { [`GET /api/v1/jobs/${JOB}`]: broken } });
+  await page.goto(`/jobs/${JOB}`);
+  await expect(page.getByRole('heading', { name: 'This page slipped off the shelf.' })).toBeVisible();
+  await expect(page.locator('pre')).toHaveCount(0);
+  await expect(page.getByText('Unexpected Application Error')).toHaveCount(0);
+  await expect(page.getByText('TypeError')).toHaveCount(0);
+
+  await page.getByRole('button', { name: 'Back to your library' }).click();
+  await expect(page).toHaveURL(/\/library$/);
+  await expect(page.getByRole('heading', { name: 'This page slipped off the shelf.' })).toHaveCount(0);
+});

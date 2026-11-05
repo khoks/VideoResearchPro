@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { parseMarkdownDoc } from '../parseMarkdown';
 import knowledge from '../__fixtures__/knowledge-claude-code-tasks.md?raw';
 import book from '../__fixtures__/book-two-runs.md?raw';
+import cohesiveBook from './fixtures/book-contents.manuscript.txt?raw';
 
 function render(md: string, title?: string) {
   const parsed = parseMarkdownDoc(md, { title });
@@ -80,6 +81,33 @@ describe('parseMarkdownDoc', () => {
     const { markup } = render('1. [My Chapter](#my-chapter)\n2. [Exact](#exact)\n\n## 1. My Chapter\n\n## Exact');
     expect(markup).toContain('href="#1-my-chapter"');
     expect(markup).toContain('href="#exact"');
+  });
+});
+
+describe('parseMarkdownDoc on notes in the front matter', () => {
+  const long = 'word '.repeat(40).trim();
+
+  it('passes over a paragraph that is all emphasis, however long', () => {
+    const { markup } = render(`_About this edition: ${long}._\n\n_Processing note: ${long}._\n\n${long}`);
+    expect(markup.match(/reader-dropcap/g)).toHaveLength(1);
+    expect(markup).toContain(`<p class="reader-dropcap">${long}</p>`);
+    expect(markup).toContain(`<p><em>About this edition: ${long}.</em></p>`);
+  });
+
+  it('still gives the drop cap to a paragraph with some emphasis in it', () => {
+    const { markup } = render(`${long} *and a stressed phrase* ${long}`);
+    expect(markup).toContain('<p class="reader-dropcap">');
+  });
+
+  it('leaves a body that is nothing but notes without a drop cap', () => {
+    expect(render(`_${long}_`).markup).not.toContain('reader-dropcap');
+  });
+
+  it('skips the note in a manuscript the backend wrote', () => {
+    expect(cohesiveBook).toContain('_About this edition:');
+    const { markup } = render(cohesiveBook);
+    expect(markup).not.toMatch(/class="reader-dropcap"><em>/);
+    expect(markup).toContain('<p><em>About this edition:');
   });
 });
 

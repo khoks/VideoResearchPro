@@ -36,6 +36,11 @@ interface AuthContextValue {
   user: AuthUser | null;
   token: string | null;
   isAuthenticated: boolean;
+  /**
+   * This tab signed out on purpose and has not signed in since, so the next
+   * sign-in starts at `/` rather than on the page that was left.
+   */
+  signedOutHere: boolean;
   isLoading: boolean;
   login: (email: string, password: string) => Promise<SignInResult>;
   /** Second step: the code from the authenticator app, or a recovery code. */
@@ -80,6 +85,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(() => localStorage.getItem(AUTH_TOKEN_KEY));
   const [user, setUser] = useState<AuthUser | null>(() => readStoredUser());
   const [isLoading, setIsLoading] = useState(false);
+  const [signedOutHere, setSignedOutHere] = useState(false);
 
   // Keep state in sync with storage if another tab logs out.
   useEffect(() => {
@@ -109,6 +115,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(nextUser));
     setToken(data.access_token);
     setUser(nextUser);
+    setSignedOutHere(false);
     if (!nextUser.email) {
       // An OAuth sign-in returns only the token; ask who it is for so the
       // sidebar can name the account. Best-effort: the session stands either way.
@@ -204,6 +211,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       localStorage.removeItem(AUTH_TOKEN_KEY);
       localStorage.removeItem(USER_STORAGE_KEY);
       void clearPendingShares();
+      setSignedOutHere(true);
       setToken(null);
       setUser(null);
     }
@@ -213,13 +221,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     user,
     token,
     isAuthenticated: !!token,
+    signedOutHere,
     isLoading,
     login,
     completeMfa,
     completeOAuth,
     register,
     logout,
-  }), [user, token, isLoading, login, completeMfa, completeOAuth, register, logout]);
+  }), [user, token, signedOutHere, isLoading, login, completeMfa, completeOAuth, register, logout]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

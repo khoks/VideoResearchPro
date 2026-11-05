@@ -856,6 +856,8 @@ Pinned library questions re-asked on a schedule (S-8.3.2, plan [m3-saved-searche
 
 Times are naive UTC. `next_run_at` is null while paused. `last_status` is `ok`, `failed`, `quota_exceeded` (the month's library-question quota was used up, so the run was skipped before any spend, D-045), `feature_unavailable` (the tier no longer has the feature) or `scope_missing` (the shelf was deleted); every status but `ok` leaves the last answer in place.
 
+`last_answer` is the last full answer. While there is none, it is the newest answer that stopped at its token budget, and the response then adds `"last_answer_cut_off": true` (T-1.15.4.9). The key is absent otherwise, including over an answer from before the check, so a saved search that was never cut reads as it did.
+
 ### `POST /api/v1/saved-searches`
 Body `{question, cadence, answer_language?, scope?, notify_email?}`, unknown fields 422; 201 with the saved search. `cadence` is `daily`, `weekly` (with `weekday`, 0 = Monday) or `monthly` (with `day_of_month` 1 to 28), an `hour`, optional `minute`, and an IANA `timezone` (default UTC); `every` is for system kinds and is refused. `scope` is null (the whole library) or `{"shelf_id"}` for one of the caller's shelves (404 otherwise): the library-question scope of S-8.1.4, resolved by `qa_scope_service`. 409 when the tier's active cap is reached.
 

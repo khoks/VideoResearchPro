@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field
 
@@ -39,25 +39,27 @@ class QARequest(BaseModel):
     output_length: Literal["auto", "brief", "standard", "deep"] | None = None
 
 
-class StoredCutOff(BaseModel):
-    """T-1.15.4.8: whether a stored answer stopped at its token budget.
+#: T-1.15.4.8: whether a stored answer stopped at its token budget.
+#:
+#: Sent only when it did. A row from before the column is unknown and a checked
+#: row may say `false`, but neither reaches the wire: a finished answer's JSON is
+#: what it was, and no stored row claims "not cut" (D-145).
+#: `QAAnswerResponse` and `LibraryQAAnswerResponse` replace the field, so a fresh
+#: answer on those routes keeps saying `false`.
+#:
+#: A type, not a base class. pydantic keeps an overridden field where the parent
+#: declared it, so a base class would move the flag to the front of every fresh
+#: reply. Each response declares it last, where a fresh reply has always said it.
+StoredCutOff = Annotated[bool | None, Field(exclude_if=lambda cut: cut is not True)]
 
-    Sent only when it did. A row from before the column is unknown and a checked
-    row may say `false`, but neither reaches the wire: a finished answer's JSON
-    is what it was, and no stored row claims "not cut" (D-145).
-    `QAAnswerResponse` and `LibraryQAAnswerResponse` replace this field, so a
-    fresh answer on those routes keeps saying `false`.
-    """
 
-    answer_cut_off: bool | None = Field(default=None, exclude_if=lambda cut: cut is not True)
-
-
-class QAResponse(StoredCutOff):
+class QAResponse(BaseModel):
     id: str
     question: str
     answer: str
     references: list[Reference]
     created_at: datetime
+    answer_cut_off: StoredCutOff = None
 
     model_config = {"from_attributes": True}
 

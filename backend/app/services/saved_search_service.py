@@ -243,6 +243,7 @@ def delete(db: Session, ss: SavedSearch) -> None:
 def to_dict(db: Session, ss: SavedSearch) -> dict[str, Any]:
     run = scheduler_service.get_run(db, KIND, ss.id)
     cadence = json.loads(run.cadence_json) if run and run.cadence_json else None
+    last_answer, last_answer_cut_off = _last_answer(db, ss)
     return {
         "id": ss.id,
         "question": ss.question,
@@ -258,15 +259,21 @@ def to_dict(db: Session, ss: SavedSearch) -> dict[str, Any]:
         "last_error": ss.last_error,
         "last_success_at": ss.last_success_at,
         "last_exchange_id": ss.last_exchange_id,
-        "last_answer": _last_answer(db, ss),
+        "last_answer": last_answer,
+        "last_answer_cut_off": last_answer_cut_off,
     }
 
 
-def _last_answer(db: Session, ss: SavedSearch) -> str | None:
+def _last_answer(db: Session, ss: SavedSearch) -> tuple[str | None, bool | None]:
+    """The answer the card shows, and whether it stopped at its token budget."""
     if not ss.last_exchange_id:
-        return None
-    row = db.query(LibraryQAExchange.answer).filter(LibraryQAExchange.id == ss.last_exchange_id).first()
-    return row[0] if row else None
+        return None, None
+    row = (
+        db.query(LibraryQAExchange.answer, LibraryQAExchange.answer_cut_off)
+        .filter(LibraryQAExchange.id == ss.last_exchange_id)
+        .first()
+    )
+    return (row[0], row[1]) if row else (None, None)
 
 
 # ---------------------------------------------------------------------------
@@ -483,10 +490,13 @@ def _execute_run(db: Session, ss: SavedSearch, user: User, saved_search_id: str,
         db.add(exchange)
         db.flush()
 
-        # The scope still counts as read, or the gate would re-ask an answer that
-        # is likely to stop at the same budget on every tick. A cut answer only
-        # stands in on the card while there is no full one: without an embedding
-        # it is never compared with (``compare``).
+        # The scope still counts as read, with a baseline or without one: the same
+        # question over the same documents gets the same budget, so the gate
+        # re-asking would spend a question each cadence to stop in the same place.
+        # A new source or Run now asks again. A cut answer only stands in on the
+        # card while there is no full one, and the card says so
+        # (``last_answer_cut_off``): without an embedding it is never compared
+        # with (``compare``).
         ss.last_success_at = _now()
         if not cut_off or ss.last_answer_embedding_json is None:
             ss.last_exchange_id = exchange.id

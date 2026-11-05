@@ -28,7 +28,7 @@ class QAHistoryChatRequest(BaseModel):
     answer_language: str = Field(default="en", min_length=2, max_length=10)
 
 
-class QAHistoryChatResponse(StoredCutOff):
+class QAHistoryChatResponse(BaseModel):
     """One history chat exchange, fresh or stored. `answer_cut_off` is present
     only on an answer that stopped at its token budget (T-1.15.4.9)."""
 
@@ -38,5 +38,6 @@ class QAHistoryChatResponse(StoredCutOff):
     references: list[QAHistoryReference]
     answer_language: str
     created_at: datetime
+    answer_cut_off: StoredCutOff = None
 
     model_config = {"from_attributes": True}

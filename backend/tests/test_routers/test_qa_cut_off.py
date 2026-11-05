@@ -26,6 +26,10 @@ Mutation checks, run by hand on 2026-11-05 (T-1.15.4.8, T-1.15.4.9):
 - `_formulate_answer` in the history agent not reading the response fails
   `test_a_cut_history_answer_is_stored_and_says_so_on_a_fresh_load`.
 
+`test_a_fresh_reply_keeps_its_keys_in_the_order_they_had` failed on the first
+version of this change, whose base class put the flag first, and fails again if
+`LibraryQAResponse` declares the flag before `scope`.
+
 Mutation checks, run by hand on 2026-11-04:
 - `answer_cut_off` returning False without reading the response fails
   `test_a_cut_answer_says_so_for_every_provider` and the logging test;
@@ -269,6 +273,28 @@ def test_a_finished_answers_history_is_what_it_was(client, corpus, route, db):
     db.expire_all()
     model = QAExchange if route in ("job", "stream") else LibraryQAExchange
     assert db.get(model, row["id"]).answer_cut_off is False, "the check ran, and that is stored"
+
+
+#: What each route sent before stored flags existed, in the order it sent it.
+_FRESH_KEYS = {
+    "job": ["id", "question", "answer", "references", "created_at", "answer_cut_off"],
+    "stream": ["id", "question", "answer", "references", "created_at", "answer_cut_off"],
+    "library": [
+        "id", "question", "answer", "references", "answer_language", "created_at", "scope", "answer_cut_off",
+    ],
+    "shelf": [
+        "id", "question", "answer", "references", "answer_language", "created_at", "scope", "answer_cut_off",
+    ],
+}
+
+
+@pytest.mark.parametrize("route", _ROUTES)
+def test_a_fresh_reply_keeps_its_keys_in_the_order_they_had(client, corpus, route):
+    """D-145: byte-identical covers order, which a parsed comparison cannot see.
+    pydantic keeps an overridden field where the parent declared it, so a flag
+    inherited from a base class moved to the front of every fresh reply."""
+    asked, _ = _ask(client, corpus, route, _DONE["anthropic"])
+    assert list(asked) == _FRESH_KEYS[route]
 
 
 @pytest.mark.parametrize("route", _ROUTES)

@@ -4,6 +4,9 @@
  * API; "Pin this question" sends the exchange's question with a human
  * cadence in the reader's zone; both disappear for tiers without the
  * feature; the route is mounted.
+ *
+ * T-1.15.4.9 mutation checks, run by hand on 2026-11-05: dropping the card's note,
+ * or the link always saying "full answer", fails the card's cut-off test.
  */
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -214,6 +217,26 @@ describe('run history (S-8.3.3)', () => {
     expect(items[0].querySelector('a[href="/library/qa?exchange=ex3"]')).toBeTruthy();
     expect(items[0].querySelector('a[href="/library/qa?exchange=ex1"]')?.textContent).toBe('The previous answer');
     expect(items[2].textContent).toContain('Run now');
+  });
+
+  it('says on the card when the answer shown was cut, and does not call it the full answer (T-1.15.4.9)', async () => {
+    api.list.mockResolvedValue({
+      items: [{ ...ROW, last_answer: 'Two cuts so', last_answer_cut_off: true }],
+      active: 1,
+      cap: 10,
+    });
+    await mount(<SavedSearchesPage />);
+    const note = host.querySelector('[data-answer-cut-off]')!;
+    expect(note.textContent).toContain('stopped at its length limit');
+    expect(note.querySelector('button')).toBeNull();
+    const link = host.querySelector('a[href="/library/qa?exchange=ex1"]')!;
+    expect(link.textContent).toBe('Read the answer, with citations');
+  });
+
+  it('calls a finished answer the full answer, with no note', async () => {
+    await mount(<SavedSearchesPage />);
+    expect(host.querySelector('[data-answer-cut-off]')).toBeNull();
+    expect(host.querySelector('a[href="/library/qa?exchange=ex1"]')!.textContent).toBe('Read the full answer, with citations');
   });
 
   it('says a run was cut, not that it was the first answer or that nothing changed (T-1.15.4.9)', async () => {

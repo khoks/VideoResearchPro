@@ -6,6 +6,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.schemas.qa import StoredCutOff
+
 
 class SavedSearchCadence(BaseModel):
     """A human cadence: ``weekday`` is 0 = Monday … 6 = Sunday; ``day_of_month`` 1–28."""
@@ -65,6 +67,9 @@ class SavedSearchResponse(BaseModel):
     last_success_at: datetime | None
     last_exchange_id: str | None
     last_answer: str | None
+    #: T-1.15.4.9: sent only when ``last_answer`` stopped at its token budget,
+    #: which is a cut answer standing in while there is no full one.
+    last_answer_cut_off: StoredCutOff = None
 
 
 class SavedSearchList(BaseModel):

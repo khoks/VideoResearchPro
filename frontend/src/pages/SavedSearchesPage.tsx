@@ -186,9 +186,13 @@ function SavedSearchCard({ search: s, focusRun }: { search: SavedSearch; focusRu
               {s.last_answer}
             </p>
             {s.last_exchange_id && (
-              <Link to={`/library/qa?exchange=${s.last_exchange_id}`} style={{ ...meta, color: c.accent, display: 'inline-block', marginTop: space['1'] }}>
-                Read the full answer, with citations
-              </Link>
+              <>
+                {/* A cut answer stands in only while there is no full one, so no link here may promise one. */}
+                <AnswerCutOffNote cutOff={s.last_answer_cut_off} exchangeId={s.last_exchange_id} />
+                <Link to={`/library/qa?exchange=${s.last_exchange_id}`} style={{ ...meta, color: c.accent, display: 'inline-block', marginTop: space['1'] }}>
+                  {s.last_answer_cut_off ? 'Read the answer, with citations' : 'Read the full answer, with citations'}
+                </Link>
+              </>
             )}
           </div>
         ) : (

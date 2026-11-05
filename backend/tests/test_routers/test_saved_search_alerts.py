@@ -13,7 +13,13 @@ T-1.15.4.9 mutation checks, run by hand on 2026-11-05:
   ``test_a_first_answer_that_was_cut_shows_on_the_card_and_sets_no_baseline``;
 - a cut answer leaving ``last_scope_hash`` alone fails
   ``test_the_gate_holds_after_a_cut_and_run_now_still_asks``;
-- ``decided_by`` staying ``none`` fails the first test and the runs endpoint test.
+- ``decided_by`` staying ``none`` fails the first test and the runs endpoint test;
+- the gate opening while there is no baseline fails
+  ``test_the_gate_holds_with_no_baseline_too``;
+- ``_last_answer`` dropping the stored flag fails
+  ``test_a_cut_answer_standing_in_says_so_on_the_card``;
+- the card's flag losing ``exclude_if`` fails
+  ``test_a_card_with_no_cut_says_nothing_about_cuts``.
 
 T-8.3.3.10 mutation checks, run by hand on 2026-11-04:
 - keying ``cited_key`` on ``video_id`` again fails
@@ -618,6 +624,77 @@ def test_a_first_answer_that_was_cut_shows_on_the_card_and_sets_no_baseline(db, 
 
     out = saved_search_service.execute(db, ss.id, trigger="manual", agent=agent)
     assert out["changed"] is False
+
+
+def test_a_cut_answer_standing_in_says_so_on_the_card(client, db, pro):
+    """No full answer exists yet, so the card shows a cut one. It must not read as
+    finished: run history is closed by default, and the gate keeps it there."""
+    ss = _search(db, pro)
+    agent = Agent(refs=FULL_REFS)
+    full_answer = agent.answer
+    _cut(agent)
+    saved_search_service.execute(db, ss.id, trigger="manual", agent=agent)
+
+    card = client.get(f"/api/v1/saved-searches/{ss.id}").json()
+    assert (card["last_answer"], card["last_answer_cut_off"]) == ("Rates fell", True)
+    (listed,) = client.get("/api/v1/saved-searches").json()["items"]
+    assert listed["last_answer_cut_off"] is True
+
+    agent.answer, agent.refs, agent.cut = full_answer, list(FULL_REFS), False
+    saved_search_service.execute(db, ss.id, trigger="manual", agent=agent)
+    card = client.get(f"/api/v1/saved-searches/{ss.id}").json()
+    assert card["last_answer"] == full_answer
+    assert "last_answer_cut_off" not in card
+
+
+def test_a_cut_behind_a_full_answer_leaves_the_card_saying_nothing(client, db, pro):
+    """The card still shows the full answer, and that one is whole."""
+    ss = _search(db, pro)
+    agent = Agent()
+    full_answer = agent.answer
+    saved_search_service.execute(db, ss.id, trigger="manual", agent=agent)
+    _cut(agent)
+    saved_search_service.execute(db, ss.id, trigger="manual", agent=agent)
+
+    card = client.get(f"/api/v1/saved-searches/{ss.id}").json()
+    assert card["last_answer"] == full_answer
+    assert "last_answer_cut_off" not in card
+
+
+def test_a_card_with_no_cut_says_nothing_about_cuts(client, db, pro):
+    """D-145: not before a run, not after a finished one, and not over an answer
+    from before the column, whose NULL is unknown rather than "not cut"."""
+    ss = _search(db, pro)
+    assert "last_answer_cut_off" not in client.get(f"/api/v1/saved-searches/{ss.id}").json()
+
+    saved_search_service.execute(db, ss.id, trigger="manual", agent=Agent())
+    assert "last_answer_cut_off" not in client.get(f"/api/v1/saved-searches/{ss.id}").json()
+
+    db.get(LibraryQAExchange, ss.last_exchange_id).answer_cut_off = None
+    db.commit()
+    assert "last_answer_cut_off" not in client.get(f"/api/v1/saved-searches/{ss.id}").json()
+
+
+def test_the_gate_holds_with_no_baseline_too(db, pro):
+    """Decided, not left over: the same question over the same documents gets the
+    same budget, so re-asking with no baseline stops at the same place and spends
+    a question each cadence. The note says what happened; a new source or Run now
+    asks again, and that full answer is the first baseline."""
+    ss = _search(db, pro)
+    agent = Agent()
+    full_answer = agent.answer
+    _cut(agent)
+    assert saved_search_service.execute(db, ss.id, trigger="schedule", agent=agent)["status"] == "ok"
+    assert ss.last_answer_embedding_json is None
+
+    assert saved_search_service.execute(db, ss.id, trigger="schedule", agent=agent)["status"] == "no_new_sources"
+    assert agent.calls == 1
+
+    _doc(db, pro.id, "A new source")
+    agent.answer, agent.refs, agent.cut = full_answer, [("v1", "Fed minutes")], False
+    out = saved_search_service.execute(db, ss.id, trigger="schedule", agent=agent)
+    assert (out["status"], out["changed"]) == ("ok", None)
+    assert ss.last_answer_embedding_json is not None
 
 
 def test_the_gate_holds_after_a_cut_and_run_now_still_asks(db, pro):

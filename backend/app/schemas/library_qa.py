@@ -54,7 +54,7 @@ class LibraryQARequest(BaseModel):
     document_id: str | None = Field(default=None, min_length=1, max_length=200)
 
 
-class LibraryQAResponse(StoredCutOff):
+class LibraryQAResponse(BaseModel):
     id: str
     question: str
     answer: str
@@ -64,6 +64,7 @@ class LibraryQAResponse(StoredCutOff):
     # S-8.1.4: what the question was asked over; null is the whole library.
     # Shape and rules: app/schemas/qa_scope.py.
     scope: QAScope | None = None
+    answer_cut_off: StoredCutOff = None
 
     model_config = {"from_attributes": True}
 

@@ -47,3 +47,15 @@ class QAResponse(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class QAAnswerResponse(QAResponse):
+    """An answer that has just been written (`POST /qa`, and the stream's
+    `complete` event).
+
+    T-1.15.4.5: `answer_cut_off` says it stopped at its token budget. It is
+    known only at the moment of asking: nothing stores it, so the history
+    routes return plain `QAResponse` rather than a `false` that may be untrue.
+    """
+
+    answer_cut_off: bool = False

@@ -10,7 +10,14 @@ from sqlalchemy.orm import Session
 from app.agents.prompts.qa_prompts import with_clarification
 from app.dependencies import get_current_user, get_db
 from app.models.qa_exchange import QAExchange
-from app.schemas.qa import ClarifyRequest, ClarifyResponse, QARequest, QAResponse, Reference
+from app.schemas.qa import (
+    ClarifyRequest,
+    ClarifyResponse,
+    QAAnswerResponse,
+    QARequest,
+    QAResponse,
+    Reference,
+)
 from app.services import (
     chroma_service,
     corpus_stats_service,
@@ -121,7 +128,7 @@ def _run_qa_and_persist(
     request: QARequest,
     current_user,
     progress_callback=None,
-) -> tuple[QAExchange, list[dict]]:
+) -> QAAnswerResponse:
     """Run the Q&A agent and persist the exchange + token accounting.
 
     Shared by the sync /qa endpoint and the SSE /qa/stream endpoint.
@@ -240,12 +247,19 @@ def _run_qa_and_persist(
 
     echo_signal_extraction.maybe_queue(db, current_user.id)
 
-    return qa, references
+    return QAAnswerResponse(
+        id=qa.id,
+        question=qa.question,
+        answer=qa.answer,
+        references=[Reference(**r) for r in references],
+        created_at=qa.created_at,
+        answer_cut_off=bool(usage.get("answer_cut_off")),
+    )
 
 
 @router.post(
     "/qa",
-    response_model=QAResponse,
+    response_model=QAAnswerResponse,
 )
 def ask_question(
     job_id: str,
@@ -262,15 +276,7 @@ def ask_question(
         db, current_user, "qa_exchanges"
     )
 
-    qa, references = _run_qa_and_persist(db, job, request, current_user)
-
-    return QAResponse(
-        id=qa.id,
-        question=qa.question,
-        answer=qa.answer,
-        references=[Reference(**r) for r in references],
-        created_at=qa.created_at,
-    )
+    return _run_qa_and_persist(db, job, request, current_user)
 
 
 @router.post("/qa/stream")
@@ -312,7 +318,7 @@ def ask_question_stream(
             yield f"data: {json.dumps(event)}\n\n"
 
         try:
-            qa, references = task.result()
+            payload = task.result()
         except HTTPException as exc:
             yield f"data: {json.dumps({'type': 'error', 'detail': str(exc.detail)})}\n\n"
             yield "data: [DONE]\n\n"
@@ -323,13 +329,6 @@ def ask_question_stream(
             yield "data: [DONE]\n\n"
             return
 
-        payload = QAResponse(
-            id=qa.id,
-            question=qa.question,
-            answer=qa.answer,
-            references=[Reference(**r) for r in references],
-            created_at=qa.created_at,
-        )
         complete = {"type": "complete", "exchange": json.loads(payload.model_dump_json())}
         yield f"data: {json.dumps(complete)}\n\n"
         yield "data: [DONE]\n\n"

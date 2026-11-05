@@ -21,7 +21,12 @@ from app.agents.prompts.shared import NOTE_ANNOTATION_CONTRACT, NOTE_MARKER_PREF
 from app.agents.state import QAAgentState
 from app.config import settings
 from app.services import chroma_service, code_mixing_service, note_index
-from app.services.llm_service import get_llm_for, response_text, thinking_reserve_tokens
+from app.services.llm_service import (
+    get_llm_for,
+    response_text,
+    stopped_for_length,
+    thinking_reserve_tokens,
+)
 from app.services.llm_routing import max_output_for, resolve_config
 from app.services import output_length as output_length_policy
 from app.services import temporal_service
@@ -225,6 +230,23 @@ def _answer_budget(
     if scale < 1.0:
         budget += thinking_reserve_tokens(cfg)
     return min(budget, max_output_for(cfg.model))
+
+
+def _answer_cut_off(response, use_case: str) -> bool:
+    """Whether an answer stopped at its token budget (T-1.15.4.5).
+
+    A cut answer is still stored and returned: its budget is the owner's call
+    (OQ-29), so all this does is say so. The warning names the use case and the
+    model, never the text, because that is the reader's.
+    """
+    if not stopped_for_length(response):
+        return False
+    logger.warning(
+        "%s: answer cut off at its completion budget on model %s",
+        use_case,
+        resolve_config(use_case).model,
+    )
+    return True
 
 
 def _answer_policy(
@@ -575,7 +597,10 @@ def formulate_answer(state: QAAgentState, tally: _TokenTally | None = None) -> d
     if tally is not None:
         tally.add(response)
 
-    return {"answer": response_text(response)}
+    return {
+        "answer": response_text(response),
+        "answer_cut_off": _answer_cut_off(response, "qa_formulate_answer"),
+    }
 
 
 def _chunk_document_key(meta: dict) -> str:
@@ -1257,7 +1282,8 @@ def run_qa_agent(
     "retrieving", "refining", "formulating", "extracting_references".
     ``usage_out``, when given a dict, is populated with "prompt_tokens" /
     "completion_tokens" summed across every LLM call in the run (None when
-    no provider reported usage metadata).
+    no provider reported usage metadata), and "answer_cut_off", whether the
+    answer stopped at its token budget.
 
     Returns:
         (answer_text, references_list)
@@ -1287,6 +1313,7 @@ def run_qa_agent(
         "report_context": None,
         "refined_context": "",
         "answer": "",
+        "answer_cut_off": False,
         "references": [],
         # S-1.15.2 / R3 — both optional; absent means today's behaviour.
         "corpus_statistics": corpus_statistics or {},
@@ -1307,6 +1334,7 @@ def run_qa_agent(
     if usage_out is not None:
         usage_out["prompt_tokens"] = tally.prompt_tokens
         usage_out["completion_tokens"] = tally.completion_tokens
+        usage_out["answer_cut_off"] = state["answer_cut_off"]
     return state.get("answer", ""), state.get("references", [])
 
 
@@ -1504,11 +1532,12 @@ def run_library_qa_agent(
         HumanMessage(content=user_prompt),
     ])
     answer = response_text(answer_response)
+    cut_off = _answer_cut_off(answer_response, "library_qa_formulate_answer")
 
     # 6. Sanitize fabricated citations using the shared helper, then extract
     # structured references.
     if not rag_results or not answer:
-        return {"answer": answer, "references": []}
+        return {"answer": answer, "references": [], "answer_cut_off": cut_off}
 
     sanitized_answer, removed = _sanitize_citations(answer, rag_results)
     if removed:
@@ -1524,4 +1553,4 @@ def run_library_qa_agent(
         for ref in references[:10]
     ]
 
-    return {"answer": sanitized_answer, "references": library_refs}
+    return {"answer": sanitized_answer, "references": library_refs, "answer_cut_off": cut_off}

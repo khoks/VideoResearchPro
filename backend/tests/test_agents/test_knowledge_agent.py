@@ -218,13 +218,13 @@ def test_synthesize_report_invokes_llm_and_strips_code_fence():
 
 def test_synthesize_prompt_excludes_transcript_tail(monkeypatch):
     """S-1.12.8: the synthesis prompt carries only an OPENING excerpt of the
-    transcript (min(KNOWLEDGE_MAX_TRANSCRIPT_TOKENS, 20K) tokens). A marker
-    planted beyond that budget must NOT reach the LLM; the merged extraction
-    JSON must."""
+    transcript (KNOWLEDGE_MAX_TRANSCRIPT_TOKENS tokens). A marker planted
+    beyond that budget must NOT reach the LLM; the merged extraction JSON
+    must."""
     monkeypatch.setattr(
-        knowledge_agent.settings, "KNOWLEDGE_MAX_TRANSCRIPT_TOKENS", 60000
+        knowledge_agent.settings, "KNOWLEDGE_MAX_TRANSCRIPT_TOKENS", 20000
     )
-    # Excerpt budget = min(60000, 20000) = 20000 tokens; marker sits at ~21K.
+    # Excerpt budget = 20000 tokens; marker sits at ~21K.
     text = "OPENING_ANCHOR_TOKEN " + ("word " * 21000) + " DEEP_TAIL_MARKER_XYZZY"
     llm = _fake_llm_constant("# Doc")
     with patch.object(knowledge_agent, "get_llm_for", return_value=llm):
@@ -246,8 +246,8 @@ def test_synthesize_prompt_excludes_transcript_tail(monkeypatch):
     assert "quantum databases" in prompt
 
 
-def test_synthesize_excerpt_bounded_by_setting_when_below_20k(monkeypatch):
-    """The excerpt budget is min(setting, 20K) — a setting below 20K wins."""
+def test_synthesize_excerpt_bounded_by_setting(monkeypatch):
+    """The excerpt budget is the setting."""
     monkeypatch.setattr(
         knowledge_agent.settings, "KNOWLEDGE_MAX_TRANSCRIPT_TOKENS", 100
     )
@@ -269,7 +269,7 @@ def test_synthesize_caps_merged_extraction_json(monkeypatch):
     """Degenerate case: a merged extraction JSON over 30K tokens is truncated
     (head survives, tail dropped) instead of blowing the synthesis context."""
     monkeypatch.setattr(
-        knowledge_agent.settings, "KNOWLEDGE_MAX_TRANSCRIPT_TOKENS", 60000
+        knowledge_agent.settings, "KNOWLEDGE_MAX_TRANSCRIPT_TOKENS", 20000
     )
     facts = [f"fact-{i} " + ("detail " * 20) for i in range(2500)]  # >> 30K tokens
     llm = _fake_llm_constant("# Doc")

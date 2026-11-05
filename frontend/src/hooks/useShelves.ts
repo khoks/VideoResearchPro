@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { rememberCutOff } from '../stores/qaCutOffStore';
 import type { LibraryQARequest } from '../types/qa';
 import {
   shelvesApi,
@@ -131,7 +132,8 @@ export function useAskShelf(id: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (body: LibraryQARequest) => shelvesApi.ask(id, body),
-    onSuccess: () => {
+    onSuccess: (exchange, body) => {
+      rememberCutOff(exchange, body);
       void qc.invalidateQueries({ queryKey: shelvesKeys.questions(id) });
       void qc.invalidateQueries({ queryKey: ['libraryQaHistory'] });
     },

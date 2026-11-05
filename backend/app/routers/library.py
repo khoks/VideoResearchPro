@@ -17,6 +17,7 @@ from app.models.job_video import JobVideo
 from app.models.library_qa_exchange import LibraryQAExchange
 from app.models.document import Document
 from app.schemas.library_qa import (
+    LibraryQAAnswerResponse,
     LibraryClarifyRequest,
     LibraryClarifyResponse,
     LibraryQARequest,
@@ -113,13 +114,13 @@ def clarify_library_question(
 
 @router.post(
     "/qa",
-    response_model=LibraryQAResponse,
+    response_model=LibraryQAAnswerResponse,
 )
 def ask_library_question(
     request: LibraryQARequest,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
-) -> LibraryQAResponse:
+) -> LibraryQAAnswerResponse:
     """Run library-wide Q&A across the global video library and persist the exchange.
 
     With ``document_id`` (T-8.4.2.4) the question is about that one source:
@@ -141,7 +142,7 @@ def answer_library_question(
     current_user,
     request: LibraryQARequest,
     scope: QAScope | None,
-) -> LibraryQAResponse:
+) -> LibraryQAAnswerResponse:
     """Ask the library agent over ``scope`` and persist the exchange.
 
     One path for the whole library (``scope=None``, ``POST /library/qa``) and
@@ -226,7 +227,10 @@ def answer_library_question(
 
     echo_signal_extraction.maybe_queue(db, current_user.id)
 
-    return library_exchange_response(exchange)
+    return LibraryQAAnswerResponse(
+        **dict(library_exchange_response(exchange)),
+        answer_cut_off=result.answer_cut_off,
+    )
 
 
 @router.get(

@@ -14,6 +14,7 @@ the pool size, QA figures come from measured production exchanges.
 from dataclasses import dataclass
 from math import ceil
 
+from app.config import settings
 from app.services.llm_routing import (
     USE_CASE_REGISTRY,
     UseCaseConfig,
@@ -128,7 +129,7 @@ def _workload(use_case: str, model: str) -> tuple[int, int, int]:
         return n, kv * (avg_tokens + calls_per_video * 400), n * 2_000
     if use_case == "knowledge_synthesize_report":
         avg_tokens = b["corpus_tokens"] // b["videos"]
-        return kv, kv * (min(avg_tokens, 20_000) + 3_500), kv * 6_000
+        return kv, kv * (min(avg_tokens, settings.KNOWLEDGE_MAX_TRANSCRIPT_TOKENS) + 3_500), kv * 6_000
     if use_case in ("report_channel", "report_compose_channel_section", "social_classify_stance"):
         return 0, 0, 0                      # not exercised by this (topic/video) benchmark
     if use_case in ("author_book_outline", "author_book_prose", "author_deck_outline", "author_newsletter_compose"):

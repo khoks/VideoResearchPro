@@ -5,6 +5,15 @@
  * clarifications" sends no context. The backend half (the route folding
  * `context` into the agent's question) is pinned in
  * backend/tests/test_routers/test_library.py; this pins what the page sends.
+ *
+ * S-8.13.3: clarifying is optional, as on the shelf panel (D-132). A failed
+ * clarify becomes a direct ask with no context, and the reader sees that ask
+ * running. Before this, an outage in the optional step stopped the question.
+ * Mutation checks, run by hand on 2026-11-04: removing the direct ask fails
+ * "goes straight to the library"; removing the mounted check fails "asks
+ * nothing"; removing the stripe, or `askQuestion.isPending` from the input's
+ * disabled state, fails "shows the direct ask running"; letting
+ * `handleSkipAndAsk` rethrow fails "keeps the question".
  */
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -62,6 +71,8 @@ function typeInto(input: HTMLInputElement, value: string) {
 const button = (label: string) =>
   Array.from(host.querySelectorAll('button')).find((b) => b.textContent?.trim() === label) as HTMLButtonElement;
 
+const questionInput = () => host.querySelector<HTMLInputElement>('input[aria-label="Question"]')!;
+
 async function mountAndClarify() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   act(() =>
@@ -76,7 +87,7 @@ async function mountAndClarify() {
     ),
   );
   await flush();
-  typeInto(host.querySelector<HTMLInputElement>('input[aria-label="Question"]')!, 'What changed in rates?');
+  typeInto(questionInput(), 'What changed in rates?');
   const form = host.querySelector('form')!;
   act(() => {
     form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
@@ -159,5 +170,56 @@ describe('LibraryQAPage clarify step', () => {
     const body = askMock.mock.calls[0][0];
     expect(body).toEqual({ question: 'What changed in rates?', answer_language: 'en' });
     expect('context' in body).toBe(false);
+  });
+});
+
+describe('LibraryQAPage when clarify fails', () => {
+  beforeEach(() => {
+    clarifyMock.mockReset();
+    clarifyMock.mockRejectedValue(new Error('clarify is down'));
+  });
+
+  it('goes straight to the library with no context, and clears the composer', async () => {
+    await mountAndClarify();
+
+    expect(askMock).toHaveBeenCalledTimes(1);
+    expect(askMock).toHaveBeenCalledWith({ question: 'What changed in rates?', answer_language: 'en' });
+    expect(button('Skip clarifications')).toBeUndefined();
+    expect(questionInput().value).toBe('');
+  });
+
+  it('shows the direct ask running, and takes no second question meanwhile', async () => {
+    let land: (value: unknown) => void = () => undefined;
+    askMock.mockReturnValue(new Promise((resolve) => (land = resolve)));
+    await mountAndClarify();
+
+    expect(host.textContent).toContain('Searching the library and generating answer…');
+    expect(questionInput().disabled).toBe(true);
+
+    await act(async () => land({ id: 'x2', question: 'q', answer: 'a', references: [], created_at: '2026-10-25T00:00:00Z' }));
+    await flush();
+    expect(host.textContent).not.toContain('Searching the library and generating answer…');
+    expect(questionInput().disabled).toBe(false);
+  });
+
+  it('keeps the question when the direct ask fails too', async () => {
+    askMock.mockRejectedValue(new Error('the agent is down'));
+    await mountAndClarify();
+
+    expect(askMock).toHaveBeenCalledTimes(1);
+    expect(questionInput().value).toBe('What changed in rates?');
+    expect(questionInput().disabled).toBe(false);
+  });
+
+  it('asks nothing for a reader who has left the page', async () => {
+    let fail: (reason: Error) => void = () => undefined;
+    clarifyMock.mockReturnValue(new Promise((_, reject) => (fail = reject)));
+    await mountAndClarify();
+
+    act(() => root.unmount());
+    await act(async () => fail(new Error('clarify is down')));
+    await flush();
+    expect(askMock).not.toHaveBeenCalled();
+    root = createRoot(host);
   });
 });

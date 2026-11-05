@@ -55,10 +55,10 @@ _KNOWLEDGE_KEYS = ("topics", "concepts", "events", "facts")
 # trips, the returned artifact records what was dropped via `_processing`.
 TRANSCRIPT_SANITY_CEILING_TOKENS = 500_000
 
-# Reduce-phase input budgets (S-1.12.8). The synthesis prompt no longer
+# Reduce-phase input budget (S-1.12.8). The synthesis prompt no longer
 # carries the full transcript — coverage comes from the merged extraction;
-# the transcript excerpt only anchors voice/terminology.
-SYNTHESIS_EXCERPT_MAX_TOKENS = 20_000
+# the transcript excerpt only anchors voice/terminology, and its size is
+# `KNOWLEDGE_MAX_TRANSCRIPT_TOKENS`.
 SYNTHESIS_EXTRACTION_JSON_MAX_TOKENS = 30_000
 
 # S-1.14.8: the synthesis budget tracks the extraction, from this floor up.
@@ -343,19 +343,15 @@ def synthesize_report(state: KnowledgeAgentState) -> dict:
         batch contributed to it, so nothing from the video is missing.
         Capped at `SYNTHESIS_EXTRACTION_JSON_MAX_TOKENS` (degenerate case).
       * an OPENING EXCERPT of the transcript — voice/terminology grounding
-        only, first min(KNOWLEDGE_MAX_TRANSCRIPT_TOKENS, 20K) tokens. The
+        only, first KNOWLEDGE_MAX_TRANSCRIPT_TOKENS tokens. The
         full transcript is deliberately NOT re-sent: on long videos that
         doubled token spend for zero coverage gain.
     """
     merged = state.get("merged_extraction") or {k: [] for k in _KNOWLEDGE_KEYS}
     full_transcript = state.get("full_transcript_text", "") or ""
     # Role: voice/grounding excerpt — NOT the coverage input (that's the
-    # merged extraction). First-N tokens only, bounded by the configured
-    # transcript setting but never more than SYNTHESIS_EXCERPT_MAX_TOKENS.
-    excerpt_budget = min(
-        int(settings.KNOWLEDGE_MAX_TRANSCRIPT_TOKENS),
-        SYNTHESIS_EXCERPT_MAX_TOKENS,
-    )
+    # merged extraction). First-N tokens only.
+    excerpt_budget = int(settings.KNOWLEDGE_MAX_TRANSCRIPT_TOKENS)
     transcript_excerpt = _truncate_to_tokens(full_transcript, excerpt_budget)
 
     if not any(merged.get(k) for k in _KNOWLEDGE_KEYS) and not transcript_excerpt.strip():

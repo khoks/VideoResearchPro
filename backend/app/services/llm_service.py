@@ -764,7 +764,9 @@ def response_text(response) -> str:
 
 
 # finish_reason / stop_reason values meaning "ran out of output budget":
-# OpenAI `length`, Anthropic `max_tokens`, Google `MAX_TOKENS`.
+# OpenAI `length`, Anthropic `max_tokens`, Google `MAX_TOKENS`. OpenAI's
+# Responses API, which langchain picks for its responses-only models, sets
+# neither key: it says `max_output_tokens` under `incomplete_details.reason`.
 _LENGTH_STOPS = frozenset({"length", "max_tokens", "max_output_tokens"})
 
 
@@ -773,8 +775,11 @@ def stopped_for_length(response: object) -> bool:
     meta = getattr(response, "response_metadata", None)
     if not isinstance(meta, dict):
         return False
-    reason = meta.get("finish_reason") or meta.get("stop_reason") or ""
-    return str(reason).strip().lower() in _LENGTH_STOPS
+    reason = meta.get("finish_reason") or meta.get("stop_reason")
+    if not reason:
+        details = meta.get("incomplete_details")
+        reason = details.get("reason") if isinstance(details, dict) else ""
+    return str(reason or "").strip().lower() in _LENGTH_STOPS
 
 
 # ---------------------------------------------------------------------------

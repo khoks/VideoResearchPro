@@ -10,19 +10,27 @@
  * is optional: when it fails the question goes straight to the shelf, because
  * a clarify outage must not stop an ask that does not need it.
  *
+ * T-1.15.4.6: the job and library panels' depth control, sent the same way: the
+ * request carries `output_length` only when a depth shows, and a pick is for one
+ * ask (D-125). It starts from the account's default depth (T-1.15.3.9).
+ *
  * `ShelfPage` keys this panel on the shelf, so all of this state is one shelf's.
  */
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Button, Card, FormField, Select, Textarea } from '../primitives';
+import { DepthSelect } from '../common/DepthSelect';
 import { ClarifyStep } from '../qa/ClarifyStep';
 import { InfoStripe, LibraryQAExchangeCard } from '../qa/LibraryQAExchangeCard';
 import { useAskShelf, useShelfHasSources, useShelfQuestions } from '../../hooks/useShelves';
 import { useClarifyLibraryQA } from '../../hooks/useLibraryQA';
+import { useDepthChoice } from '../../hooks/useDepthChoice';
 import { useFeatureAvailable } from '../../hooks/useFeatureAvailable';
+import { usePreferredDepth } from '../../hooks/useMe';
 import { useColors } from '../../hooks/useTheme';
 import { fonts, fontSize, fontWeight, lineHeight, measure, space } from '../../theme';
 import type { AnswerLanguage } from '../../types/qa';
 import { buildClarifyContext } from '../../utils/clarifyContext';
+import { withDepth } from '../../utils/depth';
 
 const LANGUAGE_OPTIONS: Array<{ value: AnswerLanguage; label: string }> = [
   { value: 'en', label: 'English' },
@@ -40,11 +48,13 @@ export function ShelfQAPanel({ shelfId, shelfName }: { shelfId: string; shelfNam
   const available = useFeatureAvailable('library_qa');
   const [question, setQuestion] = useState('');
   const [language, setLanguage] = useState<AnswerLanguage>('en');
+  const { depth, pick: setDepth, reset: resetDepth } = useDepthChoice(usePreferredDepth());
   const [step, setStep] = useState<'ask' | 'clarify'>('ask');
   const [interpretation, setInterpretation] = useState('');
   const [clarifications, setClarifications] = useState<string[]>([]);
   const [answers, setAnswers] = useState<string[]>([]);
   const mounted = useRef(false);
+  const questionInput = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     mounted.current = true;
@@ -76,12 +86,21 @@ export function ShelfQAPanel({ shelfId, shelfName }: { shelfId: string; shelfNam
   const send = async (context?: string) => {
     const body = { question: question.trim(), answer_language: language };
     try {
-      await ask.mutateAsync(context ? { ...body, context } : body);
+      await ask.mutateAsync(withDepth(context ? { ...body, context } : body, depth));
       setQuestion('');
       setStep('ask');
+      resetDepth();
     } catch {
       // toasted as above; the step stays, with what the reader typed into it
     }
+  };
+
+  // T-1.15.4.5: a cut-off answer's offer; see `AnswerCutOffNote`.
+  const askAtDeep = (q: string) => {
+    setStep('ask');
+    setQuestion(q);
+    setDepth('deep');
+    setTimeout(() => questionInput.current?.focus(), 0);
   };
 
   return (
@@ -135,6 +154,7 @@ export function ShelfQAPanel({ shelfId, shelfName }: { shelfId: string; shelfNam
             <FormField label="Your question">
               {(controlId) => (
                 <Textarea
+                  ref={questionInput}
                   id={controlId}
                   value={question}
                   onChange={(e) => setQuestion(e.target.value)}
@@ -157,22 +177,36 @@ export function ShelfQAPanel({ shelfId, shelfName }: { shelfId: string; shelfNam
                 marginTop: space['3'],
               }}
             >
-              <FormField label="Answer in">
-                {(controlId) => (
-                  <Select
-                    id={controlId}
-                    value={language}
-                    onChange={(e) => setLanguage(e.target.value as AnswerLanguage)}
-                    style={{ width: 'auto', minWidth: 140 }}
-                  >
-                    {LANGUAGE_OPTIONS.map((o) => (
-                      <option key={o.value} value={o.value}>
-                        {o.label}
-                      </option>
-                    ))}
-                  </Select>
-                )}
-              </FormField>
+              <div style={{ display: 'flex', alignItems: 'flex-end', gap: space['3'], flexWrap: 'wrap' }}>
+                <FormField label="Answer in">
+                  {(controlId) => (
+                    <Select
+                      id={controlId}
+                      value={language}
+                      onChange={(e) => setLanguage(e.target.value as AnswerLanguage)}
+                      style={{ width: 'auto', minWidth: 140 }}
+                    >
+                      {LANGUAGE_OPTIONS.map((o) => (
+                        <option key={o.value} value={o.value}>
+                          {o.label}
+                        </option>
+                      ))}
+                    </Select>
+                  )}
+                </FormField>
+                <FormField label="Answer depth">
+                  {(controlId) => (
+                    <DepthSelect
+                      id={controlId}
+                      value={depth}
+                      onChange={setDepth}
+                      unsetLabel="Default"
+                      title="Default: sized to how many sources this shelf holds."
+                      disabled={ask.isPending || clarify.isPending}
+                    />
+                  )}
+                </FormField>
+              </div>
               <Button
                 type="submit"
                 disabled={disabled || !question.trim()}
@@ -200,7 +234,12 @@ export function ShelfQAPanel({ shelfId, shelfName }: { shelfId: string; shelfNam
         {history.data && history.data.length > 0 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: space['3'], marginTop: space['4'] }}>
             {history.data.map((qa) => (
-              <LibraryQAExchangeCard key={qa.id} qa={qa} showScope={false} />
+              <LibraryQAExchangeCard
+                key={qa.id}
+                qa={qa}
+                showScope={false}
+                onAskAgain={available && !ask.isPending && !clarify.isPending ? askAtDeep : undefined}
+              />
             ))}
           </div>
         )}

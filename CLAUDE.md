@@ -252,6 +252,7 @@ POST   /api/v1/auth/password/change      # Signed in: keeps this session, ends t
 GET    /api/v1/auth/me
 PUT    /api/v1/auth/me/tier              # Operators only
 GET/PATCH /api/v1/auth/me/onboarding
+PATCH  /api/v1/auth/me/preferences       # The depth this person's pages start from; auto clears it
 GET    /api/v1/auth/audit-log            # ?scope=account: account and security events only
 GET    /api/v1/auth/quota                # Usage against tier limits, per resource
 GET/DELETE /api/v1/auth/sessions         # DELETE ?keep_current=true signs out everywhere else
@@ -495,7 +496,7 @@ Copy `.env.example` to `backend/.env` and fill in required keys. The repository 
 | `REPORT_MAP_CONCURRENCY` | No | `4` | Map calls in flight at once; results stay in batch order |
 | `REPORT_ATTRIBUTION_GUARD_ENABLED` | No | `True` | The deterministic attribution guard for on-screen details (S-1.18.9). A no-op without visual spans |
 | `KNOWLEDGE_EXTRACT_BATCH_TOKENS` | No | `8000` | Max tokens per extract batch |
-| `KNOWLEDGE_MAX_TRANSCRIPT_TOKENS` | No | `60000` | Bounds the opening excerpt the synthesis prompt sees, which never exceeds 20,000 tokens. Extraction itself reads the whole text, up to a 500,000-token sanity ceiling |
+| `KNOWLEDGE_MAX_TRANSCRIPT_TOKENS` | No | `20000` | Size of the opening excerpt the synthesis prompt sees, in tokens. Extraction itself reads the whole text, up to a 500,000-token sanity ceiling |
 | **Author Studio** | | | |
 | `OUTPUTS_DIR` | No | `./data/outputs` | Author Studio artifacts (PDF, EPUB, PPTX, site zips), one directory per output: `<OUTPUTS_DIR>/<user_id>/<output_id>/` (S-6.7.2) |
 | `AUTHOR_PDF_ENGINE` | No | `auto` | Book PDF converter (S-6.1.5): `auto` tries WeasyPrint (needs Pango) then Chromium via Playwright; `weasyprint` / `chromium` pin one; `off` disables PDF. Both are optional (`backend/requirements-author.txt`); EPUB and Markdown need neither. Probed once per process, so restart after installing. Off for the test suite |

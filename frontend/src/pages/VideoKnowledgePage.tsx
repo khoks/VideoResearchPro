@@ -1,8 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Markdown } from '../components/common/Markdown';
 import { useKnowledge, useExtractKnowledge } from '../hooks/useKnowledge';
+import { useDepthChoice } from '../hooks/useDepthChoice';
 import { useFeatureAvailable } from '../hooks/useFeatureAvailable';
+import { usePreferredDepth } from '../hooks/useMe';
 import { Badge, Button, Spinner, type BadgeTone } from '../components/primitives';
 import { NotesPanel } from '../components/notes';
 import { SuggestionCard } from '../components/qa/SuggestionCard';
@@ -37,7 +39,8 @@ interface Props {
   /**
    * S-1.15.3: the depth the report control starts on — the preference the
    * surface already uses (a run's `output_length` on the job page). Omitted
-   * or 'auto' starts on Auto, which sends no preference.
+   * or 'auto' starts on the account's default depth (T-1.15.3.9), which is
+   * Auto, sending no preference, for anyone who never set one.
    */
   defaultDepth?: string | null;
   onClose: () => void;
@@ -61,7 +64,8 @@ export function VideoKnowledgeDrawer({ videoId, videoTitle, sourceType, defaultD
   const extract = useExtractKnowledge(videoId);
   const knowledgeExtractionAvailable = useFeatureAvailable('knowledge_extraction');
   const libraryQAAvailable = useFeatureAvailable('library_qa');
-  const [depth, setDepth] = useState<Depth | null>(() => depthOf(defaultDepth));
+  const preferredDepth = usePreferredDepth();
+  const { depth, pick: setDepth } = useDepthChoice(depthOf(defaultDepth) ?? preferredDepth);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {

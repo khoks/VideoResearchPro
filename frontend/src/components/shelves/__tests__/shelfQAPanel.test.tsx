@@ -13,6 +13,11 @@
  * fails the "Confirm & search" test; dropping the direct ask fails "asks the
  * shelf directly"; dropping the mounted check fails "asks nothing"; dropping
  * the form's own pending state fails "shows the direct ask running".
+ *
+ * T-1.15.4.6: the same depth control as the job and library panels. Mutation
+ * checks, run by hand on 2026-11-04: `send` dropping `withDepth` fails "sends the
+ * picked depth"; `send` not resetting fails "for that one ask"; dropping the
+ * select's `disabled` fails "while the answer runs".
  */
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -63,8 +68,9 @@ async function flush() {
   }
 }
 
-async function render(node: React.ReactNode) {
+async function render(node: React.ReactNode, preferred: string | null = null) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  qc.setQueryData(['auth', 'me'], { preferred_output_length: preferred });
   act(() =>
     root.render(
       <QueryClientProvider client={qc}>
@@ -92,13 +98,31 @@ async function press(label: string) {
   await flush();
 }
 
-/** The panel on a shelf with a source, the question typed and sent to clarify. */
-async function clarifyQuestion(question = 'What about rates?') {
+/** The panel on a shelf with a source, before anything is asked. */
+async function panel(preferred: string | null = null) {
   documentsMock.mockResolvedValue([{ id: 'd1' }]);
   questionsMock.mockResolvedValue([]);
-  await render(<ShelfQAPanel shelfId="s1" shelfName="Rates" />);
+  await render(<ShelfQAPanel shelfId="s1" shelfName="Rates" />, preferred);
+}
+
+/** The panel on a shelf with a source, the question typed and sent to clarify. */
+async function clarifyQuestion(question = 'What about rates?') {
+  await panel();
   type(host.querySelector('textarea')!, question);
   await press('Ask this shelf');
+}
+
+const depthSelect = () => {
+  const label = Array.from(host.querySelectorAll('label')).find((l) => l.textContent?.includes('Answer depth'));
+  return host.querySelector<HTMLSelectElement>(`[id="${label?.htmlFor}"]`);
+};
+
+function pickDepth(value: string) {
+  const select = depthSelect()!;
+  act(() => {
+    select.value = value;
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+  });
 }
 
 beforeEach(() => {
@@ -118,6 +142,101 @@ beforeEach(() => {
 afterEach(() => {
   act(() => root.unmount());
   host.remove();
+});
+
+describe('ShelfQAPanel: answer depth', () => {
+  it('is labelled, starts on Default, and sends nothing when left there', async () => {
+    askMock.mockResolvedValue(exchange('e1', 'What about rates?'));
+    await panel();
+    expect(Array.from(depthSelect()!.options).map((o) => o.textContent)).toEqual([
+      'Default',
+      'Brief',
+      'Standard',
+      'Deep',
+    ]);
+    expect(depthSelect()!.value).toBe('');
+
+    type(host.querySelector('textarea')!, 'What about rates?');
+    await press('Ask this shelf');
+    await press('Skip clarifications');
+    expect(askMock.mock.calls[0][1]).toEqual({ question: 'What about rates?', answer_language: 'en' });
+  });
+
+  it('sends the picked depth on Confirm, on Skip and on a direct ask', async () => {
+    askMock.mockResolvedValue(exchange('e1', 'What about rates?'));
+    const sent = { question: 'What about rates?', answer_language: 'en', output_length: 'deep' };
+
+    await panel();
+    pickDepth('deep');
+    type(host.querySelector('textarea')!, 'What about rates?');
+    await press('Ask this shelf');
+    await press('Skip clarifications');
+    expect(askMock.mock.calls[0][1]).toEqual(sent);
+
+    pickDepth('deep');
+    type(host.querySelector('textarea')!, 'What about rates?');
+    await press('Ask this shelf');
+    await press('Confirm & search');
+    expect(askMock.mock.calls[1][1]).toMatchObject(sent);
+
+    clarifyMock.mockRejectedValue(new Error('clarify is down'));
+    pickDepth('deep');
+    type(host.querySelector('textarea')!, 'What about rates?');
+    await press('Ask this shelf');
+    expect(askMock.mock.calls[2][1]).toEqual(sent);
+  });
+
+  it('holds a pick for that one ask: it clears when the answer lands', async () => {
+    askMock.mockResolvedValue(exchange('e1', 'What about rates?'));
+    await panel();
+    pickDepth('brief');
+    type(host.querySelector('textarea')!, 'What about rates?');
+    await press('Ask this shelf');
+    await press('Skip clarifications');
+    expect(depthSelect()!.value).toBe('');
+  });
+
+  it('keeps a pick through a failed ask, for the retry', async () => {
+    askMock.mockRejectedValue(new Error('down'));
+    await panel();
+    pickDepth('brief');
+    type(host.querySelector('textarea')!, 'What about rates?');
+    await press('Ask this shelf');
+    await press('Skip clarifications');
+    await press('Edit');
+    expect(depthSelect()!.value).toBe('brief');
+  });
+
+  it('cannot change while the answer runs', async () => {
+    askMock.mockReturnValue(new Promise(() => undefined));
+    clarifyMock.mockRejectedValue(new Error('clarify is down'));
+    await panel();
+    type(host.querySelector('textarea')!, 'What about rates?');
+    await press('Ask this shelf');
+    expect(depthSelect()!.disabled).toBe(true);
+  });
+
+  it("starts from the account's default depth, and goes back to it after an ask", async () => {
+    askMock.mockResolvedValue(exchange('e1', 'What about rates?'));
+    await panel('standard');
+    expect(depthSelect()!.value).toBe('standard');
+
+    type(host.querySelector('textarea')!, 'What about rates?');
+    await press('Ask this shelf');
+    await press('Skip clarifications');
+    expect(askMock.mock.calls[0][1]).toMatchObject({ output_length: 'standard' });
+    expect(depthSelect()!.value).toBe('standard');
+  });
+
+  it('lets Default win over the preference, for that ask', async () => {
+    askMock.mockResolvedValue(exchange('e1', 'What about rates?'));
+    await panel('deep');
+    pickDepth('');
+    type(host.querySelector('textarea')!, 'What about rates?');
+    await press('Ask this shelf');
+    await press('Skip clarifications');
+    expect(askMock.mock.calls[0][1]).toEqual({ question: 'What about rates?', answer_language: 'en' });
+  });
 });
 
 describe('ShelfQAPanel', () => {

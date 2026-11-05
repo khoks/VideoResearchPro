@@ -7,7 +7,9 @@ import {
   useClarifyLibraryQA,
   useLibraryQAHistory,
 } from '../hooks/useLibraryQA';
+import { useDepthChoice } from '../hooks/useDepthChoice';
 import { useFeatureAvailable } from '../hooks/useFeatureAvailable';
+import { usePreferredDepth } from '../hooks/useMe';
 import { ClarifyStep } from '../components/qa/ClarifyStep';
 import { DockedComposer, QADock, QAThread } from '../components/qa/Composer';
 import { InfoStripe, LibraryQAExchangeCard } from '../components/qa/LibraryQAExchangeCard';
@@ -32,7 +34,7 @@ import {
 } from '../theme';
 import type { AnswerLanguage, SourceScope } from '../types/qa';
 import { buildClarifyContext } from '../utils/clarifyContext';
-import { withDepth, type Depth } from '../utils/depth';
+import { withDepth } from '../utils/depth';
 
 const FEATURE_UNAVAILABLE_MSG = 'LLM-dependent feature is temporarily unavailable';
 
@@ -65,9 +67,10 @@ export function LibraryQAPage() {
 
   const [question, setQuestion] = useState('');
   const [language, setLanguage] = useState<AnswerLanguage>('en');
-  // R4: the next ask's depth, and that ask's only: it clears once the answer
-  // lands. Null sends none and the corpus size decides.
-  const [depth, setDepth] = useState<Depth | null>(null);
+  // R4: the next ask's depth, and that ask's only: once the answer lands it goes
+  // back to where this page starts, which is the account's default depth, if
+  // any (T-1.15.3.9). Null sends none and the corpus size decides.
+  const { depth, pick: setDepth, reset: resetDepth } = useDepthChoice(usePreferredDepth());
   const [step, setStep] = useState<'ask' | 'clarify'>('ask');
   const [interpretation, setInterpretation] = useState('');
   const [clarifications, setClarifications] = useState<string[]>([]);
@@ -78,9 +81,18 @@ export function LibraryQAPage() {
   const scoped = (body: { question: string; answer_language: AnswerLanguage; context?: string }) =>
     source ? { ...body, document_id: source.id } : body;
 
-  const askInputDisabled = clarifyQuestion.isPending || !libraryQAAvailable;
+  const askInputDisabled = clarifyQuestion.isPending || askQuestion.isPending || !libraryQAAvailable;
   const askButtonDisabled = askInputDisabled || !question.trim();
   const clarifyButtonsDisabled = askQuestion.isPending || !libraryQAAvailable;
+
+  const mounted = useRef(false);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  const questionInput = useRef<HTMLInputElement>(null);
 
   const resetToAsk = () => {
     setStep('ask');
@@ -93,14 +105,33 @@ export function LibraryQAPage() {
   // ask, so it keeps the depth; a failed ask keeps it for the retry.
   const finishAsk = () => {
     setQuestion('');
-    setDepth(null);
+    resetDepth();
     resetToAsk();
   };
+
+  // T-1.15.4.5: a cut-off answer's offer; see `AnswerCutOffNote`.
+  const askAtDeep = (q: string) => {
+    resetToAsk();
+    setQuestion(q);
+    setDepth('deep');
+    setTimeout(() => questionInput.current?.focus(), 0);
+  };
+  const askAgain = libraryQAAvailable && !askQuestion.isPending ? askAtDeep : undefined;
 
   const handleAsk = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!question.trim() || !libraryQAAvailable) return;
-    const result = await clarifyQuestion.mutateAsync({ question });
+    let result;
+    try {
+      result = await clarifyQuestion.mutateAsync({ question });
+    } catch {
+      // S-8.13.3: clarifying is optional (D-132). The global mutation cache
+      // already toasted the failure, and an outage in this step must not stop
+      // an ask that does not need it. A page the reader has left asks nothing:
+      // that call settled after they moved on.
+      if (mounted.current) await handleSkipAndAsk();
+      return;
+    }
     setInterpretation(result.interpretation);
     setClarifications(result.clarifications);
     setClarificationAnswers(new Array(result.clarifications.length).fill(''));
@@ -118,7 +149,11 @@ export function LibraryQAPage() {
 
   const handleSkipAndAsk = async () => {
     if (!libraryQAAvailable) return;
-    await askQuestion.mutateAsync(withDepth(scoped({ question, answer_language: language }), depth));
+    try {
+      await askQuestion.mutateAsync(withDepth(scoped({ question, answer_language: language }), depth));
+    } catch {
+      return; // the global mutation cache already toasted; the question stays
+    }
     finishAsk();
   };
 
@@ -300,6 +335,7 @@ export function LibraryQAPage() {
             >
               <div style={{ flex: '1 1 280px' }}>
                 <Input
+                  ref={questionInput}
                   value={question}
                   onChange={(e) => setQuestion(e.target.value)}
                   placeholder={
@@ -317,7 +353,7 @@ export function LibraryQAPage() {
               <Button
                 type="submit"
                 disabled={askButtonDisabled}
-                loading={clarifyQuestion.isPending}
+                loading={clarifyQuestion.isPending || askQuestion.isPending}
                 title={!libraryQAAvailable ? FEATURE_UNAVAILABLE_MSG : undefined}
               >
                 Ask
@@ -325,6 +361,7 @@ export function LibraryQAPage() {
             </form>
             </DockedComposer>
             {clarifyQuestion.isPending && <InfoStripe text="Listening for the echo of your question…" />}
+            {askQuestion.isPending && <InfoStripe text="Searching the library and generating answer…" />}
             {!askQuestion.isPending && (
               <SuggestionCard
                 context={source ? `document:${source.id}` : 'library'}
@@ -363,7 +400,7 @@ export function LibraryQAPage() {
             }}
           >
             {history.map((qa) => (
-              <LibraryQAExchangeCard key={qa.id} qa={qa} />
+              <LibraryQAExchangeCard key={qa.id} qa={qa} onAskAgain={askAgain} />
             ))}
           </QAThread>
         )}

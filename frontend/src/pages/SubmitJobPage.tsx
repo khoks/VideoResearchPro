@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { useCreateJob } from '../hooks/useJobs';
 import { useFeatureAvailable } from '../hooks/useFeatureAvailable';
 import { useCapability } from '../hooks/useCapability';
+import { usePreferredDepth } from '../hooks/useMe';
 import { VisualAnalysisOption } from '../components/jobs/VisualAnalysisOption';
 import { SourceTypePicker } from '../components/jobs/SourceTypePicker';
 import { useSystemStatusStore } from '../stores/systemStatusStore';
@@ -27,6 +28,7 @@ import {
   sourceTypeShares,
   templateNeedsChannels,
   templateToFormState,
+  withPreferredDepth,
   unavailableSourceTypes,
   validateChannels,
   type ChannelTypeOption,
@@ -128,6 +130,8 @@ export function SubmitJobPage() {
     cloneFromInitial ? jobToFormState(cloneFromInitial) : loadForm(),
   );
   const [validationError, setValidationError] = useState<string | null>(null);
+  // T-1.15.3.9: the depth this run starts from when the form has none of its own.
+  const preferredDepth = usePreferredDepth();
 
   // T-8.10.1.7: the first run reads one of the channels chosen in the
   // welcome wizard; the others wait here. An empty channel list is filled
@@ -287,7 +291,7 @@ export function SubmitJobPage() {
     e.preventDefault();
     setValidationError(null);
 
-    const result = formToJobCreate(form);
+    const result = formToJobCreate(withPreferredDepth(form, preferredDepth));
     if (!result.ok) {
       setValidationError(result.error);
       return;
@@ -567,8 +571,10 @@ export function SubmitJobPage() {
                 {(id) => (
                   <Select
                     id={id}
-                    value={form.outputLength}
-                    onChange={(e) => update('outputLength', e.target.value as OutputLength)}
+                    value={withPreferredDepth(form, preferredDepth).outputLength}
+                    onChange={(e) =>
+                      setForm((f) => ({ ...f, outputLength: e.target.value as OutputLength, depthChosen: true }))
+                    }
                   >
                     <option value="auto">Auto (recommended)</option>
                     <option value="brief">Brief — headline findings only</option>

@@ -31,6 +31,8 @@ const me: { current: MeResponse | undefined } = { current: undefined };
 vi.mock('../../hooks/useMe', () => ({
   useMe: () => ({ data: me.current, isLoading: false }),
   useInvalidateMe: () => async () => undefined,
+  usePreferredDepth: () => null,
+  useSetPreferredDepth: () => ({ mutate: () => undefined, isPending: false }),
 }));
 
 const byok: { current: { providers: string[]; keys_persist: boolean; key_invalid?: boolean } | undefined } = {

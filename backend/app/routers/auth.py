@@ -11,6 +11,8 @@ from app.models.user import User
 from app.schemas.auth import (
     PASSWORD_MAX_CHARS,
     PASSWORD_MIN_CHARS,
+    AccountPreferencesRequest,
+    AccountPreferencesResponse,
     AuditLogEntry,
     ChangeTierRequest,
     ChangeTierResponse,
@@ -379,6 +381,20 @@ def me(
     out = MeResponse.model_validate(current_user)
     out.is_operator = auth_service.is_operator(db, current_user)
     return out
+
+
+@router.patch("/me/preferences", response_model=AccountPreferencesResponse)
+def update_preferences(
+    body: AccountPreferencesRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> AccountPreferencesResponse:
+    """The caller's default depth (T-1.15.3.9). ``auto`` is stored as NULL, the
+    state of every account that never chose, so the two cannot differ."""
+    value = None if body.output_length == "auto" else body.output_length
+    current_user.preferred_output_length = value
+    db.commit()
+    return AccountPreferencesResponse(output_length=value)
 
 
 # E-5.2.X self-service tier flip with mock payment (D-050), operator-only

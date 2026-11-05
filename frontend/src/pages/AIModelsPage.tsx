@@ -15,6 +15,7 @@ import {
 } from '../hooks/useLLMSettings';
 import { Badge, Button, Card, EmptyState, Select, Skeleton, Spinner } from '../components/primitives';
 import { ByokKeysPanel } from '../components/account/ByokKeysPanel';
+import { DepthPreferenceCard } from '../components/account/DepthPreferenceCard';
 import { fonts, fontSize, fontWeight, lineHeight, radius, space } from '../theme';
 
 /**
@@ -98,6 +99,14 @@ export function AIModelsPage() {
     </header>
   );
 
+  // T-1.15.3.9: not a model setting, so not behind the settings service: it
+  // shows however that request goes.
+  const depthCard = (
+    <div style={{ marginBottom: space['5'] }}>
+      <DepthPreferenceCard />
+    </div>
+  );
+
   const keysPanel = (
     <div style={{ marginBottom: space['5'] }}>
       <ByokKeysPanel
@@ -112,6 +121,7 @@ export function AIModelsPage() {
     return (
       <div style={{ maxWidth: 1200, margin: '0 auto' }}>
         {header}
+        {depthCard}
         <div style={{ display: 'flex', flexDirection: 'column', gap: space['4'] }}>
           <Skeleton variant="card" height={160} />
           <Skeleton variant="card" height={160} />
@@ -125,6 +135,7 @@ export function AIModelsPage() {
     return (
       <div style={{ maxWidth: 1200, margin: '0 auto' }}>
         {header}
+        {depthCard}
         {keysPanel}
         <EmptyState
           title="Model settings unavailable"
@@ -146,6 +157,7 @@ export function AIModelsPage() {
   return (
     <div style={{ maxWidth: 1200, margin: '0 auto' }}>
       {header}
+      {depthCard}
       {keysPanel}
       <div
         style={{

@@ -13,6 +13,7 @@ import { fonts, fontSize, space } from '../../theme';
 import { DEPTHS, depthLabel, depthOf, type Depth } from '../../utils/depth';
 
 interface Props {
+  id?: string;
   value: Depth | null;
   onChange: (depth: Depth | null) => void;
   /** What the first option, "no preference", is called here: "Default", "Auto". */
@@ -22,9 +23,10 @@ interface Props {
   disabled?: boolean;
 }
 
-export function DepthSelect({ value, onChange, unsetLabel, title, disabled, ...rest }: Props) {
+export function DepthSelect({ id, value, onChange, unsetLabel, title, disabled, ...rest }: Props) {
   return (
     <Select
+      id={id}
       aria-label={rest['aria-label']}
       title={title}
       value={value ?? ''}

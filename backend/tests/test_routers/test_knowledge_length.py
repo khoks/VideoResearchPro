@@ -41,6 +41,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from app.agents import knowledge_agent
+from app.config import settings
 from app.models.document import Document
 from app.models.transcript_cache import TranscriptCache
 from app.services import llm_service, output_length, visibility_service
@@ -158,6 +159,36 @@ def _artifact(db, video) -> tuple:
     db.expire_all()
     row = db.get(Document, video.document_id)
     return row.extracted_knowledge_json, row.knowledge_report_md, row.knowledge_extracted_at
+
+
+def _lengthen(db, video, tokens: int) -> None:
+    """A transcript with a marker just past ``tokens``."""
+    row = db.query(TranscriptCache).filter_by(video_id=video.video_id).one()
+    row.segments_json = json.dumps([
+        {"text": "OPENING_MARKER " + ("word " * (tokens + 1_000)) + "TAIL_MARKER", "start": 0.0, "duration": 4.0},
+    ])
+    db.commit()
+
+
+def test_the_setting_defaults_to_what_the_code_always_spent():
+    """T-4.11.2.6: 20,000 is what `min(60000, 20000)` came to, so making the
+    setting real moves nobody's spend."""
+    assert type(settings).model_fields["KNOWLEDGE_MAX_TRANSCRIPT_TOKENS"].default == 20_000
+
+
+@pytest.mark.parametrize("setting, tail_reaches_the_prompt", [(20_000, False), (30_000, True)])
+def test_the_setting_sizes_the_excerpt_the_writer_sees(
+    client, video, db, monkeypatch, setting, tail_reaches_the_prompt
+):
+    """T-4.11.2.6, through the route. Above 20,000 the setting did nothing until
+    now, so the second case fails if the literal comes back."""
+    monkeypatch.setattr(settings, "KNOWLEDGE_MAX_TRANSCRIPT_TOKENS", setting)
+    _lengthen(db, video, 20_000)
+    resp, models = _extract(client, video)
+    assert resp.status_code == 200, resp.text
+    _, prompt = models.synthesis()
+    assert "OPENING_MARKER" in prompt
+    assert ("TAIL_MARKER" in prompt) is tail_reaches_the_prompt
 
 
 def test_unset_is_the_call_s_1_14_8_shipped(client, video):

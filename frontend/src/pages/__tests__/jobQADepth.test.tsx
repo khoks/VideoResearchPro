@@ -7,6 +7,14 @@
  * non-streaming fallback and a Shift-clicked suggestion alike. A pick is for
  * that one ask: it clears when the answer lands, and until then it shows in the
  * docked composer, where a phone reader has lost sight of the select.
+ *
+ * T-1.15.3.9: the panel starts from the account's default depth on a run with no
+ * depth of its own, and returns to it after an ask. T-1.15.4.5: a cut-off answer's
+ * card (`answerCutOff.test.tsx` has the note itself). Mutation checks, run by hand
+ * on 2026-11-04: `finishAsk` setting null in place of the reset fails "goes back to
+ * the preference"; starting from the preference on a run with a depth fails
+ * "leaves a run's own depth alone"; the card not passing `runDepth` fails "a run
+ * asked for at Deep".
  */
 import { act, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -14,11 +22,13 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Job } from '../../types/job';
-import type { QARequest } from '../../types/qa';
+import type { QAExchange, QARequest } from '../../types/qa';
+import { useQACutOffStore } from '../../stores/qaCutOffStore';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 let job: Job;
+let history: QAExchange[] = [];
 let streamStatus = 0; // 0: the stream answers; otherwise it fails with this HTTP status
 const streamed: QARequest[] = [];
 const posted: QARequest[] = [];
@@ -46,7 +56,7 @@ vi.mock('../../hooks/useJobs', () => ({
 vi.mock('../../hooks/useJobProgress', () => ({ useJobProgress: () => undefined }));
 vi.mock('../../services/wsClient', () => ({ wsClient: { subscribe: () => () => undefined } }));
 vi.mock('../../hooks/useQA', () => ({
-  useQAHistory: () => ({ data: [] }),
+  useQAHistory: () => ({ data: history }),
   useAskQuestion: () => ({
     mutateAsync: async (data: QARequest) => {
       posted.push(data);
@@ -125,8 +135,9 @@ async function flush() {
   }
 }
 
-function mount() {
+function mount(preferred: string | null = null) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  qc.setQueryData(['auth', 'me'], { preferred_output_length: preferred });
   act(() =>
     root.render(
       <QueryClientProvider client={qc}>
@@ -176,6 +187,8 @@ async function ask(question: string) {
 
 beforeEach(() => {
   job = JOB;
+  history = [];
+  useQACutOffStore.setState({ answers: {} });
   streamStatus = 0;
   streamed.length = 0;
   posted.length = 0;
@@ -188,6 +201,85 @@ beforeEach(() => {
 afterEach(() => {
   act(() => root.unmount());
   host.remove();
+});
+
+describe('JobDetailPage Q&A: a cut-off answer (T-1.15.4.5)', () => {
+  const CUT: QAExchange = {
+    id: 'q1',
+    question: 'What does a lagoon cost?',
+    answer: 'A lagoon costs',
+    references: [],
+    created_at: '2026-11-04T00:00:00Z',
+  };
+  const NOTE = 'This answer stopped at its length limit';
+  const OFFER = 'Ask again at Deep depth';
+
+  it('says so under the answer, and the offer fills the composer at Deep', async () => {
+    history = [CUT];
+    useQACutOffStore.getState().note('q1', null);
+    mount();
+    expect(host.querySelector('#exchange-q1')!.textContent).toContain(NOTE);
+
+    await act(async () => buttonLabelled(OFFER).click());
+    await flush();
+    const input = host.querySelector<HTMLInputElement>('input[placeholder="Ask a question about the research…"]')!;
+    expect(input.value).toBe(CUT.question);
+    expect(depthSelect()!.value).toBe('deep');
+    expect(streamed).toEqual([]);
+  });
+
+  it('gives an answer on a run asked for at Deep the note alone', async () => {
+    job = { ...JOB, output_length: 'deep' };
+    history = [CUT];
+    useQACutOffStore.getState().note('q1', null);
+    mount();
+    expect(host.querySelector('#exchange-q1')!.textContent).toContain(NOTE);
+    expect(buttonLabelled(OFFER)).toBeUndefined();
+  });
+
+  it('says nothing of an answer it did not see cut', () => {
+    history = [CUT];
+    mount();
+    expect(host.querySelector('[data-answer-cut-off]')).toBeNull();
+  });
+});
+
+describe("JobDetailPage Q&A: the account's default depth (T-1.15.3.9)", () => {
+  it('starts a run that has no depth from the preference, and sends it', async () => {
+    mount('brief');
+    expect(depthSelect()!.value).toBe('brief');
+    await ask('What does a lagoon cost?');
+    expect(streamed).toEqual([{ question: 'What does a lagoon cost?', output_length: 'brief' }]);
+  });
+
+  it('goes back to the preference once an answer lands', async () => {
+    mount('brief');
+    pick('deep');
+    await ask('What does a lagoon cost?');
+    expect(streamed[0].output_length).toBe('deep');
+    expect(depthSelect()!.value).toBe('brief');
+  });
+
+  it("leaves a run's own depth alone: that was chosen on a page", async () => {
+    job = { ...JOB, output_length: 'standard' };
+    mount('brief');
+    expect(depthSelect()!.value).toBe('');
+    expect(depthSelect()!.options[0].textContent).toBe('Default (standard)');
+    await ask('What does a lagoon cost?');
+    expect('output_length' in streamed[0]).toBe(false);
+  });
+
+  it('lets Default win for the ask it was picked for', async () => {
+    mount('brief');
+    pick('');
+    await ask('What does a lagoon cost?');
+    expect('output_length' in streamed[0]).toBe(false);
+  });
+
+  it('shows the preference in the docked composer on phones, where the select scrolls away', async () => {
+    mount('brief');
+    expect(composer()!.textContent).toContain('Answer depth: Brief');
+  });
 });
 
 describe('JobDetailPage Q&A: answer depth', () => {

@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import api, { AUTH_TOKEN_KEY } from '../services/api';
 import { qaApi } from '../services/qaApi';
+import { sessionRefused } from '../services/sessionExpiry';
 import { rememberCutOff } from '../stores/qaCutOffStore';
 import type { ClarifyRequest, QAExchange, QARequest } from '../types/qa';
 
@@ -100,6 +101,8 @@ export function useAskQuestionStreaming(jobId: string) {
           body: JSON.stringify(data),
         });
         if (!response.ok || !response.body) {
+          // `fetch` does not pass the client's interceptor.
+          if (response.status === 401) sessionRefused(token);
           throw new QAStreamHttpError(
             response.status,
             `Q&A stream request failed with status ${response.status}`,

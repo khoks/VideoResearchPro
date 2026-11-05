@@ -33,6 +33,7 @@ import {
   space,
 } from '../theme';
 import type { AnswerLanguage, QAScope, SourceScope } from '../types/qa';
+import { isSessionEnded } from '../utils/apiError';
 import { buildClarifyContext } from '../utils/clarifyContext';
 import { withDepth } from '../utils/depth';
 
@@ -83,6 +84,8 @@ export function LibraryQAPage() {
 
   // S-8.13.3: a failed clarify asks from the render that started it, so what that
   // ask carries is held, not only the question: the page must show what it sends.
+  // Nothing can change the question either (T-8.13.4.2), or clarify's reply would
+  // land on a different one: the suggestions and the cut-off offer go while this runs.
   const asking = clarifyQuestion.isPending || askQuestion.isPending;
   const askInputDisabled = asking || !libraryQAAvailable;
   const askButtonDisabled = askInputDisabled || !question.trim();
@@ -134,12 +137,12 @@ export function LibraryQAPage() {
     let result;
     try {
       result = await clarifyQuestion.mutateAsync({ question });
-    } catch {
+    } catch (err) {
       // S-8.13.3: clarifying is optional (D-132). The global mutation cache
       // already toasted the failure, and an outage in this step must not stop
       // an ask that does not need it. A page the reader has left asks nothing:
-      // that call settled after they moved on.
-      if (mounted.current) await handleSkipAndAsk();
+      // that call settled after they moved on. Nor does a session that ended.
+      if (mounted.current && !isSessionEnded(err)) await handleSkipAndAsk();
       return;
     }
     setInterpretation(result.interpretation);
@@ -373,7 +376,7 @@ export function LibraryQAPage() {
             </DockedComposer>
             {clarifyQuestion.isPending && <InfoStripe text="Listening for the echo of your question…" />}
             {askQuestion.isPending && <InfoStripe text="Searching the library and generating answer…" />}
-            {!askQuestion.isPending && (
+            {!asking && (
               <SuggestionCard
                 context={source ? `document:${source.id}` : 'library'}
                 enabled={libraryQAAvailable}

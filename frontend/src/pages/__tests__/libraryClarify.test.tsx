@@ -19,6 +19,7 @@
  */
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
+import { AxiosError, AxiosHeaders } from 'axios';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -259,6 +260,18 @@ describe('LibraryQAPage when clarify fails', () => {
     expect(askMock).toHaveBeenCalledTimes(1);
     expect(questionInput().value).toBe('What changed in rates?');
     expect(questionInput().disabled).toBe(false);
+  });
+
+  it('asks nothing once the session has ended: the reader is on the way to sign in', async () => {
+    const headers = new AxiosHeaders();
+    clarifyMock.mockReset();
+    clarifyMock.mockRejectedValue(
+      new AxiosError('refused', 'ERR_BAD_REQUEST', undefined, undefined, {
+        status: 401, statusText: '', headers, config: { headers }, data: { detail: 'Could not validate credentials' },
+      }),
+    );
+    await mountAndClarify();
+    expect(askMock).not.toHaveBeenCalled();
   });
 
   it('asks nothing for a reader who has left the page', async () => {

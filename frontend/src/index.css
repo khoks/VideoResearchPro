@@ -764,7 +764,8 @@ button.reader-citation {
   .reader-no-print button {
     min-height: 44px !important;
   }
-  .reader-citation-card a {
+  .reader-citation-card a,
+  .waiting-share-link {
     display: inline-flex;
     align-items: center;
     min-height: 44px;

@@ -29,6 +29,7 @@ import { usePreferredDepth } from '../../hooks/useMe';
 import { useColors } from '../../hooks/useTheme';
 import { fonts, fontSize, fontWeight, lineHeight, measure, space } from '../../theme';
 import type { AnswerLanguage } from '../../types/qa';
+import { isSessionEnded } from '../../utils/apiError';
 import { buildClarifyContext } from '../../utils/clarifyContext';
 import { withDepth } from '../../utils/depth';
 
@@ -76,10 +77,11 @@ export function ShelfQAPanel({ shelfId, shelfName }: { shelfId: string; shelfNam
       setClarifications(result.clarifications);
       setAnswers(new Array(result.clarifications.length).fill(''));
       setStep('clarify');
-    } catch {
+    } catch (err) {
       // The global mutation cache already toasted the clarify failure. A panel
       // the reader has left asks nothing: that call settled after they moved on.
-      if (mounted.current) await send();
+      // Nor does a session that ended.
+      if (mounted.current && !isSessionEnded(err)) await send();
     }
   };
 

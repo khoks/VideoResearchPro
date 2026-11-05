@@ -7,7 +7,8 @@ export function ProtectedRoute() {
   const location = useLocation();
   if (!isAuthenticated) {
     // Signing out is not being turned away: the next sign-in, perhaps someone
-    // else's, starts at `/` and not on the page this reader left.
+    // else's, starts at `/` and not on the page this reader left. A session that
+    // expired is being turned away, so that page comes along (T-5.4.22).
     return <Navigate to="/login" replace state={signedOut ? undefined : { from: location }} />;
   }
   return <Outlet />;

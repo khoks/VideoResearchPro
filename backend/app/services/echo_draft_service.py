@@ -11,6 +11,17 @@ run and gives it the user's material. Gates, in order (``status``):
    the Echo page (``echo_voice_test_service``, T-3.4.1.8) or with
    ``scripts/voice_match_harness.py user-pairs`` / ``user-score --record``.
 4. ``daily_cap``: ``echo_drafts`` per day through ``quota_metering_service``.
+5. ``register_needs_approval``: a named register needs an earlier draft in it
+   that the user approved, which they do by saving their version (T-3.4.1.11).
+   None can exist before the first, so the first waits for their go-ahead
+   (``acknowledge_register``), as a private name does. Checked before the model,
+   so it spends nothing. "Whatever fits" names no register and is not gated.
+
+The agent adds one more, after retrieval or after drafting: a reply with nothing
+behind it is refused (``DraftRefused``), with no go-ahead to get past it. Each
+reason has its own words (``REFUSALS``), because each has its own remedy. Facts,
+shares and past answers meet the same distance cut as sources and notes, or a
+ready user's unrelated facts would pass for something behind every reply.
 
 **Feedback (S-3.4.2).** ``feedback`` stores the text the user actually used
 and whether they kept the disclosure line. The words they typed into it (not
@@ -35,7 +46,7 @@ import json
 import logging
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, NoReturn
 
 from sqlalchemy.orm import Session
 
@@ -52,6 +63,31 @@ VOICE_TEST_MAX_OWN_SHARE = 0.80
 VOICE_TEST_RULE_VERSION = "2026-10-19"
 #: The prompts name this label, and the user reads it under a draft.
 UNVERIFIED_MAIL_LABEL = "an unverified email, not your view"
+_ADD_SOMETHING = "To go ahead, add a source on this to your library or write a note saying what you think, then draft again."
+_TRY_AGAIN = "To go ahead, try again in a moment."
+#: The agent's reasons, in the words the user reads: what stopped it, and what would let it go ahead.
+REFUSALS = {
+    "nothing": (
+        "Echo did not write this reply: it found nothing in your library, your notes or what it knows about you on "
+        f"this, and it will not make claims in your name with nothing behind them. {_ADD_SOMETHING}"
+    ),
+    "mail_only": (
+        "Echo did not write this reply: the only thing it found on this is an email, and nothing proves who wrote "
+        f"that. {_ADD_SOMETHING}"
+    ),
+    "uncited": (
+        "Echo did not write this reply: it found material on this, but the draft it wrote did not rest on any of it "
+        "that Echo can rely on. To go ahead, draft again, or narrow the message to what your library and notes cover."
+    ),
+    "unread": (
+        "Echo did not write this reply: it could not read the message, so it cannot tell whether the reply needs "
+        f"something behind it. {_TRY_AGAIN}"
+    ),
+    "unreachable": (
+        "Echo did not write this reply: it could not reach your library just now, so it cannot tell what is behind "
+        f"it. {_TRY_AGAIN}"
+    ),
+}
 
 
 class DraftBlocked(Exception):
@@ -66,6 +102,27 @@ class NamesNeedConfirmation(Exception):
     def __init__(self, names: list[str]):
         super().__init__(", ".join(names))
         self.names = names
+
+
+class RegisterNeedsApproval(Exception):
+    def __init__(self, register: str):
+        article = "an" if register == "intimate" else "a"
+        self.register = register
+        self.message = (
+            f"You have not approved {article} {register} draft yet, so Echo asks before it speaks in that register. "
+            f"To go ahead, confirm this draft and save your version of it: that approves {register} drafts from then "
+            "on. Or leave the register on “Whatever fits”."
+        )
+        super().__init__(self.message)
+
+
+class DraftRefused(Exception):
+    """The reply would have nothing behind it. ``reason`` is the agent's."""
+
+    def __init__(self, reason: str):
+        self.reason = reason
+        self.message = REFUSALS[reason]
+        super().__init__(self.message)
 
 
 class DraftCapReached(Exception):
@@ -149,6 +206,20 @@ def record_voice_test(db: Session, tenant_id: str, *, pairs: int, picked_own: in
     db.commit()
     db.refresh(row)
     return row
+
+
+# ---------------------------------------------------------------------------
+# Registers
+
+
+def approved_registers(db: Session, tenant_id: str) -> set[str]:
+    """The registers the user has approved: a draft in that register whose
+    version they saved. Deleting the draft withdraws the approval, as it
+    withdraws what the draft's edit taught."""
+    rows = db.query(EchoDraft.register).filter(
+        EchoDraft.tenant_id == tenant_id, EchoDraft.register.isnot(None), EchoDraft.final_text.isnot(None),
+    ).distinct()
+    return {register for (register,) in rows}
 
 
 # ---------------------------------------------------------------------------
@@ -270,6 +341,9 @@ def _real_deps(db: Session, user: User):
     from app.services.llm_routing import resolve_config
 
     tenant = user.id
+    #: ``query_collection`` and ``query_notes`` apply this themselves; shares, past
+    #: answers and facts do not, and a nearest-n always fills up.
+    cut = settings.RAG_DISTANCE_THRESHOLD
 
     def knowledge(topic: str) -> list[ContextItem]:
         items: list[ContextItem] = []
@@ -283,7 +357,9 @@ def _real_deps(db: Session, user: User):
             items.append(ContextItem(f"S{n}", "source", hit["text"][:1500], label, url, third_party=True))
         for n, hit in enumerate(note_index.query_notes(topic, tenant, n_results=4), 1):
             items.append(ContextItem(f"N{n}", "note", hit["text"][:1200], "your note", None, third_party=False))
-        for n, hit in enumerate(echo_vectors.query_share_vectors(tenant, topic, n=3), 1):
+        for hit in echo_vectors.query_share_vectors(tenant, topic, n=3):
+            if hit["distance"] > cut:
+                continue
             md = hit.get("metadata") or {}
             # A context-only share may ground the draft but is never quoted
             # (D-089 item 1); the user's own share is their own words. Mail
@@ -293,15 +369,17 @@ def _real_deps(db: Session, user: User):
             label = UNVERIFIED_MAIL_LABEL if mail else "something you wrote and shared" if own else "something you shared"
             items.append(ContextItem(f"S{len(items) + 1}", "share", hit["text"][:1200], label,
                                      None, third_party=not own, unverified=mail))
-        for n, hit in enumerate(chroma_service.query_qa_collection(topic, top_k=3, tenant_id=tenant), 1):
+        past = [h for h in chroma_service.query_qa_collection(topic, top_k=3, tenant_id=tenant) if h["distance"] <= cut]
+        for n, hit in enumerate(past, 1):
             # A past answer is the model's words over third-party sources.
             items.append(ContextItem(f"Q{n}", "qa", hit["text"][:1200], "a question you asked before", None, third_party=True))
         return items
 
     def facts(topic: str) -> list[ContextItem]:
+        near = [h for h in echo_personal_vectors.query_personal_context(tenant, topic, n=6, kinds=["fact"]) if h.distance <= cut]
         return [
             ContextItem(f"F{n}", "fact", h.text[:600], "what Echo knows about you", None, third_party=False)
-            for n, h in enumerate(echo_personal_vectors.query_personal_context(tenant, topic, n=6, kinds=["fact"]), 1)
+            for n, h in enumerate(near, 1)
         ]
 
     def signals(topic: str, language: str) -> list[str]:
@@ -315,6 +393,14 @@ def _real_deps(db: Session, user: User):
                 lines.append(line)
         return lines
 
+    def store_ok() -> bool:
+        try:
+            chroma_service.get_global_collection().count()
+        except Exception:  # noqa: BLE001 — retrieval swallows this too; here it changes the words
+            logger.exception("echo draft: the library store did not answer")
+            return False
+        return True
+
     texts = own_texts(db, tenant)
     return DraftDeps(
         classify=_llm("echo_classify_intent", tenant, db, 600),
@@ -326,6 +412,7 @@ def _real_deps(db: Session, user: User):
         exemplars=lambda language: exemplars(texts, language, extraction.language_of),
         language_of=extraction.language_of,
         models={u: resolve_config(u).model for u in ("echo_classify_intent", "echo_draft", "echo_critique")},
+        store_ok=store_ok,
     )
 
 
@@ -347,10 +434,12 @@ def draft(
     register: str | None = None,
     language: str | None = None,
     acknowledge_names: list[str] | tuple[str, ...] = (),
+    acknowledge_register: str | None = None,
     deps: Any = None,
 ) -> EchoDraft:
-    """One draft. Raises ``DraftBlocked``, ``DraftCapReached`` or
-    ``NamesNeedConfirmation``; spends nothing when it raises before the model."""
+    """One draft. Raises ``DraftBlocked``, ``DraftCapReached``,
+    ``RegisterNeedsApproval``, ``NamesNeedConfirmation`` or ``DraftRefused``;
+    spends nothing when it raises before the model."""
     from app.agents.echo_agent import run_echo_draft
     from app.services import audit_service, llm_service, quota_metering_service
 
@@ -360,6 +449,8 @@ def draft(
         raise DraftBlocked(gate[0]["code"], gate[0]["message"], st)
     if any(b["code"] == "daily_cap" for b in st.blockers):
         raise DraftCapReached(next(b["message"] for b in st.blockers if b["code"] == "daily_cap"))
+    if register and register != acknowledge_register and register not in approved_registers(db, user.id):
+        raise RegisterNeedsApproval(register)
 
     # The classify, draft and critique calls are the user's: on the models
     # they pinned (E-1.13), and their usage (E-5.2, feature echo_draft). The
@@ -373,6 +464,8 @@ def draft(
         )
     if state.get("needs_confirmation"):
         raise NamesNeedConfirmation(state["needs_confirmation"])
+    if state.get("refused"):
+        _refuse(db, user, state)
     result = state["result"]
     model = deps.models.get("echo_draft") if getattr(deps, "models", None) else None
     from app.services.model_pricing import pricing_for
@@ -401,6 +494,26 @@ def draft(
     except Exception:  # noqa: BLE001
         logger.exception("echo draft: audit failed for %s", row.id)
     return row
+
+
+def _refuse(db: Session, user: User, state: dict) -> NoReturn:
+    """Nothing is stored: a refused draft was never the user's to read. One the
+    model wrote cost what a draft costs, so it counts, or a cap that exists to
+    bound that spend would bound nothing. One stopped before the draft model
+    is not counted, like any stopped draft (D-102). Audited with counts only."""
+    from app.services import audit_service, quota_metering_service
+
+    written = bool(state.get("candidates"))
+    if written:
+        quota_metering_service.record_usage(db, user.id, QUOTA_RESOURCE)
+    try:
+        audit_service.record(db, event="echo_draft_refused", user_id=user.id, tenant_id=user.id, metadata={
+            "reason": state["refused"], "written": written, "language": state.get("language"), "intent": state.get("intent"),
+            "knowledge": len(state.get("knowledge") or []), "facts": len(state.get("facts") or []),
+        })
+    except Exception:  # noqa: BLE001
+        logger.exception("echo draft: audit failed for a refusal")
+    raise DraftRefused(state["refused"])
 
 
 def to_dict(row: EchoDraft) -> dict:

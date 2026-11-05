@@ -16,7 +16,9 @@ as the library route passes them, BYOK context, the exchange stored in
 ``library_qa_exchanges`` and indexed in ``qa_library_global``. What a run
 adds is the baseline on the saved search (``last_*``) that the change
 detector (S-8.3.3) compares the next run with. A run that fails leaves that
-baseline untouched.
+baseline untouched, and so does an answer that stopped at its token budget
+(T-1.15.4.9): it has lost its end and the citations there, so comparing it, or
+comparing the next answer with it, would report sources that never moved.
 
 Every run is recorded on the row (``last_run_at`` / ``last_status`` /
 ``last_error``), including the ones that never reach the model: a tenant
@@ -241,6 +243,7 @@ def delete(db: Session, ss: SavedSearch) -> None:
 def to_dict(db: Session, ss: SavedSearch) -> dict[str, Any]:
     run = scheduler_service.get_run(db, KIND, ss.id)
     cadence = json.loads(run.cadence_json) if run and run.cadence_json else None
+    last_answer, last_answer_cut_off = _last_answer(db, ss)
     return {
         "id": ss.id,
         "question": ss.question,
@@ -256,15 +259,21 @@ def to_dict(db: Session, ss: SavedSearch) -> dict[str, Any]:
         "last_error": ss.last_error,
         "last_success_at": ss.last_success_at,
         "last_exchange_id": ss.last_exchange_id,
-        "last_answer": _last_answer(db, ss),
+        "last_answer": last_answer,
+        "last_answer_cut_off": last_answer_cut_off,
     }
 
 
-def _last_answer(db: Session, ss: SavedSearch) -> str | None:
+def _last_answer(db: Session, ss: SavedSearch) -> tuple[str | None, bool | None]:
+    """The answer the card shows, and whether it stopped at its token budget."""
     if not ss.last_exchange_id:
-        return None
-    row = db.query(LibraryQAExchange.answer).filter(LibraryQAExchange.id == ss.last_exchange_id).first()
-    return row[0] if row else None
+        return None, None
+    row = (
+        db.query(LibraryQAExchange.answer, LibraryQAExchange.answer_cut_off)
+        .filter(LibraryQAExchange.id == ss.last_exchange_id)
+        .first()
+    )
+    return (row[0], row[1]) if row else (None, None)
 
 
 # ---------------------------------------------------------------------------
@@ -443,22 +452,30 @@ def _execute_run(db: Session, ss: SavedSearch, user: User, saved_search_id: str,
         references = change.with_document_ids(db, user.id, result.references)
         quota_metering_service.record_usage(db, user.id, QUOTA_RESOURCE)
 
-        previous_answer, previous_refs, previous_embedding = _previous(db, ss)
-        previous_refs = change.with_document_ids(db, user.id, previous_refs)
-        previous_exchange_id = ss.last_exchange_id
-        embedding = _encode([answer])[0]
-        with llm_service.byok_context(user.id, db):
-            verdict = change.compare(
-                question=ss.question,
-                previous_answer=previous_answer,
-                previous_refs=previous_refs,
-                previous_embedding=previous_embedding,
-                current_answer=answer,
-                current_refs=references,
-                current_embedding=embedding,
-                tenant_id=user.id,
-                db=db,
-            )
+        cut_off = result.answer_cut_off
+        embedding: list[float] = []
+        if cut_off:
+            # T-1.15.4.9: not compared. Its missing end takes citations with it,
+            # so the cited set would drop sources that are still there.
+            previous_exchange_id = None
+            verdict = change.Verdict(changed=None, decided_by="cut_off")
+        else:
+            previous_answer, previous_refs, previous_embedding = _previous(db, ss)
+            previous_refs = change.with_document_ids(db, user.id, previous_refs)
+            previous_exchange_id = ss.last_exchange_id
+            embedding = _encode([answer])[0]
+            with llm_service.byok_context(user.id, db):
+                verdict = change.compare(
+                    question=ss.question,
+                    previous_answer=previous_answer,
+                    previous_refs=previous_refs,
+                    previous_embedding=previous_embedding,
+                    current_answer=answer,
+                    current_refs=references,
+                    current_embedding=embedding,
+                    tenant_id=user.id,
+                    db=db,
+                )
 
         exchange = LibraryQAExchange(
             question=ss.question,
@@ -468,15 +485,25 @@ def _execute_run(db: Session, ss: SavedSearch, user: User, saved_search_id: str,
             tenant_id=user.id,
             # S-8.1.4's shape: the narrowing scope plus where it came from.
             scope_json=qa_scope_service.dump({**(scope or {}), "saved_search_id": ss.id}),
+            answer_cut_off=cut_off,
         )
         db.add(exchange)
         db.flush()
 
+        # The scope still counts as read, with a baseline or without one: the same
+        # question over the same documents gets the same budget, so the gate
+        # re-asking would spend a question each cadence to stop in the same place.
+        # A new source or Run now asks again. A cut answer only stands in on the
+        # card while there is no full one, and the card says so
+        # (``last_answer_cut_off``): without an embedding it is never compared
+        # with (``compare``).
         ss.last_success_at = _now()
-        ss.last_exchange_id = exchange.id
-        ss.last_answer_hash = hashlib.sha256(answer.encode("utf-8")).hexdigest()
-        ss.last_reference_ids_json = json.dumps(reference_ids(references))
-        ss.last_answer_embedding_json = json.dumps([round(float(x), 6) for x in embedding])
+        if not cut_off or ss.last_answer_embedding_json is None:
+            ss.last_exchange_id = exchange.id
+        if not cut_off:
+            ss.last_answer_hash = hashlib.sha256(answer.encode("utf-8")).hexdigest()
+            ss.last_reference_ids_json = json.dumps(reference_ids(references))
+            ss.last_answer_embedding_json = json.dumps([round(float(x), 6) for x in embedding])
         ss.last_scope_hash = fingerprint
         ss.last_run_at = _now()
         ss.last_status = STATUS_OK

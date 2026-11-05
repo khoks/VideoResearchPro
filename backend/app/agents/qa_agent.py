@@ -232,7 +232,7 @@ def _answer_budget(
     return min(budget, max_output_for(cfg.model))
 
 
-def _answer_cut_off(response, use_case: str) -> bool:
+def answer_cut_off(response, use_case: str) -> bool:
     """Whether an answer stopped at its token budget (T-1.15.4.5).
 
     A cut answer is still stored and returned: its budget is the owner's call
@@ -599,7 +599,7 @@ def formulate_answer(state: QAAgentState, tally: _TokenTally | None = None) -> d
 
     return {
         "answer": response_text(response),
-        "answer_cut_off": _answer_cut_off(response, "qa_formulate_answer"),
+        "answer_cut_off": answer_cut_off(response, "qa_formulate_answer"),
     }
 
 
@@ -1533,7 +1533,7 @@ def run_library_qa_agent(
         HumanMessage(content=user_prompt),
     ])
     answer = response_text(answer_response)
-    cut_off = _answer_cut_off(answer_response, "library_qa_formulate_answer")
+    cut_off = answer_cut_off(answer_response, "library_qa_formulate_answer")
 
     # 6. Sanitize fabricated citations using the shared helper, then extract
     # structured references.

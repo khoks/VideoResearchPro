@@ -4,6 +4,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from app.schemas.qa import StoredCutOff
 from app.schemas.qa_scope import QAScope
 
 
@@ -63,13 +64,14 @@ class LibraryQAResponse(BaseModel):
     # S-8.1.4: what the question was asked over; null is the whole library.
     # Shape and rules: app/schemas/qa_scope.py.
     scope: QAScope | None = None
+    answer_cut_off: StoredCutOff = None
 
     model_config = {"from_attributes": True}
 
 
 class LibraryQAAnswerResponse(LibraryQAResponse):
     """An answer that has just been written (`POST /library/qa` and
-    `POST /shelves/{id}/qa`). `answer_cut_off` as on `QAAnswerResponse`: not
-    stored, so the history routes do not carry it."""
+    `POST /shelves/{id}/qa`). `answer_cut_off` as on `QAAnswerResponse`: this
+    reply says `false` too, and the history routes carry it only when true."""
 
     answer_cut_off: bool = False

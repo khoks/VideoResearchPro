@@ -89,8 +89,9 @@ export interface QAExchange {
   references: Reference[];
   created_at: string;
   /**
-   * T-1.15.4.5: on a fresh answer only. It stopped at its token budget. The
-   * history routes never send this: it is not stored.
+   * T-1.15.4.8: it stopped at its token budget. Read from the stored row, which
+   * sends this only when true: an answer from before the column has no value,
+   * and that is unknown, never "not cut". A fresh reply also says `false`.
    */
   answer_cut_off?: boolean;
 }
@@ -139,7 +140,7 @@ export interface LibraryQAExchange {
   answer_language?: string;
   created_at: string;
   scope?: QAScope | null;
-  /** T-1.15.4.5: on a fresh answer only, as on `QAExchange`. */
+  /** T-1.15.4.8: as on `QAExchange`. */
   answer_cut_off?: boolean;
 }
 
@@ -184,6 +185,8 @@ export interface QAHistoryExchange {
   references: QAHistoryReference[];
   answer_language: AnswerLanguage;
   created_at: string;
+  /** T-1.15.4.9: sent only when it stopped at its token budget. */
+  answer_cut_off?: boolean;
 }
 
 export interface QAHistoryChatRequest {

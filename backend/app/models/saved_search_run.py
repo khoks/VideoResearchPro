@@ -42,7 +42,7 @@ class SavedSearchRun(Base):
     changed: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     jaccard: Mapped[float | None] = mapped_column(Float, nullable=True)
     embedding_distance: Mapped[float | None] = mapped_column(Float, nullable=True)
-    #: none | agreed | judged | judge_failed
+    #: none | agreed | judged | judge_failed | embedding_only | cut_off
     decided_by: Mapped[str | None] = mapped_column(String(16), nullable=True)
     added_reference_ids_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     dropped_reference_ids_json: Mapped[str | None] = mapped_column(Text, nullable=True)

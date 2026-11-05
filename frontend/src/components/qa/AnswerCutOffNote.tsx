@@ -4,15 +4,17 @@
  * rather than the next step up, for the same reason (D-132). An answer already at
  * Deep has nothing deeper to offer, so it gets the note alone.
  *
+ * Whether it was cut is stored on the exchange (T-1.15.4.8), so the note survives
+ * a reload. The depth is not: a boolean cannot hold it, so `qaCutOffStore` keeps
+ * it for the asks of this session. An answer asked before this page load may
+ * already have been asked at Deep, so it gets the note alone too.
+ *
  * The offer fills the composer and picks Deep; it does not ask. A question goes
  * through its page's own scope and clarify step, and what the reader told the
  * clarify step the first time is not stored, so re-sending it blind could answer
  * a different question. Nothing is spent until they press Ask. The next ask runs
  * over the page's scope, so a page offers this only on a card asked over that
  * same scope.
- *
- * Shows nothing for an answer this session did not see being cut, which is every
- * answer after a reload (`qaCutOffStore`).
  */
 import { Button } from '../primitives';
 import { useColors } from '../../hooks/useTheme';
@@ -23,6 +25,8 @@ import { depthLabel, type Depth } from '../../utils/depth';
 const DEEPEST: Depth = 'deep';
 
 interface Props {
+  /** The stored flag. Missing is an answer not cut, or one from before the check. */
+  cutOff?: boolean;
   exchangeId: string;
   /** The depth an ask that carried none ran at: a run's own, on the job page. */
   inheritedDepth?: Depth | null;
@@ -33,11 +37,12 @@ interface Props {
   onAskAgain?: () => void;
 }
 
-export function AnswerCutOffNote({ exchangeId, inheritedDepth = null, onAskAgain }: Props) {
+export function AnswerCutOffNote({ cutOff = false, exchangeId, inheritedDepth = null, onAskAgain }: Props) {
   const c = useColors();
   const askedAt = useQACutOffStore((s) => s.answers[exchangeId]);
-  if (askedAt === undefined) return null;
-  const offer = (askedAt ?? inheritedDepth) !== DEEPEST ? onAskAgain : undefined;
+  if (!cutOff) return null;
+  const roomToOffer = askedAt !== undefined && (askedAt ?? inheritedDepth) !== DEEPEST;
+  const offer = roomToOffer ? onAskAgain : undefined;
   const label = depthLabel(DEEPEST);
   return (
     <div

@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -28,5 +28,11 @@ class QAExchange(Base):
 
     prompt_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
     completion_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    # T-1.15.4.8: whether the answer stopped at its token budget. True and False
+    # are what the check found; False also covers a provider that reports no
+    # stop reason. NULL is a row from before the column, about which nothing is
+    # known: it never reads as "not cut".
+    answer_cut_off: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
 
     job: Mapped["Job"] = relationship(back_populates="qa_exchanges")  # noqa: F821

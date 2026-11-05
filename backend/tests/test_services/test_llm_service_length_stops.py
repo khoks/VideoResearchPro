@@ -36,6 +36,10 @@ def _as_invoke_returns(result):
 
 
 def _anthropic(stop_reason: str):
+    # An optional install (`_build_anthropic`), not in requirements.txt, so CI
+    # skips this one. `test_qa_cut_off.py` keeps the shape covered there.
+    pytest.importorskip("anthropic")
+    pytest.importorskip("langchain_anthropic")
     from anthropic.types import Message, TextBlock, Usage
     from langchain_anthropic import ChatAnthropic
 

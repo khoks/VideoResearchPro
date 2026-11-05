@@ -20,7 +20,7 @@
 - **FR-1.3.** Users can create **subscription-based** jobs by providing:
   - `channel_list` (1+ YouTube channel URLs, handles or UC ids)
   - The channels become *subscribed* for that user.
-- **FR-1.4.** One user holds at most `MAX_CONCURRENT_JOBS` (default 5) active jobs at once, each user counted alone. One more is refused, and the refusal says the limit is theirs. Another user's jobs never count toward it, though the install's worker runs queued tasks in order, whoever's they are.
+- **FR-1.4.** One user holds at most `MAX_CONCURRENT_JOBS` (default 5) active jobs at once, each user counted alone. One more is refused, a pressed Sync now included, and the refusal says the limit is theirs. Subscribing to a channel is not refused by it: the first sync does not start, and the response says so. Another user's jobs never count toward it, though the install's worker runs queued tasks in order, whoever's they are.
 - **FR-1.5.** Jobs are user-scoped: each job belongs to the user who created it; users do not see one another's jobs. The `documents` table is one global cache, but a user sees only the documents they ingested ([D-063](decisions.md#d-063--per-user-isolation-shared-cache-private-catalogue-2026-07-31)).
 
 ### FR-2 — Video discovery

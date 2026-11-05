@@ -17,7 +17,7 @@ from app.models.document import Document
 from app.models.job import Job
 from app.models.job_video import JobVideo
 from app.models.user import User
-from app.services import youtube_service
+from app.services import source_failure, youtube_service
 from app.sources import registry
 from app.sources.base import BaseConnector
 from app.sources.podcast import connector as podcast_connector
@@ -215,20 +215,13 @@ def test_a_declared_length_past_the_last_word_counts_in_full(db, podcasts, tasks
     assert [allowed for _, allowed in podcasts.calls] == [True, False]
 
 
-@pytest.mark.parametrize("cap_minutes, requests", [(14, 3), (15, 6)])
-def test_a_split_file_counts_its_whole_length_once(
-    db, tasks, whisper_api, monkeypatch, tmp_path, cap_minutes, requests  # noqa: F811
-):
-    """Through the real connector and the real chunked path. Three chunks of
-    300 s, 285 s apart, are 870 s of audio, and the episode counts as that:
-    past a 14-minute cap, so the next episode is not sent, and short of a
-    15-minute one, which the 900 s of the chunks added up would have spent."""
-    monkeypatch.setattr(settings, "WHISPER_MAX_MINUTES_PER_JOB", cap_minutes)
-
+def _split_episodes(monkeypatch, tmp_path, whisper_api, *, episodes: int = 2) -> None:  # noqa: F811
+    """Every episode reaches the real connector and splits into three chunks
+    of 300 s, 285 s apart."""
     feed_url = "https://example.com/feed.xml"
     entries = [
         {"id": f"ep-{i}", "title": f"Episode {i}", "enclosures": [{"href": f"https://example.com/{i}.mp3"}]}
-        for i in range(2)
+        for i in range(episodes)
     ]
 
     def writes(url, path):
@@ -256,6 +249,18 @@ def test_a_split_file_counts_its_whole_length_once(
     )
     whisper_api.seconds = 300.0
     whisper_api.segment_start = 100.0
+
+
+@pytest.mark.parametrize("cap_minutes, requests", [(14, 3), (15, 6)])
+def test_a_split_file_counts_its_whole_length_once(
+    db, tasks, whisper_api, monkeypatch, tmp_path, cap_minutes, requests  # noqa: F811
+):
+    """Through the real connector and the real chunked path. Three chunks of
+    300 s, 285 s apart, are 870 s of audio, and the episode counts as that:
+    past a 14-minute cap, so the next episode is not sent, and short of a
+    15-minute one, which the 900 s of the chunks added up would have spent."""
+    monkeypatch.setattr(settings, "WHISPER_MAX_MINUTES_PER_JOB", cap_minutes)
+    _split_episodes(monkeypatch, tmp_path, whisper_api)
     job_id = _approved(db, [None, None])
 
     _resume(job_id)
@@ -364,3 +369,157 @@ def test_when_both_limits_are_spent_the_run_says_so_once(db, tasks, monkeypatch)
     assert [allowed for _, allowed in fake.calls] == [True, False]
     assert any("Whisper minutes spent" in m for m in tasks)
     assert [n["kind"] for n in _notes(db, job_id)] == ["whisper_minutes_spent"]
+
+
+# ---------------------------------------------------------------------------
+# T-1.7.1.5: a transcription that fails part-way
+#
+# Its finished chunks were billed and it leaves no text, so `fetch_text`
+# returned None like a failed download and neither limit heard about it. The
+# job learns from the connector's own `TranscriptionCutShort`, never from the
+# usage meter (D-111). Mutation check: make `_transcribe_in_chunks` return None
+# where it raises, and `test_a_part_paid_episode_counts_against_the_minute_cap`
+# and `test_a_part_paid_episode_counts_as_a_recording` both send the next
+# episode to Whisper.
+# ---------------------------------------------------------------------------
+
+
+def _fail_once_at(whisper_api, nth: int) -> None:  # noqa: F811
+    """Request ``nth`` is refused, once, with what a provider's error can hold."""
+    failed: list[bool] = []
+
+    def before_send(api):
+        if api.sent == nth - 1 and not failed:
+            failed.append(True)
+            raise RuntimeError("Incorrect API key provided: sk-tenant-secret")
+
+    whisper_api.before_send = before_send
+
+
+@pytest.mark.parametrize("cap_minutes, requests", [(9, 2), (10, 5)])
+def test_a_part_paid_episode_counts_against_the_minute_cap(
+    db, tasks, whisper_api, monkeypatch, tmp_path, cap_minutes, requests  # noqa: F811
+):
+    """Two chunks finish, the third fails: the transcript reached 585 s. That
+    is past a 9-minute cap, so the next episode is not sent, and short of a
+    10-minute one, which the 600 s of the two chunks added up would have spent
+    (D-141: an overlap counts once). With 10 minutes the next episode runs."""
+    monkeypatch.setattr(settings, "WHISPER_MAX_MINUTES_PER_JOB", cap_minutes)
+    monkeypatch.setattr(settings, "WHISPER_MAX_PER_JOB", 50)
+    _split_episodes(monkeypatch, tmp_path, whisper_api)
+    _fail_once_at(whisper_api, 3)
+    job_id = _approved(db, [None, None])
+
+    _resume(job_id)
+
+    assert whisper_api.sent == requests
+
+
+def test_a_part_paid_episode_counts_as_a_recording(db, tasks, whisper_api, monkeypatch, tmp_path):  # noqa: F811
+    monkeypatch.setattr(settings, "WHISPER_MAX_PER_JOB", 1)
+    _split_episodes(monkeypatch, tmp_path, whisper_api)
+    _fail_once_at(whisper_api, 2)
+    job_id = _approved(db, [None, None])
+
+    _resume(job_id)
+
+    assert whisper_api.sent == 1, "the next episode stayed behind the limit"
+    db.expire_all()
+    assert db.get(Job, job_id).status == "failed", "nothing was read, so the run has nothing"
+
+
+def test_a_failure_on_the_first_chunk_was_not_billed_and_is_not_charged(
+    db, tasks, whisper_api, monkeypatch, tmp_path  # noqa: F811
+):
+    """Nothing came back, so the limit keeps its room for the next episode."""
+    monkeypatch.setattr(settings, "WHISPER_MAX_PER_JOB", 1)
+    _split_episodes(monkeypatch, tmp_path, whisper_api)
+    _fail_once_at(whisper_api, 1)
+    job_id = _approved(db, [None, None])
+
+    _resume(job_id)
+
+    assert whisper_api.sent == 3, "the second episode, in full"
+    db.expire_all()
+    statuses = [d.transcript_status for d in db.query(Document).order_by(Document.source_id)]
+    assert statuses == ["unavailable", "fetched"]
+
+
+def test_a_part_paid_episode_leaves_it_unavailable_and_the_run_goes_on(
+    db, tasks, whisper_api, monkeypatch, tmp_path  # noqa: F811
+):
+    _split_episodes(monkeypatch, tmp_path, whisper_api)
+    _fail_once_at(whisper_api, 2)
+    job_id = _approved(db, [None, None])
+
+    _resume(job_id)
+
+    db.expire_all()
+    assert db.get(Job, job_id).status == "completed"
+    statuses = [d.transcript_status for d in db.query(Document).order_by(Document.source_id)]
+    assert statuses == ["unavailable", "fetched"]
+
+
+def test_the_limits_do_not_read_the_usage_meter(db, tasks, whisper_api, monkeypatch, tmp_path):  # noqa: F811
+    """D-111: with the meter silent the cap still hears, from the connector."""
+    monkeypatch.setattr(youtube_service.usage_service, "record_whisper", lambda seconds: None)
+    monkeypatch.setattr(settings, "WHISPER_MAX_MINUTES_PER_JOB", 5)
+    _split_episodes(monkeypatch, tmp_path, whisper_api)
+    _fail_once_at(whisper_api, 2)
+    job_id = _approved(db, [None, None])
+
+    _resume(job_id)
+
+    assert whisper_api.sent == 1
+
+
+class _CutShort(_Videos):
+    """Whisper reaches ``seconds`` into ``vid0`` and fails."""
+
+    seconds = 120.0
+
+    def fetch_text(self, candidate, *, job_id="", query="", allow_whisper=True):
+        if candidate.source_id == "vid0":
+            self.calls.append((candidate.source_id, allow_whisper))
+            raise source_failure.TranscriptionCutShort(self.seconds)
+        return super().fetch_text(candidate, job_id=job_id, query=query, allow_whisper=allow_whisper)
+
+
+def test_a_subscription_walk_hears_the_same(db, tasks, monkeypatch):
+    """The sync loop charges both limits as the approved run does. Whether the
+    count applies to syncs at all is OQ-36, and this leaves that as it was."""
+    monkeypatch.setattr(settings, "WHISPER_MAX_MINUTES_PER_JOB", 600)
+    monkeypatch.setattr(settings, "WHISPER_MAX_PER_JOB", 1)
+    fake = _CutShort()
+    job_id = _approved(db, [MINUTE] * 3, videos=True)
+
+    _walk(db, job_id, fake)
+
+    assert [allowed for _, allowed in fake.calls] == [True, False, False]
+    assert [n["kind"] for n in _notes(db, job_id)] == ["whisper_budget_spent"]
+
+
+def test_a_subscription_walk_charges_what_was_heard_not_what_was_declared(db, tasks, monkeypatch):
+    monkeypatch.setattr(settings, "WHISPER_MAX_MINUTES_PER_JOB", 5)
+    fake = _CutShort()
+    job_id = _approved(db, [60 * MINUTE, MINUTE], videos=True)
+
+    _walk(db, job_id, fake)
+
+    assert [allowed for _, allowed in fake.calls] == [True, True], "2 of 5 minutes: not spent"
+
+
+def test_the_exception_carries_nothing_a_provider_said(db, whisper_api, monkeypatch, tmp_path):  # noqa: F811
+    """A Whisper failure's text can quote a tenant's key, and this one travels
+    further than the log line that names it by type (T-5.6.16)."""
+    _split_episodes(monkeypatch, tmp_path, whisper_api)
+    _fail_once_at(whisper_api, 2)
+    audio = tmp_path / "episode.mp3"
+    audio.write_bytes(b"x" * 9)
+
+    with pytest.raises(source_failure.TranscriptionCutShort) as caught:
+        youtube_service._transcribe_in_chunks(whisper_api.client, str(audio), str(tmp_path), "ep", "")
+
+    assert caught.value.seconds == 300.0
+    assert "sk-tenant-secret" not in str(caught.value)
+    assert caught.value.__context__ is None and caught.value.__cause__ is None

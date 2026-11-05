@@ -32,6 +32,7 @@ from app.models.job import Job
 from app.models.job_video import JobVideo
 from app.models.transcript_cache import TranscriptCache
 from app.services import usage_service, youtube_service
+from app.services.source_failure import TranscriptionCutShort
 from app.tasks import job_tasks
 from tests.test_tasks.test_usage_metering_tasks import CHANNEL, _channel_responses, _owner
 from tests.usage_helpers import (  # noqa: F401
@@ -189,8 +190,8 @@ def test_a_chunk_that_fails_leaves_the_chunks_already_billed_on_the_record(no_ca
 
     whisper_api.before_send = fail_second
 
-    with usage_service.metered(db, owner.id):
-        assert youtube_service._transcribe_with_whisper("vLong000002") is None
+    with usage_service.metered(db, owner.id), pytest.raises(TranscriptionCutShort):
+        youtube_service._transcribe_with_whisper("vLong000002")
 
     assert usage_rows(db, owner.id) == {WHISPER: 60}
 

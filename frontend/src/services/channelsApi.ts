@@ -30,12 +30,14 @@ export interface Channel {
 
 /**
  * `SubscribeResponse` — returned by subscribe and sync. `job_id` is the
- * dispatched subscription-sync job, or null when dispatch failed (the
- * subscription state still flipped).
+ * dispatched subscription-sync job, or null when no sync started: the
+ * reader is at their job limit, or the sync could not be queued. The
+ * subscription state still flipped, and `sync_note` says what happened.
  */
 export interface SubscribeResponse {
   channel_id: string;
   job_id: string | null;
+  sync_note: string | null;
 }
 
 export const channelsApi = {

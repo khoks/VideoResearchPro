@@ -710,9 +710,18 @@ def test_fetch_text_loses_an_oversize_episode_it_cannot_split(podcast, long_epis
 
 
 def test_fetch_text_loses_the_episode_when_a_chunk_fails(podcast, long_episode):
-    """A transcript with a hole would read as the whole episode."""
+    """A transcript with a hole would read as the whole episode, so there is
+    no text. The chunk before the failure was billed, so the job is told."""
     answers = [_whisper_says(_segment("Opening.", 0.0, 90.0), duration=110.0), RuntimeError("refused")]
-    with patch.object(youtube_service, "_whisper_transcribe_with_retry", side_effect=answers):
+    with (
+        patch.object(youtube_service, "_whisper_transcribe_with_retry", side_effect=answers),
+        pytest.raises(source_failure.TranscriptionCutShort),
+    ):
+        podcast.fetch_text(_candidate_for_ep1(), job_id="j1")
+
+
+def test_a_first_chunk_failure_has_nothing_to_report(podcast, long_episode):
+    with patch.object(youtube_service, "_whisper_transcribe_with_retry", side_effect=RuntimeError("refused")):
         assert podcast.fetch_text(_candidate_for_ep1(), job_id="j1") is None
 
 
@@ -1141,8 +1150,12 @@ def test_a_split_episode_leaves_neither_audio_nor_chunks(podcast, fake_client, a
 
     monkeypatch.setattr(youtube_service, "_split_audio_for_whisper", split)
     answers = [_whisper_says(_segment("Opening.", 0.0, 90.0), duration=110.0), RuntimeError("refused")]
-    with patch.object(youtube_service, "_whisper_transcribe_with_retry", side_effect=answers):
-        assert podcast.fetch_text(_candidate_for_ep1(), job_id="j1") is None
+    with (
+        patch.object(youtube_service, "_whisper_transcribe_with_retry", side_effect=answers),
+        pytest.raises(source_failure.TranscriptionCutShort) as cut,
+    ):
+        podcast.fetch_text(_candidate_for_ep1(), job_id="j1")
+    assert cut.value.seconds == 110.0, "as far as the billed chunk reached"
     assert list(audio_dirs.iterdir()) == []
 
 

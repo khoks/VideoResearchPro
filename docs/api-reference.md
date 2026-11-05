@@ -222,7 +222,7 @@ Overall app status plus a summary of LLM probe results.
 
 The `*_search_enabled` flags come from `job_source_types`, the same check that refuses a source on `POST /jobs`, so the submit form never offers what the API would reject (S-1.5.13). Mastodon and Bluesky are not set up when their base URL is blank (T-1.5.13.6).
 
-A source that answered a run's search with 401 or 403 is also on hold (T-1.5.14.1): its flag reads false and it is listed in `source_holds`, so the form stops offering it. A hold ends when the settings that reach the source change, after 24 hours, or when a search answers. `POST /jobs` still accepts a held source, since that check reads settings: the run tries it, and says so if it is refused again. A 403 about one target of a search starts no hold, because a hold reaches every user: every feed a podcast search found refusing, or a `subreddit:name` topic naming a private subreddit, reads on the run as a failed search.
+A source that answered a run's search with 401 or 403 is also on hold (T-1.5.14.1): its flag reads false and it is listed in `source_holds`, so the form stops offering it. A hold ends when the settings that reach the source change, after 24 hours, or when a search answers. `POST /jobs` still accepts a held source, since that check reads settings: the run tries it, and says so if it is refused again. A 403 about one target of a search starts no hold, because a hold reaches every user: every feed a podcast search found refusing, or a `subreddit:name` topic naming a private subreddit, reads on the run as a failed search. The form offers it anyway, one run at a time (T-1.5.14.6): `POST /jobs` takes a held source, and the source's own answer clears the hold or starts it over.
 
 ### `GET /api/v1/health/llm`
 Per-use-case LLM probe detail: the result of the startup smoke check (probes deduped by `(provider, model, vision)`; each use case reports its own reasoning level). `use_cases` is keyed by use-case name and is empty until the first probe completes.
@@ -466,7 +466,7 @@ Optional fields accepted on every job type:
 
 Returns 201 + `JobResponse`. Both fields are echoed back on `JobResponse`.
 
-429 when the caller already holds `MAX_CONCURRENT_JOBS` active jobs. The limit is each user's own (T-5.2.14), and the `detail` says so. Another user's jobs never count toward it.
+429 when the caller already holds `MAX_CONCURRENT_JOBS` active jobs. The limit is each user's own (T-5.2.14), and the `detail` says so. Another user's jobs never count toward it. A channel sync counts, whichever way it started.
 
 **From a template** (E-8.6): `POST /api/v1/jobs?template_id=<id>[&template_version=<n>]` records which template version the run started from; `template_version` defaults to the latest. The body is still a full `JobCreate`, validated as any submission. A foreign, deleted or unknown template or version is a 404; a body whose `job_type` differs from the template's is a 422. `JobResponse` carries `template_id` and `template_version` (null otherwise). `{{topic}}` in `search_instructions` is filled with the topic on every topic run, template or not.
 
@@ -787,7 +787,9 @@ Channels the caller can see: any they hold subscription state for, or that produ
 Fetch a single channel with the caller's state. Returns `ChannelResponse` or 404. Backs the channel page (`/library/channels/:channelId`).
 
 ### `POST /api/v1/channels/{channel_id}/subscribe`
-Flip the caller's subscription on and dispatch a sync job. Returns `SubscribeResponse` (`channel_id`, `job_id`; `job_id` is null when dispatch failed — the state still flipped).
+Flip the caller's subscription on and dispatch a sync job. Returns `SubscribeResponse`: `channel_id`, `job_id`, `sync_note`.
+
+Subscribing is never refused by the job limit (T-5.2.15). When the caller already holds `MAX_CONCURRENT_JOBS` active jobs, or the sync could not be queued, the subscription still stands: `job_id` is null and `sync_note` says why, in words for the reader. `POST /channels/{channel_id}/sync` is how the first sync starts later. 429 only when the library is at its document cap, and then nothing changes.
 
 ### `POST /api/v1/channels/{channel_id}/unsubscribe`
 Flip the caller's subscription off; other tenants are unaffected. Returns the updated `ChannelResponse`. Does not remove documents already in the library.
@@ -798,7 +800,9 @@ Set the caller's trust weight for the channel ([D-068](decisions.md#d-068--curat
 The weight re-ranks the caller's **job and library Q&A** retrieval: 3 × top-K candidates, drop any over `RAG_DISTANCE_THRESHOLD` on the raw distance, sort by `distance / weight`, keep top-K. 0.0 is clamped to 0.05 at query time; sources without a channel weigh 1.0. It is never a filter and never stored on chunks. Measured effect and its relevance cost: [notes/2026-10-19-e71-trust-weighting-measurement.md](notes/2026-10-19-e71-trust-weighting-measurement.md).
 
 ### `POST /api/v1/channels/{channel_id}/sync`
-Dispatch a fresh subscription sync for the channel. Returns `SubscribeResponse`.
+Dispatch a fresh subscription sync for the channel. Returns `SubscribeResponse`; `job_id` is null when the sync could not be queued, and `sync_note` says so.
+
+429 at the document cap, and when the caller already holds `MAX_CONCURRENT_JOBS` active jobs, with the same `detail` as `POST /jobs` (T-5.2.15).
 
 ### `GET /api/v1/channels/{channel_id}/intelligence`
 What the channel says, over **the documents of it the caller can see** (S-8.7.2, [M7 plan](plans/m7-channel-intelligence.md); D-063 / D-070). Two readers following the same channel can get different figures; a reader who can see none of its documents gets an empty aggregate, never the channel's global one. 404 for an unknown channel.

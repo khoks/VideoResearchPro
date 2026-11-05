@@ -10,6 +10,7 @@ import {
 } from '../hooks/useChannels';
 import { VideoRow } from '../components/library/VideoRow';
 import { ChannelRow } from '../components/library/ChannelRow';
+import { SyncNote } from '../components/channel/SyncNote';
 import { PdfUploadZone } from '../components/library/PdfUploadZone';
 import { PasteUrlsForm } from '../components/library/PasteUrlsForm';
 import { TagFilterBar } from '../components/tags';
@@ -123,6 +124,8 @@ export function LibraryPage() {
   );
 
   const [syncingChannels, setSyncingChannels] = useState<Record<string, string>>({});
+  // Why a subscribe or sync started no job (T-5.2.15).
+  const [syncNote, setSyncNote] = useState<string | null>(null);
 
   const channelsQuery = useChannels();
   const subscribeMut = useSubscribeChannel();
@@ -170,17 +173,22 @@ export function LibraryPage() {
   };
 
   const handleToggleSubscribe = (channel: Channel) => {
+    setSyncNote(null);
     if (channel.subscribed) {
       unsubscribeMut.mutate(channel.channel_id);
     } else {
-      subscribeMut.mutate(channel.channel_id);
+      subscribeMut.mutate(channel.channel_id, {
+        onSuccess: (resp) => setSyncNote(resp.sync_note),
+      });
     }
   };
 
   const handleSync = (channelId: string) => {
+    setSyncNote(null);
     syncMut.mutate(channelId, {
       onSuccess: (resp) => {
-        // `job_id` is null when the broker was unreachable; nothing to watch.
+        setSyncNote(resp.sync_note);
+        // `job_id` is null when the sync could not be queued; nothing to watch.
         const jobId = resp.job_id;
         if (!jobId) return;
         setSyncingChannels((prev) => ({ ...prev, [channelId]: jobId }));
@@ -330,6 +338,11 @@ export function LibraryPage() {
             }}
           >
             {channelActionError}
+          </div>
+        )}
+        {syncNote && (
+          <div style={{ marginBottom: space['4'] }}>
+            <SyncNote text={syncNote} />
           </div>
         )}
         <ChannelsTab

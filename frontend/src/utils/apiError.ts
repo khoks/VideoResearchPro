@@ -39,6 +39,18 @@ export function isDocumentCapRefusal(err: unknown): boolean {
   return !!detail && typeof detail === 'object' && (detail as { resource?: unknown }).resource === 'documents';
 }
 
+/**
+ * "Sync now" refused at the job limit (T-5.2.15): a 429 like any other job's.
+ * The channel list and the channel page say so where it was pressed.
+ */
+export function isSyncRefusal(err: unknown): boolean {
+  return (
+    isAxiosError(err) &&
+    err.response?.status === 429 &&
+    /\/channels\/[^/]+\/sync$/.test(err.config?.url ?? '')
+  );
+}
+
 /** The stops "Speak as me" shows in the panel, with what to do next. */
 const DRAFT_STOPS = new Set(['names_need_confirmation', 'register_needs_approval', 'ungrounded']);
 
@@ -55,10 +67,11 @@ const UNEXPECTED = 'An unexpected error occurred.';
  * What the global query / mutation error toast says: the server's own
  * message when the response carries one (it used to show axios's
  * "Request failed with status code 429"), else the error's text. Null for a
- * document-cap refusal or a draft stop, which their pages already show inline.
+ * document-cap refusal, a refused sync or a draft stop, which their pages
+ * already show inline.
  */
 export function globalErrorToastMessage(err: unknown): string | null {
-  if (isDocumentCapRefusal(err) || isDraftStop(err)) return null;
+  if (isDocumentCapRefusal(err) || isSyncRefusal(err) || isDraftStop(err)) return null;
   if (!err) return UNEXPECTED;
   if (typeof err === 'string') return err;
   return apiErrorMessage(err, err instanceof Error && err.message ? err.message : UNEXPECTED);

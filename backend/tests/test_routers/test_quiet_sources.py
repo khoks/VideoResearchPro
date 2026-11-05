@@ -785,6 +785,77 @@ def test_a_source_that_answers_comes_off_hold(client, db, sources, worker):
     assert db.query(SourceRefusal).count() == 0
 
 
+def test_try_it_anyway_goes_through_job_creation_as_it_stands(client, db, sources):
+    """T-1.5.14.6 needs no new route: the form sends the held source, and the
+    API keeps it on the run. A check here that read the hold would refuse the
+    very thing the form now offers."""
+    source_refusal_service.record(db, "podcast_episode", 403)
+    db.commit()
+    sources(_Source("podcast_episode", count=5))
+    assert _caps(client)["podcast_search_enabled"] is False
+
+    r = client.post(
+        "/api/v1/jobs",
+        json={"job_type": "topic", "topic": "tariffs", "num_videos": 4, "source_types": ["podcast_episode"]},
+    )
+
+    assert r.status_code == 201, r.text
+    assert r.json()["source_types"] == ["podcast_episode"]
+
+
+def test_trying_a_held_source_that_answers_ends_the_hold(client, db, sources, worker):
+    source_refusal_service.record(db, "podcast_episode", 403)
+    db.commit()
+    sources(_Source("podcast_episode", count=5))
+
+    job_id = _submit(client, "podcast_episode", num_videos=4)
+    worker.run(job_id)
+
+    health = client.get("/api/v1/health").json()
+    assert health["capabilities"]["podcast_search_enabled"] is True
+    assert health["source_holds"] == {}
+    assert db.get(Job, job_id).status == "awaiting_approval"
+
+
+def test_trying_a_held_source_that_answers_with_nothing_still_ends_the_hold(client, db, sources, worker):
+    """An empty answer is an answer: the source is taking searches again."""
+    source_refusal_service.record(db, "bluesky_post", 403)
+    db.commit()
+    sources(_Source("bluesky_post", count=0))
+
+    worker.run(_submit(client, "video", "bluesky_post", num_videos=4))
+
+    assert _caps(client)["bluesky_search_enabled"] is True
+
+
+def test_trying_a_held_source_that_refuses_again_renews_the_hold(client, db, sources, worker):
+    """The source's own answer decides, and the run says what happened."""
+    source_refusal_service.record(db, "bluesky_post", 403)
+    db.commit()
+    row = db.get(SourceRefusal, "bluesky_post")
+    row.refused_at = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(
+        hours=source_refusal_service.HOLD_HOURS - 1
+    )
+    db.commit()
+    before = row.refused_at
+    refused = httpx.HTTPStatusError(
+        "401", request=httpx.Request("GET", "https://x"), response=httpx.Response(401)
+    )
+    bluesky = sources(_Source("bluesky_post", raises=refused))["bluesky_post"]
+
+    job_id = _submit(client, "video", "bluesky_post", num_videos=4)
+    worker.run(job_id)
+
+    assert bluesky.asked, "the run tried it"
+    db.expire_all()
+    assert db.get(SourceRefusal, "bluesky_post").refused_at > before
+    holds = client.get("/api/v1/health").json()["source_holds"]
+    assert holds["bluesky_post"]["status"] == 401
+    assert _caps(client)["bluesky_search_enabled"] is False
+    notes = client.get(f"/api/v1/jobs/{job_id}").json()["run_notes"]
+    assert any(n["text"] == "Bluesky was unavailable: it refused the search (HTTP 401)." for n in notes)
+
+
 def test_a_hold_ends_when_the_settings_that_reach_the_source_change(client, db, monkeypatch):
     """How credentials arrive, and how an operator points at another endpoint."""
     from app.config import settings

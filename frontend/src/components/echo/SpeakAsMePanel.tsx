@@ -19,6 +19,11 @@ import { citationLabel, draftErrorOf } from '../../utils/echoDrafts';
  * version and may drop the disclosure line; saving it records what they
  * typed, which is all Echo learns from. The test itself is taken here too
  * (`VoiceTestPanel`, T-3.4.1.8).
+ *
+ * Two refusals stay on screen rather than passing as a toast, each in the
+ * server's words, which say what would let the draft go ahead (T-3.4.1.11). A
+ * register the user has not approved asks for a go-ahead. A reply with nothing
+ * behind it has none to give: it needs a source or a note.
  */
 export function SpeakAsMePanel() {
   const c = useColors();
@@ -31,24 +36,35 @@ export function SpeakAsMePanel() {
   const [audience, setAudience] = useState('');
   const [register, setRegister] = useState('');
   const [names, setNames] = useState<string[] | null>(null);
+  // The server's words while a first draft in this register waits for a go-ahead.
+  const [registerStop, setRegisterStop] = useState<string | null>(null);
+  // Which register the user said to go ahead with; kept through a names stop.
+  const [goAhead, setGoAhead] = useState<string | null>(null);
+  const [refusal, setRefusal] = useState<string | null>(null);
   const [result, setResult] = useState<EchoDraft | null>(null);
 
   const text: React.CSSProperties = { margin: 0, fontFamily: fonts.body, fontSize: fontSize.sm, color: c.textSecondary, lineHeight: lineHeight.normal };
   const st = status.data;
 
-  const submit = (acknowledge: string[] = []) => {
+  const submit = (acknowledge: string[] = [], approved: string | null = goAhead) => {
     const payload: CreateDraftPayload = { message: message.trim() };
     if (audience.trim()) payload.audience = audience.trim();
     if (register) payload.register = register as CreateDraftPayload['register'];
     if (acknowledge.length) payload.acknowledge_names = acknowledge;
+    if (register && approved === register) payload.acknowledge_register = payload.register;
+    setRegisterStop(null);
+    setRefusal(null);
     create.mutate(payload, {
       onSuccess: (d) => {
         setResult(d);
         setNames(null);
+        setGoAhead(null);
       },
       onError: (err) => {
         const e = draftErrorOf(err);
         if (e.code === 'names_need_confirmation') setNames(e.names);
+        else if (e.code === 'register_needs_approval') setRegisterStop(e.message);
+        else if (e.code === 'ungrounded') setRefusal(e.message);
         else pushToast('error', e.message);
       },
     });
@@ -108,9 +124,16 @@ export function SpeakAsMePanel() {
             <FormField label="Who it's for" optional>
               {(id) => <Input id={id} maxLength={200} value={audience} placeholder="e.g. my brother" onChange={(e) => setAudience(e.target.value)} />}
             </FormField>
-            <FormField label="Register" optional>
+            <FormField label="Register" optional helperText="Echo asks before its first draft in a register. Saving your version approves it.">
               {(id) => (
-                <Select id={id} value={register} onChange={(e) => setRegister(e.target.value)}>
+                <Select
+                  id={id}
+                  value={register}
+                  onChange={(e) => {
+                    setRegister(e.target.value);
+                    setRegisterStop(null);
+                  }}
+                >
                   <option value="">Whatever fits</option>
                   <option value="intimate">Intimate</option>
                   <option value="casual">Casual</option>
@@ -135,8 +158,33 @@ export function SpeakAsMePanel() {
               </div>
             </div>
           )}
+          {registerStop && (
+            <div data-register-stop role="alert" style={{ ...text, padding: space['3'], border: `1px solid ${c.border}`, borderRadius: radius.md }}>
+              {registerStop}
+              <div style={{ marginTop: space['2'], display: 'flex', gap: space['2'] }}>
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() => {
+                    setGoAhead(register);
+                    submit(names ?? [], register);
+                  }}
+                >
+                  Draft in this register
+                </Button>
+                <Button type="button" size="sm" variant="tertiary" onClick={() => setRegisterStop(null)}>
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          )}
+          {refusal && (
+            <div data-refused role="alert" style={{ ...text, padding: space['3'], border: `1px solid ${c.border}`, borderRadius: radius.md }}>
+              {refusal}
+            </div>
+          )}
           <div>
-            <Button type="submit" disabled={!message.trim()} loading={create.isPending && !names}>
+            <Button type="submit" disabled={!message.trim()} loading={create.isPending && !names && !registerStop}>
               Draft a reply
             </Button>
           </div>

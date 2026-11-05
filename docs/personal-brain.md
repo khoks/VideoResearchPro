@@ -293,6 +293,7 @@ The gates and guards are in [Speak as me, as built](#self-host-today-and-forever
 ```
 classify_intent → retrieve_relevant_knowledge → retrieve_voice_signals → retrieve_personal_context → draft → self_critique_against_voice → finalize
 self_critique_against_voice → revise → self_critique_against_voice   (below target, at most ECHO_DRAFT_CRITIQUE_ROUNDS times)
+retrieve_personal_context → stop   (a reply that needs backing, with nothing usable retrieved)
 ```
 
 1. **classify_intent.** The message's intent, topic and language, and the people it names. A private person named here stops the run until the user confirms them.
@@ -301,7 +302,7 @@ self_critique_against_voice → revise → self_critique_against_voice   (below 
 4. **retrieve_personal_context.** Pulls relevant rows of `personal_context` — opinions, current goals, expertise. This is what makes "speak as me" different from "speak generically": the agent knows the user *is* a backend engineer, *does* think LLM agents are oversold, *is* trying to ship SaaS by Q2.
 5. **draft.** A long, carefully-prompted call to a strong model with all of the above.
 6. **self_critique_against_voice.** A second model call that grades the draft against the voice signals. *"Does this sound like the user? Where does it deviate?"* Tone, vocabulary, structure, topicality and groundedness each score 1 to 5. Below `ECHO_DRAFT_CRITIQUE_TARGET`, or with groundedness under 4, **revise** rewrites the draft and the critique runs again, up to `ECHO_DRAFT_CRITIQUE_ROUNDS` times. The best-scored round is kept.
-7. **finalize.** Run the verbatim guard, attach the citations the draft used, and report a voice-match score and a confidence score.
+7. **finalize.** Run the verbatim guard, attach the citations the draft used, and report a voice-match score and a confidence score. A reply that needs backing and cites nothing usable stops here.
 
 ### Output contract
 
@@ -330,7 +331,10 @@ The user reads the draft, the citations, and the deviation notes. They edit, acc
 - **Cite things the user hasn't ingested.** No "general world knowledge" claims. Every factual claim ties to a source the user has chosen to listen to.
 - **Speak about other people in their absence.** If a draft would name a non-public person, the agent flags it: *"This draft references your colleague Alice. I'm willing to draft this only with your explicit go-ahead."*
 
-*As built:* nothing sends, and a private name waits for the user's confirmation. The register rule was not built: `register` goes to the draft prompt and nothing asks for an earlier approval. A draft with nothing behind it is flagged `ungrounded`, not refused.
+*As built:* nothing sends, and a private name waits for the user's confirmation. The other two rules, from T-3.4.1.11:
+
+- **A register needs an earlier approved draft.** Approving a draft means saving a version of it, and deleting that draft withdraws the approval. No draft can be approved before the first exists, so the first in each register waits for the user's go-ahead, the way a private name does. The stop costs nothing, and the go-ahead covers that one draft. Only the saved version approves the register. "Whatever fits" names no register, so nothing stops it, and nothing checks which register a draft came out in.
+- **A draft with nothing behind it is refused, not delivered with a flag.** This covers a question, an opinion or a recommendation, the replies that say something in the user's name, and any message the classifier could not read. A social reply needs nothing behind it. Mail does not count, because nothing proves who wrote it. The run stops before the draft model when retrieval found nothing usable, and at finalize when the draft cites nothing usable. No go-ahead gets past it: the refusal says that a source on the subject or a note with the user's view would let the draft go ahead. Nothing is stored. A refusal the model wrote counts against the daily cap, because it cost what a draft costs. One stopped before the model does not.
 
 ---
 
@@ -439,7 +443,8 @@ The single hardest constraint in this entire roadmap. Every choice below is dura
 - **Speak as me, as built (S-3.4.1, 2026-10-20).** [D-102](decisions.md#d-102--speak-as-me-two-switches-guards-in-code-the-reply-in-the-users-language-2026-10-20). `POST /echo/draft` runs `classify_intent → retrieve_relevant_knowledge → retrieve_voice_signals → retrieve_personal_context → draft → self_critique_against_voice → finalize`, with at most two revise rounds. The voice is a trait card plus five style-diverse exemplars of the user's own notes and own-words shares (Mode A, D-100). The knowledge is library sources, notes, facts, past answers and shares, each with a marker the draft cites. Two switches: the install (`ECHO_SPEAK_AS_ME_ENABLED`, off by default) and the user's own voice test (`echo_voice_gates`). Readiness and the daily cap gate it too. In code:
   - a third party's 8-word run is paraphrased or its sentence dropped;
   - private names are confirmed first;
-  - citations are what the draft used.
+  - citations are what the draft used;
+  - a first draft in a register waits for a go-ahead, and a reply with nothing behind it is refused (T-3.4.1.11, under [What "Speak as me" never does](#what-speak-as-me-never-does)).
 
   The reply is in the user's language. Drafts are never sent.
 
@@ -496,7 +501,9 @@ class ActivityConnector:
 
 **Rotating refresh tokens (T-3.2.1.12).** A provider that rotates answers a second use of the old refresh token with `invalid_grant`, and some revoke the whole grant for it. The runtime claims the refresh per connector (a lease on `echo_connector_credentials`), so a scheduled sync and "Sync now" spend it once and the second reader uses the first's result. A connector needs no code for this. Keep tokens out of exception messages anyway: the runtime blanks any it finds before a message reaches a log line or `last_error`, but only the ones it holds.
 
-**Deleted derived facts stay deleted (T-3.2.4.4, D-110).** The runtime, not the connector, skips every `(kind, key)` the user deleted from a fact the connector (or importer) derived: deleting one records a tombstone in `echo_fact_tombstones`, which the Echo page lists under "Kept deleted". A connector needs no code for this.
+**Deleted derived facts stay deleted (T-3.2.4.4, D-110).** The runtime, not the connector, skips every `(kind, key)` the user deleted from a fact the connector (or importer) derived: deleting one records a tombstone in `echo_fact_tombstones`, which the Echo page lists under "Kept deleted". A connector needs no code for this. The delete dialog says when a row will land there, and names who it keeps out, from the same answer the delete uses (`kept_deleted_by`, T-3.2.1.14).
+
+**Two syncs at once (T-3.2.1.13).** A scheduled sync and "Sync now" may overlap, and both finish. Events and facts go in by inserts the database decides (`database.insert_if_absent`), so neither sync fails on the other's row and each event is counted once. Each sync still calls the provider, which is harmless and rare. A connector needs no code for this either.
 
 **A fact the user wrote stays theirs (T-3.2.1.11).** A sync or an import never writes over a live `manual` row: the key is skipped and the run says so (`facts_kept_manual`). Past its expiry a row holds nothing, and the connector takes the key back. A `manual` row records the connector or importer that wants its key (`wanted_by`), whether the user edited what it derived or typed the row first and turned its write away, so deleting the row still leaves a tombstone. A connector needs no code for this either.
 

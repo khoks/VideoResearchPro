@@ -60,9 +60,6 @@ class RotatingProvider:
         self.before_refresh = None
         self.refresh_error: Exception | None = None
         self.refuses_every_token = False
-        # Two readers storing one event at once can collide on its unique key,
-        # a separate matter from the token, so the concurrent test keeps them apart.
-        self.distinct_events = False
 
     def refresh(self, refresh_token: str) -> ConnectorTokens:
         if self.before_refresh:
@@ -89,8 +86,7 @@ class RotatingProvider:
         self.pages.append((i, token))
         if self.refuses_every_token or token not in self.access_valid:
             raise ConnectorError("the provider answered 401", auth=True)
-        external_id = f"e-{i}-{len(self.pages)}" if self.distinct_events else f"e-{i}"
-        return EventIn(external_id, "did_a_thing", T0 + timedelta(hours=i), {"i": i})
+        return EventIn(f"e-{i}", "did_a_thing", T0 + timedelta(hours=i), {"i": i})
 
     def expire_early(self):
         """The access token dies before its ``expires_at`` says so."""
@@ -454,7 +450,6 @@ def test_a_scheduled_sync_and_sync_now_spend_a_rotating_token_once(sessions, pro
     setup = sessions()
     grant_id = _seed(setup, expires_at=PAST if why == "expired" else None)
     setup.close()
-    provider.distinct_events = True
     if why == "refused_early":
         provider.expire_early()
 

@@ -11,6 +11,15 @@ run and gives it the user's material. Gates, in order (``status``):
    the Echo page (``echo_voice_test_service``, T-3.4.1.8) or with
    ``scripts/voice_match_harness.py user-pairs`` / ``user-score --record``.
 4. ``daily_cap``: ``echo_drafts`` per day through ``quota_metering_service``.
+5. ``register_needs_approval``: a named register needs an earlier draft in it
+   that the user approved, which they do by saving their version (T-3.4.1.11).
+   None can exist before the first, so the first waits for their go-ahead
+   (``acknowledge_register``), as a private name does. Checked before the model,
+   so it spends nothing. "Whatever fits" names no register and is not gated.
+
+The agent adds one more, after retrieval or after drafting: a reply with nothing
+behind it is refused (``DraftRefused``), with no go-ahead to get past it. Only
+more to stand on lets it through: a source or a note on the subject.
 
 **Feedback (S-3.4.2).** ``feedback`` stores the text the user actually used
 and whether they kept the disclosure line. The words they typed into it (not
@@ -35,7 +44,7 @@ import json
 import logging
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, NoReturn
 
 from sqlalchemy.orm import Session
 
@@ -52,6 +61,15 @@ VOICE_TEST_MAX_OWN_SHARE = 0.80
 VOICE_TEST_RULE_VERSION = "2026-10-19"
 #: The prompts name this label, and the user reads it under a draft.
 UNVERIFIED_MAIL_LABEL = "an unverified email, not your view"
+_GO_AHEAD = "To go ahead, add a source on this to your library or write a note saying what you think, then draft again."
+#: The agent's reasons, in the words the user reads: what stopped it, and what would not.
+REFUSALS = {
+    "nothing": (
+        "Echo did not write this reply: nothing in your library, your notes or what it knows about you backs it, "
+        f"and it will not make claims in your name with nothing behind them. {_GO_AHEAD}"
+    ),
+    "mail_only": f"Echo did not write this reply: the only thing behind it is an email, and nothing proves who wrote that. {_GO_AHEAD}",
+}
 
 
 class DraftBlocked(Exception):
@@ -66,6 +84,27 @@ class NamesNeedConfirmation(Exception):
     def __init__(self, names: list[str]):
         super().__init__(", ".join(names))
         self.names = names
+
+
+class RegisterNeedsApproval(Exception):
+    def __init__(self, register: str):
+        article = "an" if register == "intimate" else "a"
+        self.register = register
+        self.message = (
+            f"You have not approved {article} {register} draft yet, so Echo asks before it speaks in that register. "
+            f"To go ahead, confirm this draft and save your version of it: that approves {register} drafts from then "
+            "on. Or leave the register on “Whatever fits”."
+        )
+        super().__init__(self.message)
+
+
+class DraftRefused(Exception):
+    """The reply would have nothing behind it. ``reason`` is the agent's."""
+
+    def __init__(self, reason: str):
+        self.reason = reason
+        self.message = REFUSALS[reason]
+        super().__init__(self.message)
 
 
 class DraftCapReached(Exception):
@@ -149,6 +188,20 @@ def record_voice_test(db: Session, tenant_id: str, *, pairs: int, picked_own: in
     db.commit()
     db.refresh(row)
     return row
+
+
+# ---------------------------------------------------------------------------
+# Registers
+
+
+def approved_registers(db: Session, tenant_id: str) -> set[str]:
+    """The registers the user has approved: a draft in that register whose
+    version they saved. Deleting the draft withdraws the approval, as it
+    withdraws what the draft's edit taught."""
+    rows = db.query(EchoDraft.register).filter(
+        EchoDraft.tenant_id == tenant_id, EchoDraft.register.isnot(None), EchoDraft.final_text.isnot(None),
+    ).distinct()
+    return {register for (register,) in rows}
 
 
 # ---------------------------------------------------------------------------
@@ -347,10 +400,12 @@ def draft(
     register: str | None = None,
     language: str | None = None,
     acknowledge_names: list[str] | tuple[str, ...] = (),
+    acknowledge_register: str | None = None,
     deps: Any = None,
 ) -> EchoDraft:
-    """One draft. Raises ``DraftBlocked``, ``DraftCapReached`` or
-    ``NamesNeedConfirmation``; spends nothing when it raises before the model."""
+    """One draft. Raises ``DraftBlocked``, ``DraftCapReached``,
+    ``RegisterNeedsApproval``, ``NamesNeedConfirmation`` or ``DraftRefused``;
+    spends nothing when it raises before the model."""
     from app.agents.echo_agent import run_echo_draft
     from app.services import audit_service, llm_service, quota_metering_service
 
@@ -360,6 +415,8 @@ def draft(
         raise DraftBlocked(gate[0]["code"], gate[0]["message"], st)
     if any(b["code"] == "daily_cap" for b in st.blockers):
         raise DraftCapReached(next(b["message"] for b in st.blockers if b["code"] == "daily_cap"))
+    if register and register != acknowledge_register and register not in approved_registers(db, user.id):
+        raise RegisterNeedsApproval(register)
 
     # The classify, draft and critique calls are the user's: on the models
     # they pinned (E-1.13), and their usage (E-5.2, feature echo_draft). The
@@ -373,6 +430,8 @@ def draft(
         )
     if state.get("needs_confirmation"):
         raise NamesNeedConfirmation(state["needs_confirmation"])
+    if state.get("refused"):
+        _refuse(db, user, state)
     result = state["result"]
     model = deps.models.get("echo_draft") if getattr(deps, "models", None) else None
     from app.services.model_pricing import pricing_for
@@ -401,6 +460,26 @@ def draft(
     except Exception:  # noqa: BLE001
         logger.exception("echo draft: audit failed for %s", row.id)
     return row
+
+
+def _refuse(db: Session, user: User, state: dict) -> NoReturn:
+    """Nothing is stored: a refused draft was never the user's to read. One the
+    model wrote cost what a draft costs, so it counts, or a cap that exists to
+    bound that spend would bound nothing. One stopped before the draft model
+    is not counted, like any stopped draft (D-102). Audited with counts only."""
+    from app.services import audit_service, quota_metering_service
+
+    written = bool(state.get("candidates"))
+    if written:
+        quota_metering_service.record_usage(db, user.id, QUOTA_RESOURCE)
+    try:
+        audit_service.record(db, event="echo_draft_refused", user_id=user.id, tenant_id=user.id, metadata={
+            "reason": state["refused"], "written": written, "language": state.get("language"), "intent": state.get("intent"),
+            "knowledge": len(state.get("knowledge") or []), "facts": len(state.get("facts") or []),
+        })
+    except Exception:  # noqa: BLE001
+        logger.exception("echo draft: audit failed for a refusal")
+    raise DraftRefused(state["refused"])
 
 
 def to_dict(row: EchoDraft) -> dict:

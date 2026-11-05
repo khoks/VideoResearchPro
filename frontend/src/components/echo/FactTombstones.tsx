@@ -1,6 +1,6 @@
 import { useClearFactTombstone, useFactTombstones } from '../../hooks/useEcho';
 import { useJobStore } from '../../stores/jobStore';
-import type { FactTombstone } from '../../services/echoApi';
+import type { FactTombstone, PersonalContextItem } from '../../services/echoApi';
 import { Button, Card } from '../primitives';
 import { useColors } from '../../hooks/useTheme';
 import { fonts, fontSize, fontWeight, lineHeight, space } from '../../theme';
@@ -14,11 +14,32 @@ export function isDerivedSource(source: string | null | undefined): boolean {
   return !!source && (source.startsWith('connector:') || source.startsWith('import:'));
 }
 
-/** The line the delete dialogs add for a derived fact. */
-export function keptDeletedNote(source: string | null | undefined): string | null {
-  return isDerivedSource(source)
-    ? 'Echo worked this out from a connector or an import, so it will keep it deleted: later syncs and re-imports skip it. You can allow it again under "Kept deleted".'
-    : null;
+/** The line the delete dialog adds when the row will appear under "Kept
+ * deleted". The server says so (`kept_deleted_by`, T-3.2.1.14) with the answer
+ * the delete itself uses, which `source` cannot: a row the user wrote says
+ * `manual` and can still be wanted by a connector. */
+export function keptDeletedNote(
+  fact: Pick<PersonalContextItem, 'source' | 'kept_deleted_by'> | null | undefined,
+): string | null {
+  const by = fact?.kept_deleted_by;
+  if (!by) return null;
+  const why = isDerivedSource(fact.source)
+    ? `Echo worked this out from ${by}, so it will keep it deleted`
+    : `You wrote this, but ${by} works out the same entry, so Echo will keep it deleted`;
+  return `${why}: later syncs and re-imports skip it. You can allow it again under "Kept deleted".`;
+}
+
+/** The same for revoking a whole source. A connector's rows all stay deleted;
+ * of the `manual` source, only the rows a connector or an import wants do. */
+export function revokedKeptNote(source: string | null | undefined, rows: PersonalContextItem[]): string | null {
+  if (isDerivedSource(source)) {
+    return 'A connected connector keeps running, but its syncs and re-imports skip these facts from now on (see "Kept deleted"). To stop it, disconnect it above.';
+  }
+  const kept = rows.filter((r) => r.source === source && r.kept_deleted_by).length;
+  if (kept === 0) return null;
+  return kept === 1
+    ? 'One of them is also worked out by a connector or an import, so Echo will keep it deleted (see "Kept deleted").'
+    : `${kept} of them are also worked out by a connector or an import, so Echo will keep those deleted (see "Kept deleted").`;
 }
 
 export function clearedToast(t: Pick<FactTombstone, 'key' | 'connector_display_name'>): string {

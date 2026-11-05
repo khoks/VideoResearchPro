@@ -2,15 +2,17 @@
 
     classify_intent -> [names need confirmation? stop]
       -> retrieve_relevant_knowledge -> retrieve_voice_signals
-      -> retrieve_personal_context -> draft -> self_critique_against_voice
+      -> retrieve_personal_context -> [nothing usable behind a claim? stop]
+      -> draft -> self_critique_against_voice
       -> (revise -> self_critique, up to ECHO_DRAFT_CRITIQUE_ROUNDS; keep the best)
-      -> finalize
+      -> finalize -> [still nothing behind it? stop]
 
 Mode A, as D-100's gate ran it: the user's signals as a trait card plus five
 of their own texts chosen for style diversity, no fine-tuning. The model
 calls and the retrievers arrive in ``DraftDeps`` so tests can patch every one;
 ``app.services.echo_draft_service`` builds the real ones and owns the gates
-(install switch, readiness, the per-user voice test, the daily cap).
+(install switch, readiness, the per-user voice test, the daily cap, a register
+the user has not approved).
 
 What code guarantees, not the prompt:
 
@@ -30,7 +32,12 @@ What code guarantees, not the prompt:
 - **Mail grounds nothing.** Anyone can write a mail and its From line, so an
   ``unverified`` item is labelled so in the prompt, and a draft citing one is
   flagged ``unverified_source`` and told to the user, whatever the model made
-  of the prompt. Citing only such items leaves a draft ``ungrounded``.
+  of the prompt. Citing only such items leaves a reply with nothing behind it.
+- **A reply with nothing behind it is refused, not delivered with a warning.**
+  A question, opinion or recommendation must cite something usable (T-3.4.1.11,
+  superseding D-102's ``ungrounded`` flag). If retrieval found nothing usable
+  the run stops before the draft model; if the draft cites nothing usable it
+  stops at finalize. Either way ``refused`` is set and there is no ``result``.
 """
 from __future__ import annotations
 
@@ -64,6 +71,11 @@ LANGUAGE_NAMES = {
     "mixed": "the mix of Hindi and English they use",
 }
 INTENTS = ("question", "opinion", "recommendation", "request", "social", "other")
+#: Replies to these say something in the user's name, so something must back them.
+CLAIMING_INTENTS = ("question", "opinion", "recommendation")
+#: Why a run was refused: nothing usable at all, or only unverified mail.
+REFUSED_NOTHING = "nothing"
+REFUSED_MAIL_ONLY = "mail_only"
 LLMCall = Callable[[str], tuple[str, int, int]]
 
 
@@ -107,6 +119,8 @@ class DraftState(TypedDict, total=False):
     language: str | None
     acknowledge_names: list[str]
     intent: str
+    #: Whether the classifier really read the message (``intent`` defaults to "other").
+    classified: bool
     topic: str
     people: list[dict]
     needs_confirmation: list[str]
@@ -120,6 +134,8 @@ class DraftState(TypedDict, total=False):
     tokens_in: int
     tokens_out: int
     result: dict
+    #: REFUSED_NOTHING or REFUSED_MAIL_ONLY: no ``result``, and nothing to deliver.
+    refused: str
 
 
 def _json(raw: str) -> dict:
@@ -206,15 +222,21 @@ def build_graph(deps: DraftDeps):
     def charge(state: DraftState, t_in: int, t_out: int) -> dict:
         return {"tokens_in": state.get("tokens_in", 0) + t_in, "tokens_out": state.get("tokens_out", 0) + t_out}
 
+    def needs_backing(state: DraftState) -> bool:
+        """A failed classifier waves nothing through: a message it could not
+        read may well ask for a claim, and asking again costs the user little."""
+        return not state.get("classified") or state.get("intent") in CLAIMING_INTENTS
+
     def classify_intent(state: DraftState) -> dict:
         message = state["message"]
-        update: dict[str, Any] = {"intent": "other", "topic": message[:300], "people": []}
+        update: dict[str, Any] = {"intent": "other", "classified": False, "topic": message[:300], "people": []}
         try:
             raw, t_in, t_out = deps.classify(CLASSIFY_PROMPT.format(message=message[:6000]))
             update.update(charge(state, t_in, t_out))
             data = _json(raw)
             if data.get("intent") in INTENTS:
                 update["intent"] = data["intent"]
+                update["classified"] = True
             if isinstance(data.get("topic"), str) and data["topic"].strip():
                 update["topic"] = data["topic"].strip()[:300]
             if not state.get("language") and data.get("language") in LANGUAGE_NAMES:
@@ -247,7 +269,15 @@ def build_graph(deps: DraftDeps):
         }
 
     def retrieve_personal_context(state: DraftState) -> dict:
-        return {"facts": deps.facts(state["topic"])}
+        facts = deps.facts(state["topic"])
+        found = (state.get("knowledge") or []) + facts
+        if needs_backing(state) and all(i.unverified for i in found):
+            # Nothing a draft could stand on, so stop before paying for one.
+            return {"facts": facts, "refused": REFUSED_MAIL_ONLY if found else REFUSED_NOTHING}
+        return {"facts": facts}
+
+    def route_after_retrieval(state: DraftState) -> str:
+        return "stop" if state.get("refused") else "go"
 
     def _draft_prompt(state: DraftState) -> str:
         return DRAFT_PROMPT.format(
@@ -309,8 +339,14 @@ def build_graph(deps: DraftDeps):
         return {"candidates": state["candidates"] + [{"draft": raw.strip()}], **charge(state, t_in, t_out)}
 
     def finalize(state: DraftState) -> dict:
+        items = {i.marker: i for i in (state.get("knowledge") or []) + (state.get("facts") or [])}
+        candidates = state["candidates"]
+        if needs_backing(state):
+            # A better-sounding round must not lose the one that cited something.
+            backed = [c for c in candidates if any(m in items and not items[m].unverified for m in cited_markers(c["draft"]))]
+            candidates = backed or candidates
         # Knockout: the best-scored candidate, the latest on a tie.
-        best = max(enumerate(state["candidates"]), key=lambda ic: (_voice(ic[1]), ic[1].get("scores", {}) and ic[1]["scores"]["grounded"] or 0, ic[0]))[1]
+        best = max(enumerate(candidates), key=lambda ic: (_voice(ic[1]), ic[1].get("scores", {}) and ic[1]["scores"]["grounded"] or 0, ic[0]))[1]
         text = best["draft"]
         notes = list(best.get("notes") or [])
         flags: list[str] = []
@@ -328,7 +364,6 @@ def build_graph(deps: DraftDeps):
                 text = drop_sentences_with(text, left)
                 notes.append("A sentence that repeated a source word for word was removed.")
                 flags.append("verbatim_removed")
-        items = {i.marker: i for i in (state.get("knowledge") or []) + (state.get("facts") or [])}
         # ``ref`` is the marker (unique per draft); ``url`` an outside link.
         citations = [
             {"kind": items[m].kind, "ref": m, "label": items[m].label, **({"url": items[m].url} if items[m].url else {})}
@@ -337,10 +372,8 @@ def build_graph(deps: DraftDeps):
         if any(items[c["ref"]].unverified for c in citations):
             flags.append("unverified_source")
             notes.append("Part of this draft comes from an email, and nothing proves who wrote it. Check it before sending.")
-        grounded = [c for c in citations if not items[c["ref"]].unverified]
-        if not grounded and state.get("intent") in ("question", "opinion", "recommendation"):
-            flags.append("ungrounded")
-            notes.append("Nothing in your library or notes backed this reply; check every claim before sending.")
+        if needs_backing(state) and all(items[c["ref"]].unverified for c in citations):
+            return {"refused": REFUSED_MAIL_ONLY if citations else REFUSED_NOTHING, **spent}
         s = best.get("scores")
         return {
             "result": {
@@ -371,7 +404,7 @@ def build_graph(deps: DraftDeps):
     g.add_conditional_edges("classify_intent", route_after_classify, {"stop": END, "go": "retrieve_relevant_knowledge"})
     g.add_edge("retrieve_relevant_knowledge", "retrieve_voice_signals")
     g.add_edge("retrieve_voice_signals", "retrieve_personal_context")
-    g.add_edge("retrieve_personal_context", "draft")
+    g.add_conditional_edges("retrieve_personal_context", route_after_retrieval, {"stop": END, "go": "draft"})
     g.add_edge("draft", "self_critique_against_voice")
     g.add_conditional_edges("self_critique_against_voice", route_after_critique, {"revise": "revise", "finalize": "finalize"})
     g.add_edge("revise", "self_critique_against_voice")
@@ -388,8 +421,9 @@ def run_echo_draft(
     language: str | None = None,
     acknowledge_names: list[str] | None = None,
 ) -> DraftState:
-    """Run the graph. The returned state carries ``needs_confirmation`` (and
-    no ``result``) when a private person must be confirmed first."""
+    """Run the graph. The returned state has no ``result`` when it stopped:
+    it carries ``needs_confirmation`` when a private person must be confirmed
+    first, and ``refused`` when the reply would have nothing behind it."""
     return build_graph(deps).invoke({
         "message": message,
         "audience": audience,

@@ -12,6 +12,8 @@ owns that record (``echo_fact_tombstones``):
   resolved to the importer's name), or is a manual row one of them wants
   (``wanted_by``); a fact the user typed that no source asked for has nothing
   that could bring it back.
+* ``connector_for_fact`` answers who a delete would keep out, for the delete
+  itself and for the Echo page, which says so before the user confirms.
 * ``blocked_keys`` is what the sync and the importer ask before writing.
 * ``list_for_tenant`` and ``clear`` back the Echo page's "Kept deleted" list.
 
@@ -71,15 +73,21 @@ def record(db: Session, tenant_id: str, connector: str, kind: str, key: str) -> 
     return row
 
 
+def connector_for_fact(db: Session, fact: Any) -> str | None:
+    """The connector or importer that deleting ``fact`` would keep out: the one
+    that derived it, or that wants its key if the user wrote the row. None for a
+    fact nothing re-creates, which gets no tombstone."""
+    return connector_of_source(db, fact.tenant_id or fact.user_id, fact.source) or fact.wanted_by
+
+
 def record_for_fact(db: Session, fact: Any) -> EchoFactTombstone | None:
     """Tombstone ``fact`` (a ``PersonalContext`` row about to be deleted by
     the user) when a connector or importer derived it or wants its key. Does
     not commit."""
-    tenant_id = fact.tenant_id or fact.user_id
-    connector = connector_of_source(db, tenant_id, fact.source) or fact.wanted_by
+    connector = connector_for_fact(db, fact)
     if connector is None:
         return None
-    return record(db, tenant_id, connector, fact.kind, fact.key)
+    return record(db, fact.tenant_id or fact.user_id, connector, fact.kind, fact.key)
 
 
 def blocked_keys(db: Session, tenant_id: str, connector: str) -> set[tuple[str, str]]:

@@ -2,7 +2,8 @@
 
 Tier first (403), then every gate as a 409 with its code, a status object and
 words for the user; the private-person confirmation round trip; the daily
-cap as a 429; drafts listed, read and deleted per tenant only.
+cap as a 429; drafts listed, read and deleted per tenant only. T-3.4.1.11: the
+register round trip, approved by saving a version, and the refused reply.
 """
 from __future__ import annotations
 
@@ -79,7 +80,11 @@ def test_an_enabled_user_gets_a_cited_draft(unauthenticated_client, db, fake, mo
     st = unauthenticated_client.get(f"{DRAFT}/status", headers=h).json()
     assert st["enabled"] is True and st["state"] == "enabled" and st["reasons"] == []
 
-    r = unauthenticated_client.post(DRAFT, json={"message": "Who really pays for tariffs?", "register": "casual", "audience": "my brother"}, headers=h)
+    r = unauthenticated_client.post(
+        DRAFT,
+        json={"message": "Who really pays for tariffs?", "register": "casual", "acknowledge_register": "casual", "audience": "my brother"},
+        headers=h,
+    )
     assert r.status_code == 201, r.text
     body = r.json()
     assert body["draft"] == "Mostly the importer pays first. Then the buyer."
@@ -100,6 +105,68 @@ def test_a_private_person_round_trip(unauthenticated_client, db, fake, monkeypat
 
     r = unauthenticated_client.post(DRAFT, json={"message": "Priya asked about dinner", "acknowledge_names": ["Priya"]}, headers=h)
     assert r.status_code == 201
+
+
+def test_a_register_round_trip_from_the_stop_to_the_approval(unauthenticated_client, db, fake, monkeypatch):
+    user, h = _user(db)
+    _enable(db, user, monkeypatch)
+    casual = {"message": "Who pays?", "register": "casual"}
+
+    r = unauthenticated_client.post(DRAFT, json=casual, headers=h)
+    assert r.status_code == 409
+    detail = r.json()["detail"]
+    assert detail["code"] == "register_needs_approval" and detail["register"] == "casual"
+    assert "confirm this draft and save your version" in detail["message"]
+    assert "calls" not in fake, "the stop came before any model was built"
+    assert unauthenticated_client.get(f"{DRAFT}/status", headers=h).json()["drafts_today"] == 0
+
+    first = unauthenticated_client.post(DRAFT, json={**casual, "acknowledge_register": "casual"}, headers=h)
+    assert first.status_code == 201 and first.json()["register"] == "casual"
+    assert unauthenticated_client.post(DRAFT, json=casual, headers=h).status_code == 409, "written is not approved"
+
+    saved = unauthenticated_client.post(f"/api/v1/echo/drafts/{first.json()['id']}/feedback", json={"final_text": "Mine."}, headers=h)
+    assert saved.status_code == 200
+    assert unauthenticated_client.post(DRAFT, json=casual, headers=h).status_code == 201, "now it needs no go-ahead"
+
+    other = unauthenticated_client.post(DRAFT, json={"message": "Who pays?", "register": "public"}, headers=h)
+    assert other.status_code == 409 and other.json()["detail"]["register"] == "public"
+
+
+def test_a_refused_reply_says_what_would_let_it_go_ahead(unauthenticated_client, db, fake, monkeypatch):
+    user, h = _user(db)
+    _enable(db, user, monkeypatch)
+    fake["kw"] = {"drafts": ["I think it is the buyer."]}
+
+    r = unauthenticated_client.post(DRAFT, json={"message": "Who pays?"}, headers=h)
+
+    assert r.status_code == 409
+    detail = r.json()["detail"]
+    assert detail["code"] == "ungrounded"
+    assert detail["message"].startswith("Echo did not write this reply: nothing in your library")
+    assert "add a source on this to your library or write a note" in detail["message"]
+    assert "draft" not in detail, "the text is not delivered"
+    assert unauthenticated_client.get("/api/v1/echo/drafts", headers=h).json()["items"] == []
+    assert unauthenticated_client.get(f"{DRAFT}/status", headers=h).json()["drafts_today"] == 1
+
+
+def test_there_is_no_go_ahead_past_a_refused_reply(unauthenticated_client, db, fake, monkeypatch):
+    user, h = _user(db)
+    _enable(db, user, monkeypatch)
+    fake["kw"] = {"knowledge": [], "facts": []}
+    body = {"message": "Who pays?", "register": "casual", "acknowledge_register": "casual", "acknowledge_names": ["Who"]}
+    r = unauthenticated_client.post(DRAFT, json=body, headers=h)
+    assert r.status_code == 409 and r.json()["detail"]["code"] == "ungrounded"
+    assert unauthenticated_client.post(DRAFT, json={**body, "acknowledge_ungrounded": True}, headers=h).status_code == 422
+    assert unauthenticated_client.get(f"{DRAFT}/status", headers=h).json()["drafts_today"] == 0, "stopped before the draft model"
+
+
+def test_a_refused_reply_is_not_a_register_approval(unauthenticated_client, db, fake, monkeypatch):
+    user, h = _user(db)
+    _enable(db, user, monkeypatch)
+    fake["kw"] = {"drafts": ["I think it is the buyer."]}
+    body = {"message": "Who pays?", "register": "casual", "acknowledge_register": "casual"}
+    assert unauthenticated_client.post(DRAFT, json=body, headers=h).json()["detail"]["code"] == "ungrounded"
+    assert echo_draft_service.approved_registers(db, user.id) == set()
 
 
 def test_the_daily_cap_is_a_429(unauthenticated_client, db, fake, monkeypatch):
@@ -130,7 +197,11 @@ def test_drafts_are_listed_read_and_deleted_per_tenant(unauthenticated_client, d
 def test_the_request_is_validated(unauthenticated_client, db, fake, monkeypatch):
     user, h = _user(db)
     _enable(db, user, monkeypatch)
-    for body in ({"message": ""}, {"message": "x", "register": "shouty"}, {"message": "x", "language": "fr"}, {"message": "x", "send": True}):
+    bodies = (
+        {"message": ""}, {"message": "x", "register": "shouty"}, {"message": "x", "language": "fr"},
+        {"message": "x", "send": True}, {"message": "x", "acknowledge_register": "shouty"},
+    )
+    for body in bodies:
         assert unauthenticated_client.post(DRAFT, json=body, headers=h).status_code == 422, body
 
 

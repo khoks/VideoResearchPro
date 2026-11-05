@@ -37,6 +37,9 @@ npm run build      # outputs to ./dist
 npm run preview    # serves dist/ locally to verify
 ```
 
+CI runs the same build on every pull request (the `marketing` job in
+`.github/workflows/ci.yml`).
+
 ## Sections
 
 Hero, how it differs from Wikipedia, the source-types matrix, how it works, install instructions, the SaaS waitlist hook (a disabled call to action for now) and the footer. The board's [E-2.5](../docs/initiatives.md#e-25--marketing-landing-page-warm-editorial) has the history.

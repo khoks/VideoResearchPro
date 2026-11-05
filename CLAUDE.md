@@ -76,6 +76,9 @@ cd frontend && npm run build
 # Browser extension's logic (S-3.7.3; Node's built-in runner, no install)
 cd extension && npm test
 
+# Marketing site (T-2.8.6; `npm install` once, CI uses `npm ci`)
+cd marketing && npm run build
+
 # Markdown anchor links (T-4.8.5): a dry run by default, --check as in CI, --write to repair
 cd backend && ./venv/Scripts/python scripts/fix_anchor_links.py --check
 ```

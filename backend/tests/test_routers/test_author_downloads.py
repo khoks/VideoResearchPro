@@ -92,12 +92,12 @@ def test_binary_artifact_downloads_with_its_media_type(unauthenticated_client, d
     assert r.headers["content-security-policy"] == FILE_POLICY
 
 
-def test_book_text_and_extra_formats(unauthenticated_client, db, monkeypatch):
+def test_book_text_and_extra_formats(unauthenticated_client, db, monkeypatch, tmp_path):
     from app.services import report_service
 
     monkeypatch.setattr(report_service, "get_report_html", lambda p: "<h1>T</h1><p>Body.</p>")
     user, headers = _pro(db, "d2@x.com")
-    job = Job(id=str(uuid.uuid4()), tenant_id=user.id, job_type="topic", status="completed", topic="T", report_path="/r.html")
+    job = Job(id=str(uuid.uuid4()), tenant_id=user.id, job_type="topic", status="completed", topic="T", report_path=str(tmp_path / "r.html"))
     db.add(job)
     db.commit()
     out = unauthenticated_client.post("/api/v1/author/outputs?sync=true", headers=headers,

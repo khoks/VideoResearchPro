@@ -36,6 +36,7 @@ from app.agents.prompts import author_prompts
 from app.services import cost_estimator, llm_service
 from app.services.llm_routing import resolve_config
 from app.services.output_service import OutputError
+from app.services.outputters import book_html
 
 logger = logging.getLogger(__name__)
 
@@ -70,7 +71,13 @@ _FOOTNOTE_REF = re.compile(r"\[\^[^\]\s]+\]")
 # Line-anchored patterns use [ \t], never \s: \s matches the newline, so a
 # pattern anchored on a blank line would swallow it and merge paragraphs.
 _HEADING_LINE = re.compile(r"^[ \t]{0,3}#{1,6}[ \t]+", re.M)
-_QUOTE_MARK = re.compile(r"^[ \t]*>[ \t]?", re.M)
+# What can open a line of model prose and make a block of it: a quote mark and
+# ATX heading marks, in any number and order, because removing one exposes the
+# next (`> ## Endnotes` is an h2 once the `>` has gone). The indent is not the
+# parser's: `clean_prose` strips every paragraph, so a space of any kind and
+# width in front of a mark goes too. `[^\S\n]` is \s without the newline.
+_LINE_MARKS = re.compile(r"^[^\S\n]*(?:(?:>|#{1,6}(?=[^\S\n]|$))[^\S\n]*)+", re.M)
+_SETEXT_UNDERLINE = re.compile(r"^[^\S\n]*(?:=+|-+)[^\S\n]*$", re.M)
 _TABLE_ROW = re.compile(r"^[ \t]*\|.*\|[ \t]*$", re.M)
 _HTML_TAG = re.compile(r"</?[A-Za-z][^>\n]*>")
 _FENCE = re.compile(r"^\s*(```|~~~)")
@@ -230,18 +237,22 @@ def level_from(params: dict[str, Any]) -> str:
 
 def clean_prose(text: Any, max_words: int) -> str:
     """Model prose made safe to splice into the manuscript: no links (kept as
-    text), no footnote markers, no headings, no HTML, no code fences,
-    paragraphs kept, and at most ``max_words`` words (cut at a sentence end
-    when one is near)."""
+    text), no footnote markers, no headings of either form (their text
+    stays), no HTML, no code fences, paragraphs kept, and at most
+    ``max_words`` words (cut at a sentence end when one is near). A line of
+    only `-` or `=` goes whatever it follows: on its own it is a rule, and
+    framing prose has no use for one."""
     if not isinstance(text, str):
         return ""
-    s = text.replace("\r\n", "\n")
+    # As the renderer will read it: a bare `\r` ends a line there, and the
+    # characters it drops would otherwise hide a mark at the start of one.
+    s = re.sub(r"\r\n?", "\n", book_html.sanitise(text))
     s = re.sub(r"```.*?```", "", s, flags=re.S)
     s = _LINK.sub(r"\1", s)
     s = _FOOTNOTE_REF.sub("", s)
     s = _HTML_TAG.sub("", s)
-    s = _HEADING_LINE.sub("", s)
-    s = _QUOTE_MARK.sub("", s)
+    s = _LINE_MARKS.sub("", s)
+    s = _SETEXT_UNDERLINE.sub("", s)
     s = _TABLE_ROW.sub("", s)
     paragraphs = [re.sub(r"[ \t]+", " ", p).strip() for p in re.split(r"\n\s*\n", s)]
     paragraphs = [re.sub(r"\s*\n\s*", " ", p) for p in paragraphs if p]

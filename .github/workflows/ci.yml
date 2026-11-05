@@ -4,7 +4,8 @@
 # No job needs a secret: the backend suite stubs every LLM, Celery, Redis and
 # the startup probes (backend/tests/conftest.py), the device tests answer every
 # /api/v1 call from frontend/tests/fixtures/api, and the only downloads are
-# public packages, the public embedding model and Playwright's browsers.
+# public packages, the public embedding model, tiktoken's public encoding and
+# Playwright's browsers.
 #
 # Requiring these checks before a merge is a branch-protection setting on
 # GitHub, which the repository owner turns on; this file does not change it.
@@ -44,7 +45,8 @@ jobs:
     env:
       # Bump the suffix to discard a bad cache entry: a key is never
       # overwritten. v2: the download step also fetches Chroma's ONNX model.
-      MODEL_CACHE_KEY: models-paraphrase-multilingual-MiniLM-L12-v2-v2
+      # v3: and tiktoken's encoding.
+      MODEL_CACHE_KEY: models-paraphrase-multilingual-MiniLM-L12-v2-v3
     steps:
       - uses: actions/checkout@v7
 
@@ -68,12 +70,15 @@ jobs:
       # The multilingual embedder (EMBEDDING_MODEL_NAME) is about 470 MB from
       # the Hugging Face hub; Chroma keeps its own default ONNX model
       # (all-MiniLM-L6-v2, about 80 MB) for collections created without an
-      # embedding function, which some tests do. One step downloads both, and
-      # the cache is saved right after it succeeds, before the tests: a cache
-      # key is immutable, so a save after a cancelled or failed download would
-      # pin a partial copy, and every later run would restore it, skip this
-      # step and fetch the missing models at test time. What the tests do
-      # never changes what is saved, and a red test run still keeps the cache.
+      # embedding function, which some tests do; tiktoken keeps its encoding
+      # (cl100k_base, about 1.7 MB) in the folder tests/tiktoken_cache.py names,
+      # because its default is the temp directory, which a runner starts empty
+      # (T-8.8.6.1). One step downloads all three, and the cache is saved right
+      # after it succeeds, before the tests: a cache key is immutable, so a
+      # save after a cancelled or failed download would pin a partial copy,
+      # and every later run would restore it, skip this step and fetch the
+      # missing models at test time. What the tests do never changes what is
+      # saved, and a red test run still keeps the cache.
       - name: Restore model caches
         id: models
         uses: actions/cache/restore@v6
@@ -81,14 +86,16 @@ jobs:
           path: |
             ~/.cache/huggingface
             ~/.cache/chroma
+            ~/.cache/tiktoken
           key: ${{ env.MODEL_CACHE_KEY }}
 
-      - name: Download the embedding models
+      - name: Download the models and the tiktoken encoding
         id: download
         if: steps.models.outputs.cache-hit != 'true'
         run: |
           python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')"
           python -c "from chromadb.utils.embedding_functions import DefaultEmbeddingFunction; DefaultEmbeddingFunction()(['warm up'])"
+          python -m tests.tiktoken_cache
 
       - name: Save model caches
         if: steps.download.outcome == 'success'
@@ -97,6 +104,7 @@ jobs:
           path: |
             ~/.cache/huggingface
             ~/.cache/chroma
+            ~/.cache/tiktoken
           key: ${{ env.MODEL_CACHE_KEY }}
 
       # -rs prints each skipped test's reason, so a reviewer can see what the
@@ -105,6 +113,8 @@ jobs:
       # step above, so a load need not ask the hub, and a DNS drop cannot fail
       # a test (T-8.8.4.7). Here only: the download step needs the hub. A bad
       # cache fails these tests loudly instead of downloading at test time.
+      # tiktoken has no such switch: conftest points it at the same cached
+      # folder, and a test fails on a runner when the encoding is not there.
       - name: Run pytest
         env:
           HF_HUB_OFFLINE: "1"
@@ -178,6 +188,35 @@ jobs:
           node-version: "22"
 
       - run: npm test
+
+  marketing:
+    name: Marketing site build (Astro)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: marketing
+    env:
+      ASTRO_TELEMETRY_DISABLED: "1"
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: marketing/package-lock.json
+
+      - run: npm ci
+
+      - name: Build the site
+        run: npm run build
+
+      # A build can pass with a page that lost its content or a public/ file
+      # gone: Astro does not follow a link to public/, and BaseLayout links
+      # /favicon.svg (T-2.8.6; test_brand_assets.py reads the same link).
+      - name: Check the page and its favicon were built
+        run: test -s dist/index.html && test -s dist/favicon.svg
 
   device:
     name: Device tests (Playwright)

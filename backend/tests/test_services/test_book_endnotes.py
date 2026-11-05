@@ -169,13 +169,13 @@ def test_toc_links_resolve_for_devanagari_and_punctuated_titles(db, tmp_path):
     _assert_no_dead_links(out.content_text)
 
 
-def test_a_book_without_citations_has_no_endnotes_section(db, monkeypatch):
+def test_a_book_without_citations_has_no_endnotes_section(db, monkeypatch, tmp_path):
     from app.services import report_service
 
     monkeypatch.setattr(report_service, "get_report_html", lambda p: "<h1>T</h1><p>No citations here.</p>")
     user = auth_service.create_user(db, email="en6@x.com", password="pw" * 6)
     job = Job(id=str(uuid.uuid4()), tenant_id=user.id, job_type="topic", status="completed", topic="Plain",
-              report_path="/r.html")
+              report_path=str(tmp_path / "r.html"))
     db.add(job)
     db.commit()
     out = _generate(db, user, [job.id])

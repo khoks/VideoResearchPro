@@ -28,13 +28,13 @@ def worker_session(db):
         yield db
 
 
-def _book_row(db, monkeypatch) -> Output:
+def _book_row(db, monkeypatch, tmp_path) -> Output:
     from app.services import report_service
 
     monkeypatch.setattr(report_service, "get_report_html", lambda p: "<h1>T</h1><p>Body.</p>")
     user = auth_service.create_user(db, email=f"{uuid.uuid4().hex[:6]}@x.com", password="pw" * 6)
     job = Job(id=str(uuid.uuid4()), job_type="topic", status="completed", topic="T",
-              tenant_id=user.id, report_path="/r.html")
+              tenant_id=user.id, report_path=str(tmp_path / "r.html"))
     db.add(job)
     db.commit()
     return output_service.create_output(db, user_id=user.id, kind="book", title="B",
@@ -45,8 +45,8 @@ def test_task_is_registered_under_its_name():
     assert "author.generate_output" in celery_app.tasks
 
 
-def test_task_generates_the_output(worker_session, monkeypatch):
-    row = _book_row(worker_session, monkeypatch)
+def test_task_generates_the_output(worker_session, monkeypatch, tmp_path):
+    row = _book_row(worker_session, monkeypatch, tmp_path)
     assert output_tasks.generate_output.run(row.id) == "completed"
     worker_session.expire_all()
     done = worker_session.get(Output, row.id)
@@ -54,8 +54,8 @@ def test_task_generates_the_output(worker_session, monkeypatch):
     assert done.progress_pct == 100
 
 
-def test_task_skips_a_cancelled_or_finished_row(worker_session, monkeypatch):
-    row = _book_row(worker_session, monkeypatch)
+def test_task_skips_a_cancelled_or_finished_row(worker_session, monkeypatch, tmp_path):
+    row = _book_row(worker_session, monkeypatch, tmp_path)
     row.status = "cancelled"
     worker_session.commit()
     assert output_tasks.generate_output.run(row.id) == "cancelled"

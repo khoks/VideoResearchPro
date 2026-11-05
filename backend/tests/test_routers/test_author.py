@@ -201,12 +201,12 @@ def test_run_generation_book_includes_qa_section(db, monkeypatch):
     assert "Q1?" in row.content_text
 
 
-def test_run_generation_book_includes_toc(db, monkeypatch):
+def test_run_generation_book_includes_toc(db, monkeypatch, tmp_path):
     user = auth_service.create_user(db, email="btoc@x.com", password="pw" * 6)
     j1 = _make_job(db, user.id, "First Topic")
     j2 = _make_job(db, user.id, "Second Topic")
-    j1.report_path = "/r1.html"
-    j2.report_path = "/r2.html"
+    j1.report_path = str(tmp_path / "r1.html")
+    j2.report_path = str(tmp_path / "r2.html")
     db.commit()
 
     from app.services import report_service
@@ -305,11 +305,11 @@ def test_create_output_no_outputter_returns_501(unauthenticated_client, db):
 
 
 def test_create_book_returns_completed_output(
-    unauthenticated_client, db, monkeypatch
+    unauthenticated_client, db, monkeypatch, tmp_path
 ):
     user, headers = _pro_headers(db, "cb@x.com")
     job = _make_job(db, user.id, "Sample Topic")
-    job.report_path = "/r.html"
+    job.report_path = str(tmp_path / "r.html")
     db.commit()
 
     from app.services import report_service
@@ -332,11 +332,11 @@ def test_create_book_returns_completed_output(
 
 
 def test_get_output_content_returns_markdown(
-    unauthenticated_client, db, monkeypatch
+    unauthenticated_client, db, monkeypatch, tmp_path
 ):
     user, headers = _pro_headers(db, "gc@x.com")
     job = _make_job(db, user.id, "T")
-    job.report_path = "/r.html"
+    job.report_path = str(tmp_path / "r.html")
     db.commit()
     from app.services import report_service
     monkeypatch.setattr(report_service, "get_report_html", lambda p: "<p>Body.</p>")
@@ -356,11 +356,11 @@ def test_get_output_content_returns_markdown(
     assert "# T" in r.text
 
 
-def test_get_output_404_for_other_user(unauthenticated_client, db, monkeypatch):
+def test_get_output_404_for_other_user(unauthenticated_client, db, monkeypatch, tmp_path):
     a, headers_a = _pro_headers(db, "iso-a@x.com")
     b, headers_b = _pro_headers(db, "iso-b@x.com")
     job = _make_job(db, a.id, "T")
-    job.report_path = "/r.html"
+    job.report_path = str(tmp_path / "r.html")
     db.commit()
     from app.services import report_service
     monkeypatch.setattr(report_service, "get_report_html", lambda p: "<p>X</p>")
@@ -379,10 +379,10 @@ def test_get_output_404_for_other_user(unauthenticated_client, db, monkeypatch):
     assert r.status_code == 404
 
 
-def test_delete_output_round_trip(unauthenticated_client, db, monkeypatch):
+def test_delete_output_round_trip(unauthenticated_client, db, monkeypatch, tmp_path):
     user, headers = _pro_headers(db, "del@x.com")
     job = _make_job(db, user.id, "T")
-    job.report_path = "/r.html"
+    job.report_path = str(tmp_path / "r.html")
     db.commit()
     from app.services import report_service
     monkeypatch.setattr(report_service, "get_report_html", lambda p: "<p>X</p>")
@@ -406,13 +406,13 @@ def test_delete_output_round_trip(unauthenticated_client, db, monkeypatch):
     assert r.status_code == 404
 
 
-def test_list_outputs_returns_only_current_user(unauthenticated_client, db, monkeypatch):
+def test_list_outputs_returns_only_current_user(unauthenticated_client, db, monkeypatch, tmp_path):
     a, headers_a = _pro_headers(db, "list-a@x.com")
     b, headers_b = _pro_headers(db, "list-b@x.com")
     job_a = _make_job(db, a.id, "A topic")
     job_b = _make_job(db, b.id, "B topic")
-    job_a.report_path = "/a.html"
-    job_b.report_path = "/b.html"
+    job_a.report_path = str(tmp_path / "a.html")
+    job_b.report_path = str(tmp_path / "b.html")
     db.commit()
     from app.services import report_service
     monkeypatch.setattr(report_service, "get_report_html", lambda p: "<p>X</p>")

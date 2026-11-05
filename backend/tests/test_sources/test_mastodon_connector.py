@@ -161,15 +161,90 @@ def test_search_returns_empty_when_normalised_query_is_blank(mast, fake_client):
     fake_client.timeline_tag.assert_not_called()
 
 
-def test_search_returns_empty_when_timeline_raises(mast, fake_client):
-    """Connector failures during search must degrade to empty list — the
-    dispatcher catches connector errors but search() itself shouldn't bubble."""
+def test_search_lets_a_failure_through_when_nothing_was_found(mast, fake_client):
+    """An empty list means nothing was found, so a failure stays raised for
+    the dispatcher to report (T-1.5.14.1)."""
     fake_client.timeline_tag.side_effect = RuntimeError("instance down")
     with patch.object(
         mastodon_connector_mod.mastodon_client, "get_client", return_value=fake_client
+    ), pytest.raises(RuntimeError):
+        mast.search("anything")
+
+
+def _tagged(status_id: int) -> dict:
+    return {"id": str(status_id), "content": f"post {status_id}", "url": f"https://m.example/{status_id}"}
+
+
+def _tags_tried(fake_client) -> list[str]:
+    return [call.args[0] for call in fake_client.timeline_tag.call_args_list]
+
+
+def test_a_phrase_nobody_tagged_falls_back_to_the_tags_inside_it(mast, fake_client):
+    """T-1.5.14.2: measured on 2026-11-04, #rareearthsupplychains has no
+    posts and #rareearth and #supplychains do."""
+    tags = {"rareearth": [_tagged(1), _tagged(2)], "supplychains": [_tagged(2), _tagged(3)]}
+    fake_client.timeline_tag.side_effect = lambda tag, limit: tags.get(tag, [])
+    with patch.object(
+        mastodon_connector_mod.mastodon_client, "get_client", return_value=fake_client
     ):
-        out = mast.search("anything")
-    assert out == []
+        out = mast.search("rare earth supply chains", limit=10)
+
+    assert [c.source_id for c in out] == ["mastodon:1", "mastodon:2", "mastodon:3"], "merged, one of each"
+    assert _tags_tried(fake_client) == [
+        "rareearthsupplychains",
+        "rareearth",
+        "earthsupply",
+        "supplychains",
+    ], "a single word is not tried once a phrase has answered"
+
+
+def test_a_tag_that_fills_the_limit_is_the_only_request(mast, fake_client):
+    fake_client.timeline_tag.return_value = [_tagged(i) for i in range(5)]
+    with patch.object(
+        mastodon_connector_mod.mastodon_client, "get_client", return_value=fake_client
+    ):
+        out = mast.search("nuclear power", limit=5)
+    assert len(out) == 5
+    fake_client.timeline_tag.assert_called_once_with("nuclearpower", limit=5)
+
+
+def test_single_words_are_the_last_resort_longest_first(mast, fake_client):
+    tags = {"nuclear": [_tagged(1)]}
+    fake_client.timeline_tag.side_effect = lambda tag, limit: tags.get(tag, [])
+    with patch.object(
+        mastodon_connector_mod.mastodon_client, "get_client", return_value=fake_client
+    ):
+        out = mast.search("nuclear power", limit=5)
+    assert [c.source_id for c in out] == ["mastodon:1"]
+    assert _tags_tried(fake_client) == ["nuclearpower", "nuclear", "power"]
+
+
+def test_a_sentence_never_becomes_one_long_tag(mast, fake_client):
+    fake_client.timeline_tag.return_value = []
+    with patch.object(
+        mastodon_connector_mod.mastodon_client, "get_client", return_value=fake_client
+    ):
+        mast.search("Why did the Roman Empire fall and what can we learn from it today?", limit=5)
+    tried = _tags_tried(fake_client)
+    assert "romanempire" in tried
+    assert all(len(tag) <= 30 for tag in tried)
+    assert len(tried) <= 8, "a search stays within its request budget"
+
+
+def test_a_failure_after_a_hit_keeps_the_hit(mast, fake_client):
+    def answer(tag, limit):
+        if tag == "rareearth":
+            return [_tagged(1)]
+        if tag == "rareearthsupplychains":
+            return []
+        raise RuntimeError("instance down")
+
+    fake_client.timeline_tag.side_effect = answer
+    with patch.object(
+        mastodon_connector_mod.mastodon_client, "get_client", return_value=fake_client
+    ):
+        out = mast.search("rare earth supply chains", limit=5)
+    assert [c.source_id for c in out] == ["mastodon:1"]
 
 
 def test_search_published_at_is_utc(mast, fake_client):

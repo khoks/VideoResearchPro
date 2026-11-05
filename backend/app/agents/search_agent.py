@@ -43,6 +43,7 @@ from app.agents.prompts.search_prompts import (
 from app.agents.state import SearchAgentState
 from app.services import language_service, temporal_service, youtube_service
 from app.services.llm_service import get_llm_for, response_text
+from app.services.quota_service import QuotaExceededError
 from app.sources import connector_for
 from app.sources.types import Candidate, SourceMetadata
 from app.utils.youtube_helpers import format_duration
@@ -377,11 +378,17 @@ def _run_broad_searches(queries: list[str], target: int) -> dict[str, dict]:
     per_query_max = max(target * 3, 50)
     connector = connector_for("video")
     all_videos: dict[str, dict] = {}
+    failure: Exception | None = None
     for query in queries:
         try:
             candidates = connector.search(query, limit=per_query_max)
-        except Exception:
+        except QuotaExceededError as e:
+            # Every later query would get the same answer.
+            failure = e
+            break
+        except Exception as e:
             logger.exception("broad search for %r failed; skipping", query)
+            failure = e
             continue
         for c in candidates:
             vid = c.source_id
@@ -392,6 +399,11 @@ def _run_broad_searches(queries: list[str], target: int) -> dict[str, dict]:
                 all_videos[vid] = v
         if len(all_videos) >= target * 5:
             break
+    # With nothing found a failure stays raised, so the run can tell "YouTube
+    # refused" from "nothing found" (T-1.5.14.1). With something found, the
+    # search goes on with what it has.
+    if failure is not None and not all_videos:
+        raise failure
     return all_videos
 
 

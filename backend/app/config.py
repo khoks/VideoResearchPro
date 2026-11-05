@@ -81,6 +81,11 @@ class Settings(BaseSettings):
     # Max Whisper transcriptions per job — bounds worst-case OpenAI spend
     # when a block storm makes Whisper the primary path. 0 disables Whisper.
     WHISPER_MAX_PER_JOB: int = 50
+    # T-1.7.1.1: minutes of audio per job, because one transcription can be a
+    # 3-minute clip or a 76-minute show. Counted from each recording's whole
+    # length; once spent, no further recording goes to Whisper. 0 = no minute
+    # cap, so nothing changes until an operator sets one.
+    WHISPER_MAX_MINUTES_PER_JOB: int = 0
 
     # Reddit (S-1.5.1) — read-only access via script-app OAuth (client_credentials).
     # The token is for the *app*, not the user; suitable for reading public
@@ -140,7 +145,10 @@ class Settings(BaseSettings):
     # rate limits we can swap to an authenticated PDS endpoint by
     # adding a token-fetching path. Operators running a private
     # Bluesky PDS can override the base URL.
-    BLUESKY_XRPC_BASE: str = "https://public.api.bsky.app"
+    # `api.bsky.app`, because the CDN in front of `public.api.bsky.app`
+    # refuses searchPosts (T-1.5.14.1). Blank means "not set up": the form
+    # stops offering Bluesky and `POST /jobs` refuses it (T-1.5.13.6).
+    BLUESKY_XRPC_BASE: str = "https://api.bsky.app"
     BLUESKY_USER_AGENT: str = (
         "pratidhvani/0.1 (+https://github.com/anthropics/pratidhvani)"
     )

@@ -182,8 +182,9 @@ def test_search_skips_results_without_url(article, fake_client, monkeypatch):
     assert out[0].source_url == "https://example.com/real"
 
 
-def test_search_returns_empty_when_brave_raises(article, fake_client, monkeypatch):
-    """Network errors / rate limits / 5xx must degrade to empty list."""
+def test_search_lets_a_brave_failure_through(article, fake_client, monkeypatch):
+    """An empty list means nothing was found, so a failure stays raised for
+    the dispatcher to report (T-1.5.14.1)."""
     monkeypatch.setattr(
         article_connector_mod.settings, "BRAVE_SEARCH_API_KEY", "fake-key"
     )
@@ -192,9 +193,8 @@ def test_search_returns_empty_when_brave_raises(article, fake_client, monkeypatc
         article_connector_mod.article_client,
         "get_client",
         return_value=fake_client,
-    ):
-        out = article.search("anything")
-    assert out == []
+    ), pytest.raises(httpx.ConnectError):
+        article.search("anything")
 
 
 def test_search_caps_at_limit(article, fake_client, monkeypatch):

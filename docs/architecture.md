@@ -342,7 +342,9 @@ Topic jobs carry a `source_types_json` column — a JSON-encoded array of `sourc
 
 Both paths converge into the same `awaiting_approval` flow. The combined candidate count drives the user-visible "Found N candidates" message; an empty result across all sources fails the job with a clear "No candidates for source_types=[...]" error rather than dropping the user onto an empty approval list.
 
-Per-source-type errors (connector raised, missing connector, NotImplementedError for PDF-style sources) are captured per source in `DispatchResult.errors_by_source_type` and logged; they don't fail the job — other source types' candidates still flow through.
+Per-source-type errors (connector raised, missing connector) are captured per source in `DispatchResult.errors_by_source_type` and `failures_by_source_type`; they don't fail the job — other source types' candidates still flow through. A connector's `search()` raises when the service failed, because an empty list means "nothing found", and the run says which it was (`run_notes`, S-1.5.14). A 401 or 403 also holds the source off the submit form (`source_refusal_service`). `NotImplementedError` from a PDF-style source counts as zero candidates.
+
+The non-video sources search before YouTube, without fetching text, so what they have decides the shares: `job_source_types.redistribute` gives a share a source cannot fill to the sources that can use it, and YouTube takes its part as a bigger target on its one search, within `YOUTUBE_DAILY_QUOTA`. Text is fetched afterwards, for what the run keeps.
 
 The number of results is the whole run's budget, shared across its sources, so the tier cap bounds the run. Nothing goes to Whisper before approval: a podcast episode with no transcript in its feed is transcribed only after it is approved, and counts against `WHISPER_MAX_PER_JOB`. Each approved document is fetched once, because the text found during the search is reused at extraction.
 

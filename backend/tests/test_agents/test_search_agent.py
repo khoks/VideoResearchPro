@@ -597,6 +597,20 @@ def test_run_search_agent_end_to_end(fake_videos):
     assert mock_get_llm.call_count == 2
 
 
+def test_a_refusal_comes_out_of_the_whole_graph_as_itself(fake_videos):
+    """T-1.5.14.1: the run tells a spent quota from an empty result by its
+    type, so it has to survive LangGraph. The job's handler catches this
+    exception and no other."""
+    from app.services.quota_service import QuotaExceededError
+
+    with patch.object(search_agent, "get_llm_for") as mock_get_llm, \
+         patch.object(search_agent.youtube_service, "search_videos", side_effect=QuotaExceededError()):
+        mock_get_llm.side_effect = [_fake_llm_returning(_plan_payload(["q1", "q2"]))]
+
+        with pytest.raises(QuotaExceededError):
+            search_agent.run_search_agent(topic="quantum computing", num_videos=2)
+
+
 def test_run_search_agent_resolves_preferred_channels(fake_videos):
     """End-to-end with preferred_channels supplied: resolve_channel_id is
     called for each hint, and their uploads show up as preferred-sourced."""

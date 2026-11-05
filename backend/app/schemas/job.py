@@ -143,6 +143,9 @@ class JobResponse(BaseModel):
     template_version: int | None = None
     search_queries_used: list[str] | None = None
     channel_list_resolved: list[dict] | None = None
+    # S-1.5.14: what the run has to say about its sources and limits, each
+    # {kind, text} and sometimes source_type. Empty on a run with nothing to say.
+    run_notes: list[dict] = Field(default_factory=list)
     progress_pct: int
     progress_message: str | None = None
     error_message: str | None = None

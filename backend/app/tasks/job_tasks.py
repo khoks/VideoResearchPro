@@ -5,6 +5,8 @@ import sys
 import time
 from datetime import datetime, timezone
 
+from googleapiclient.errors import HttpError
+
 from app.config import settings
 from app.database import SessionLocal
 from app.models.channel import Channel
@@ -17,10 +19,14 @@ from app.services import (
     language_mix_service,
     metadata_backfill_service,
     progress_service,
+    run_notes,
+    source_failure,
+    source_refusal_service,
     temporal_service,
     usage_service,
     youtube_service,
 )
+from app.services.quota_service import QuotaExceededError as YouTubeQuotaExceededError
 from app.sources import connector_for
 from app.sources.types import Candidate, SourceMetadata
 from app.tasks.celery_app import celery_app
@@ -384,6 +390,46 @@ _WHISPER_FALLBACK_SOURCE_TYPES = frozenset({"video", "podcast_episode"})
 _WHISPER_TEXT_SOURCES = frozenset({"whisper", "podcast_whisper"})
 
 
+class WhisperMinutes:
+    """``WHISPER_MAX_MINUTES_PER_JOB`` for one run (T-1.7.1.1).
+
+    ``WHISPER_MAX_PER_JOB`` counts recordings, and one recording can be a
+    3-minute clip or a 76-minute show. This counts their length. A recording
+    is charged when its transcript comes back, so one that takes the run past
+    the limit finishes, and nothing is sent after it.
+    """
+
+    def __init__(self) -> None:
+        self.cap_minutes = max(0, settings.WHISPER_MAX_MINUTES_PER_JOB)
+        self.used_seconds = 0.0
+        self.skipped = 0
+
+    @property
+    def spent(self) -> bool:
+        return self.cap_minutes > 0 and self.used_seconds >= self.cap_minutes * 60
+
+    def charge(self, document: Document, extracted) -> None:
+        """Add one transcribed recording, by its whole length.
+
+        The larger of what the source declares and where the transcript ends:
+        a split file's chunks are merged onto one timeline, so its last
+        segment ends where the audio does, and Whisper is paid for silence
+        that leaves no segment. Never the sum of the chunks, which counts each
+        overlap twice.
+        """
+        heard = max(
+            (float(s.get("start") or 0) + float(s.get("duration") or 0) for s in extracted.segments),
+            default=0.0,
+        )
+        self.used_seconds += max(heard, float(document.duration_seconds or 0))
+
+    def note(self) -> dict | None:
+        """What the run should say, if the limit cost it anything."""
+        if not self.skipped:
+            return None
+        return run_notes.whisper_minutes_spent(self.used_seconds, self.cap_minutes, self.skipped)
+
+
 def _cache_document_text(db, document: Document, extracted) -> None:
     """Keep a non-video document's fetched segments in ``transcript_cache``.
 
@@ -428,62 +474,37 @@ def _cache_document_text(db, document: Document, extracted) -> None:
         row.fetched_at = datetime.now(timezone.utc)
 
 
-def _dispatch_and_store_non_video_sources(
-    db,
-    job: Job,
-    *,
-    source_types: list[str],
-    limit_per_type: int = 10,
-    limits: dict[str, int] | None = None,
-) -> int:
-    """For every non-video source_type on the job, run the dispatcher,
-    fetch text inline (the connector classifies during fetch_text per
-    [D-023](../../../docs/decisions.md#d-023)), and persist via
-    ``_upsert_candidate_and_link``.
+def _search_non_video_sources(job: Job, source_types: list[str], shares: dict[str, int]):
+    """Ask every non-video source on the job what it has for the topic.
 
-    Returns the total count of candidates stored across all non-video
-    source types — the orchestrator combines this with the YouTube
-    search-agent count for the user-visible "found N candidates"
-    message.
+    Only the search: no text is fetched and nothing is stored, so what each
+    source has can decide the run's limits before anything is spent on them
+    (``job_source_types.redistribute``). "Video" is not handled here: the
+    search agent owns that path.
 
-    ``limits`` is the per-type share of the run's ``num_videos``
-    (``job_source_types.share_limits``); a type missing from it gets
-    ``limit_per_type``. Each type's candidates are cut to its limit here
-    too, so a connector that returns more than it was asked for cannot
-    push the run past its cap.
-
-    No Whisper before approval: connectors that can fall back to it are
-    called with ``allow_whisper=False``, and a candidate without text stays
-    ``pending`` for extraction, where the job's Whisper budget applies.
-    The fetched segments are cached (``_cache_document_text``) so
-    extraction does not fetch the same document again.
-
-    "Video" source_type is *not* handled here — the existing search
-    agent (LangGraph) owns that path and produces a richer ranked
-    output than `connector.search()` alone. This helper handles only
-    the source_types where ``connector.search()`` is the canonical
-    discovery surface (Reddit, HN, future Mastodon / Bluesky).
+    A source is asked for the run's whole budget, because the search costs the
+    same and spare shares can only go where there is something to give. A
+    metered source (``METERED_SOURCE_TYPES``) is asked for its share alone.
     """
-    from app.services.connector_dispatch import dispatch_search
+    from app.services import job_source_types
+    from app.services.connector_dispatch import DispatchResult, dispatch_search
 
-    def _limit(st: str) -> int:
-        return max(0, (limits or {}).get(st, limit_per_type))
-
-    non_video = [st for st in source_types if st != "video" and _limit(st) > 0]
+    non_video = [st for st in source_types if st != "video" and shares.get(st, 0) > 0]
     if not non_video:
-        return 0
+        return DispatchResult()
 
     logger.info(
         "[job:%s] Dispatching search for non-video source_types: %s",
         job.id,
         non_video,
     )
-
+    budget = sum(shares.values())
     result = dispatch_search(
         non_video,
         query=job.topic or "",
         instructions=job.search_instructions or "",
-        limit_per_type=max(_limit(st) for st in non_video),
+        limit_per_type=budget,
+        limits={st: shares[st] for st in non_video if st in job_source_types.METERED_SOURCE_TYPES},
         job_id=job.id,
     )
 
@@ -495,21 +516,61 @@ def _dispatch_and_store_non_video_sources(
                 st,
                 err,
             )
+    return result
 
+
+def _note_refusals(db, result) -> None:
+    """Keep what the sources just said about this install: one that refused
+    goes on hold, and one that answered comes off it (T-1.5.14.1)."""
+    answered = [
+        st for st in result.candidates_by_source_type if st not in result.failures_by_source_type
+    ]
+    if answered:
+        source_refusal_service.clear(db, answered)
+    for st, failure in result.failures_by_source_type.items():
+        if failure.kind == source_failure.REFUSED:
+            source_refusal_service.record(db, st, failure.status)
+    db.commit()
+
+
+def _store_non_video_candidates(db, job: Job, result, limits: dict[str, int]) -> int:
+    """Fetch text for what the search found, within ``limits``, and persist.
+
+    The connector classifies during fetch_text per
+    [D-023](../../../docs/decisions.md#d-023), and each candidate goes through
+    ``_upsert_candidate_and_link``.
+
+    Returns the total count of candidates stored across all non-video
+    source types — the orchestrator combines this with the YouTube
+    search-agent count for the user-visible "found N candidates"
+    message.
+
+    ``limits`` is what each type may keep of the run's ``num_videos``
+    (``job_source_types.redistribute``). Candidates are cut to it here, so a
+    connector that returns more than it was asked for cannot push the run
+    past its cap.
+
+    No Whisper before approval: connectors that can fall back to it are
+    called with ``allow_whisper=False``, and a candidate without text stays
+    ``pending`` for extraction, where the job's Whisper budget applies.
+    The fetched segments are cached (``_cache_document_text``) so
+    extraction does not fetch the same document again.
+    """
     # For each candidate, run fetch_text (which classifies inline per
     # D-023) and persist. Failures on individual candidates are logged
     # and skipped — one bad post must not crash the job.
     from app.sources.registry import connector_for
 
     stored = 0
-    for st, candidates in result.candidates_by_source_type.items():
+    searched = result.candidates_by_source_type
+    for st, candidates in searched.items():
         if not candidates:
             continue
         connector = connector_for(st)
         fetch_kwargs: dict = {"job_id": job.id, "query": job.topic or ""}
         if st in _WHISPER_FALLBACK_SOURCE_TYPES:
             fetch_kwargs["allow_whisper"] = False
-        for cand in candidates[: _limit(st)]:
+        for cand in candidates[: limits.get(st, 0)]:
             try:
                 extracted = connector.fetch_text(cand, **fetch_kwargs)
             except Exception:
@@ -549,9 +610,59 @@ def _dispatch_and_store_non_video_sources(
         "[job:%s] Non-video dispatch persisted %d candidates across %d source types",
         job.id,
         stored,
-        len(non_video),
+        len(searched),
     )
     return stored
+
+
+def _plan_youtube_target(shares: dict[str, int], capacity: dict[str, int]):
+    """How many videos to ask the search agent for: its share, and any spare
+    the other sources left that it can take (T-1.5.14.3).
+
+    The agent runs once, after the other sources have answered, so a top-up is
+    a bigger target on the same search and not a second one. That target can
+    still spend more, so it needs room in the day's YouTube quota
+    (``youtube_search_units`` is the most it could cost, and
+    ``YOUTUBE_DAILY_QUOTA`` the limit). Without room YouTube keeps its share.
+
+    Returns the target and a note, if the top-up was given up.
+    """
+    from app.services import job_source_types, quota_service
+
+    share = shares["video"]
+    target = job_source_types.redistribute(shares, {**capacity, "video": None})["video"]
+    if target <= share:
+        return share, None
+    units_needed = job_source_types.youtube_search_units(target)
+    units_left = settings.YOUTUBE_DAILY_QUOTA - quota_service.get_today_usage()
+    if units_needed <= units_left:
+        return target, None
+    logger.warning(
+        "Keeping YouTube at its share of %d, not %d: a search could need %d units, %d left",
+        share, target, units_needed, units_left,
+    )
+    return share, run_notes.top_up_skipped(target - share, units_needed, units_left)
+
+
+def _source_notes(
+    source_types: list[str],
+    shares: dict[str, int],
+    limits: dict[str, int],
+    found: dict[str, int],
+    failures: dict,
+) -> list[dict]:
+    """What the run should say about its sources. Nothing, when each one
+    filled its share."""
+    notes: list[dict] = []
+    for st in source_types:
+        if st in failures:
+            notes.append(run_notes.unavailable(st, failures[st]))
+        elif shares.get(st, 0) > 0 and found.get(st, 0) == 0:
+            notes.append(run_notes.empty(st))
+    moved = run_notes.budget_moved(shares, limits)
+    if moved:
+        notes.append(moved)
+    return notes
 
 
 def _grant_job_document_visibility(db, job) -> None:
@@ -1016,10 +1127,24 @@ def execute_topic_job(self, job_id: str) -> None:
         # YouTube-only run keeps all of it, exactly as before.
         from app.services import job_source_types
 
-        limits = job_source_types.share_limits(job.num_videos or 10, source_types)
+        shares = job_source_types.share_limits(job.num_videos or 10, source_types)
+
+        # The other sources answer first (T-1.5.14.3): what they have decides
+        # how much of the budget YouTube gets, and a share one of them cannot
+        # fill should change this run's one YouTube search, not start another.
+        dispatched = _search_non_video_sources(job, source_types, shares)
+        _note_refusals(db, dispatched)
+        found = {st: len(c) for st, c in dispatched.candidates_by_source_type.items()}
+        failures = dict(dispatched.failures_by_source_type)
+        notes: list[dict] = []
 
         curated_videos: list[dict] = []
         queries_used: list[str] = []
+        youtube_target = job.num_videos
+        if wants_video:
+            youtube_target, top_up_note = _plan_youtube_target(shares, found)
+            if top_up_note:
+                notes.append(top_up_note)
 
         # YouTube path (only when video is requested).
         if wants_video:
@@ -1042,27 +1167,37 @@ def execute_topic_job(self, job_id: str) -> None:
                 db.commit()
 
             candidate_pool: list[dict] = []
-            with llm_service.byok_context(job.tenant_id, db):
-                curated_videos, queries_used, unresolved_channels = run_search_agent(
-                    topic=job.topic,
-                    num_videos=limits.get("video", job.num_videos),
-                    search_instructions=job.search_instructions or "",
-                    min_duration=job.min_duration_minutes,
-                    max_duration=job.max_duration_minutes,
-                    channel_type_filters=(
-                        json.loads(job.channel_type_filters)
-                        if job.channel_type_filters
-                        else []
-                    ),
-                    preferred_channels=(
-                        json.loads(job.preferred_channels)
-                        if job.preferred_channels
-                        else []
-                    ),
-                    progress_callback=_search_progress,
-                    candidates_out=candidate_pool,
-                    published_after_days=job.published_after_days,
+            unresolved_channels: list = []
+            try:
+                with llm_service.byok_context(job.tenant_id, db):
+                    curated_videos, queries_used, unresolved_channels = run_search_agent(
+                        topic=job.topic,
+                        num_videos=youtube_target,
+                        search_instructions=job.search_instructions or "",
+                        min_duration=job.min_duration_minutes,
+                        max_duration=job.max_duration_minutes,
+                        channel_type_filters=(
+                            json.loads(job.channel_type_filters)
+                            if job.channel_type_filters
+                            else []
+                        ),
+                        preferred_channels=(
+                            json.loads(job.preferred_channels)
+                            if job.preferred_channels
+                            else []
+                        ),
+                        progress_callback=_search_progress,
+                        candidates_out=candidate_pool,
+                        published_after_days=job.published_after_days,
+                    )
+            except (YouTubeQuotaExceededError, HttpError) as e:
+                # YouTube itself said no. One source of the run, reported as
+                # the others are. Never `str(e)`: an HttpError's message holds
+                # the request URL, and the API key is in its query string.
+                logger.warning(
+                    "[job:%s] YouTube search unavailable: %s", job_id, type(e).__name__
                 )
+                failures["video"] = source_failure.classify(e)
             logger.info(
                 f"[job:{job_id}] Search Agent complete: found "
                 f"{len(curated_videos)} candidate videos "
@@ -1109,21 +1244,24 @@ def execute_topic_job(self, job_id: str) -> None:
             f"[job:{job_id}] {len(curated_videos)} videos saved to DB"
         )
 
-        # Non-video path: dispatch the configured social/etc connectors,
-        # fetch text inline (which classifies per D-023), persist via
-        # the source-type-agnostic helper. Inside the submitter's BYOK
-        # context, like the search agent above: the inline
+        # What YouTube came back with settles the shares: whatever it could
+        # not fill goes to sources that have more, and nothing more is asked
+        # of anyone, since they have already said what they have.
+        if wants_video:
+            found["video"] = len(curated_videos)
+        limits = job_source_types.redistribute(shares, found)
+        notes.extend(_source_notes(source_types, shares, limits, found, failures))
+        run_notes.add(job, notes)
+        db.commit()
+
+        # Non-video path: fetch text inline (which classifies per D-023),
+        # persist via the source-type-agnostic helper. Inside the submitter's
+        # BYOK context, like the search agent above: the inline
         # social_classify_stance calls use their keys and E-1.13 overrides.
         from app.services import llm_service
 
         with llm_service.byok_context(job.tenant_id, db):
-            non_video_count = _dispatch_and_store_non_video_sources(
-                db,
-                job,
-                source_types=source_types,
-                limit_per_type=job.num_videos or 10,
-                limits=limits,
-            )
+            non_video_count = _store_non_video_candidates(db, job, dispatched, limits)
         # No visibility grant here either (T-5.2.10), for dispatched or video
         # candidates: a grant before approval counts as "already seen" in the
         # approval's document-cap check, so every candidate would pass it, and
@@ -1138,24 +1276,38 @@ def execute_topic_job(self, job_id: str) -> None:
         )
 
         # Fail clearly if every source returned nothing — pushing the user to
-        # the approval screen with an empty list is a dead end.
+        # the approval screen with an empty list is a dead end. A source that
+        # was unavailable is not a topic that needs broadening, so say which.
+        unavailable = [
+            n["text"] for n in notes if n["kind"] == run_notes.SOURCE_UNAVAILABLE
+        ]
         if total_candidates == 0:
             msg = (
                 f"No candidates found for topic '{job.topic}' across "
-                f"source_types={source_types}. Try a broader topic, "
-                "different search instructions, or relax the duration filters."
+                f"source_types={source_types}. "
             )
+            if unavailable:
+                msg += " ".join(unavailable)
+                if len(unavailable) < len(source_types):
+                    msg += " The others found nothing for this topic."
+            else:
+                msg += (
+                    "Try a broader topic, different search instructions, or "
+                    "relax the duration filters."
+                )
             logger.warning(f"[job:{job_id}] {msg}")
             _handle_failure(db, job_id, msg)
             return
 
+        found_message = " ".join(
+            [f"Found {total_candidates} candidates.", *unavailable, "Please review and approve."]
+        )
         _update_job(
             db, job, status="awaiting_approval", progress_pct=20,
-            progress_message=f"Found {total_candidates} candidates. Please review and approve.",
+            progress_message=found_message[:500],
         )
         progress_service.publish_status_change(
-            job_id, "searching", "awaiting_approval",
-            f"Found {total_candidates} candidates. Please review and approve.",
+            job_id, "searching", "awaiting_approval", found_message,
         )
 
     except Exception as e:
@@ -1345,6 +1497,7 @@ def resume_job_after_approval(self, job_id: str) -> None:
         whisper_used = 0
         whisper_budget = max(0, settings.WHISPER_MAX_PER_JOB)
         whisper_budget_announced = False
+        whisper_minutes = WhisperMinutes()
         # S-1.11.8: rolling ETA from observed per-video pacing.
         extraction_started = time.monotonic()
 
@@ -1440,14 +1593,17 @@ def resume_job_after_approval(self, job_id: str) -> None:
                 connector = connector_for(video.source_type)
                 fetch_kwargs: dict = {"job_id": job_id, "query": job.topic or ""}
                 if video.source_type in _WHISPER_FALLBACK_SOURCE_TYPES:
-                    whisper_allowed = whisper_used < whisper_budget
+                    whisper_allowed = whisper_used < whisper_budget and not whisper_minutes.spent
                     fetch_kwargs["allow_whisper"] = whisper_allowed
                     if not whisper_allowed and not whisper_budget_announced:
                         whisper_budget_announced = True
                         logger.warning(
                             f"[job:{job_id}] Whisper budget exhausted "
-                            f"({whisper_used}/{whisper_budget}); remaining videos "
-                            "use caption-fetch only (WHISPER_MAX_PER_JOB)"
+                            f"({whisper_used}/{whisper_budget} recordings, "
+                            f"{whisper_minutes.used_seconds / 60:.0f}/"
+                            f"{whisper_minutes.cap_minutes or 'unlimited'} minutes); "
+                            "remaining videos use caption-fetch only "
+                            "(WHISPER_MAX_PER_JOB, WHISPER_MAX_MINUTES_PER_JOB)"
                         )
                 # The submitter's BYOK context, as for the search agent and
                 # the report: a social connector classifies inline (D-023).
@@ -1466,6 +1622,9 @@ def resume_job_after_approval(self, job_id: str) -> None:
                     )
                 if extracted is not None and extracted.text_source in _WHISPER_TEXT_SOURCES:
                     whisper_used += 1
+                    whisper_minutes.charge(video, extracted)
+                if extracted is None and fetch_kwargs.get("allow_whisper") is False and whisper_minutes.spent:
+                    whisper_minutes.skipped += 1
 
                 if extracted:
                     _cache_document_text(db, video, extracted)
@@ -1531,7 +1690,9 @@ def resume_job_after_approval(self, job_id: str) -> None:
                     else " · ETA <1m"
                 )
             budget_suffix = (
-                " · Whisper budget exhausted" if whisper_budget_announced else ""
+                " · Whisper minutes spent" if whisper_minutes.spent
+                else " · Whisper budget exhausted" if whisper_budget_announced
+                else ""
             )
             progress_message = (
                 f"Video {attempted}/{total}: "
@@ -1568,6 +1729,9 @@ def resume_job_after_approval(self, job_id: str) -> None:
             f"(reused={reused_count}, new={newly_processed_count}), "
             f"{unavailable_count} unavailable, {len(all_chunks)} total chunks"
         )
+        if whisper_note := whisper_minutes.note():
+            run_notes.add(job, [whisper_note])
+            db.commit()
 
         if fetched_count == 0:
             logger.error(f"[job:{job_id}] No transcripts fetched for any of {total} videos, failing job")
@@ -1721,6 +1885,7 @@ def _run_extraction_and_rag(self, db, job) -> None:
         settings, "CHROMA_GLOBAL_COLLECTION_NAME", "pratidhvani_global"
     )
     visual_budget = VisualBudget(settings.VISUAL_MAX_FRAMES_PER_JOB)
+    whisper_minutes = WhisperMinutes()
 
     for i, video in enumerate(approved_videos):
         if _is_cancelled(db, job_id):
@@ -1791,6 +1956,13 @@ def _run_extraction_and_rag(self, db, job) -> None:
                 f"video_id={video.video_id} '{title_preview}'"
             )
             connector = connector_for(video.source_type)
+            # WHISPER_MAX_PER_JOB has never bounded a subscription walk, and a
+            # channel's history is the longest audio a job can reach, so the
+            # minute limit applies here when one is set.
+            fetch_kwargs: dict = {}
+            whisper_barred = whisper_minutes.spent and video.source_type in _WHISPER_FALLBACK_SOURCE_TYPES
+            if whisper_barred:
+                fetch_kwargs["allow_whisper"] = False
             extracted = connector.fetch_text(
                 Candidate(
                     source_type=video.source_type,
@@ -1800,7 +1972,12 @@ def _run_extraction_and_rag(self, db, job) -> None:
                 ),
                 job_id=job_id,
                 query=job.topic or "",
+                **fetch_kwargs,
             )
+            if extracted is not None and extracted.text_source in _WHISPER_TEXT_SOURCES:
+                whisper_minutes.charge(video, extracted)
+            if extracted is None and whisper_barred:
+                whisper_minutes.skipped += 1
 
             if extracted:
                 transcript = extracted.segments
@@ -1878,6 +2055,9 @@ def _run_extraction_and_rag(self, db, job) -> None:
         f"(reused={reused_count}, new={newly_processed_count}), "
         f"{unavailable_count} unavailable, {len(all_chunks)} total chunks"
     )
+    if whisper_note := whisper_minutes.note():
+        run_notes.add(job, [whisper_note])
+        db.commit()
 
     if fetched_count == 0:
         logger.error(

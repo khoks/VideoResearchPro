@@ -6,13 +6,19 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.dependencies import get_db
 from app.schemas.quota import QuotaStatus
-from app.services import job_source_types, quota_service, scheduler_service, search_service
+from app.services import (
+    job_source_types,
+    quota_service,
+    scheduler_service,
+    search_service,
+    source_refusal_service,
+)
 from app.services.llm_smoke import _STATUS
 
 router = APIRouter()
 
 
-def _capabilities() -> dict[str, bool]:
+def _capabilities(held: dict[str, dict]) -> dict[str, bool]:
     """Per-S-1.5.9 (BYOK Twitter capability flag) and beyond, surface
     which opt-in features are enabled so the frontend can decide which
     UI surfaces to expose without inspecting env state directly.
@@ -23,6 +29,9 @@ def _capabilities() -> dict[str, bool]:
       (article search via Brave is available).
     - ``reddit_search_enabled``: ``REDDIT_CLIENT_ID`` and
       ``REDDIT_CLIENT_SECRET`` are set (S-1.5.13).
+    - ``mastodon_search_enabled``, ``bluesky_search_enabled``: the base URL
+      is not blank (T-1.5.13.6).
+    - ``hn_search_enabled``, ``podcast_search_enabled``: need no setting.
     - ``playwright_fallback_enabled``: ``ARTICLE_PLAYWRIGHT_ENABLED``
       is True (FB / IG SPA-shell paste-mode works; operator has
       installed ``pratidhvani[spa]`` extras + ``playwright install
@@ -30,12 +39,13 @@ def _capabilities() -> dict[str, bool]:
     - ``whisper_transcribe_enabled``: ``OPENAI_API_KEY`` is set
       (podcast / YouTube fallback transcription works).
 
-    The three source-search flags come from ``job_source_types``, the
-    same check that refuses an unconfigured type on ``POST /jobs``, so the
-    submit form never offers what the API would reject.
+    The source-search flags come from ``job_source_types``, the same check
+    that refuses an unconfigured type on ``POST /jobs``, so the submit form
+    never offers what the API would reject. Each is also false while the
+    source is on hold for refusing this install (``held``, T-1.5.14.1).
     """
     return {
-        **job_source_types.capabilities(),
+        **job_source_types.capabilities(held),
         "playwright_fallback_enabled": bool(settings.ARTICLE_PLAYWRIGHT_ENABLED),
         "whisper_transcribe_enabled": bool(settings.OPENAI_API_KEY),
         # S-1.18.2: the install-wide R1 switch. Off means the job toggle and
@@ -45,12 +55,15 @@ def _capabilities() -> dict[str, bool]:
 
 
 @router.get("/health")
-def health_check():
+def health_check(db: Session = Depends(get_db)):
+    held = source_refusal_service.active(db)
     return {
         "status": "ok",
         "app": "Pratidhvani",
         "llm": _STATUS.summary(),
-        "capabilities": _capabilities(),
+        "capabilities": _capabilities(held),
+        # T-1.5.14.1: why a source's flag is false although it is set up.
+        "source_holds": held,
         # S-8.2.1: "fts5" when SQLite has FTS5 (ranked substring search),
         # "like" on the fallback path, so the UI can label it.
         "search_backend": search_service.current_backend(),

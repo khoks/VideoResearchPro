@@ -1,7 +1,7 @@
 """The logos, read against what they are made from (T-2.8.2, T-2.8.4, D-112).
 
-The artwork is generated once by frontend/scripts/outline-logos.py and committed,
-and CI builds neither the marketing site nor the logos, so nothing else would
+The artwork is generated once by frontend/scripts/outline-logos.py and committed.
+CI builds the marketing site (T-2.8.6) but never the logos, so nothing else would
 notice a hand edit, or a regeneration that lost the font outlines, the shaping or
 the word itself. The fonts and the shaper are in no requirements file, so everything
 here reads the committed SVG alone. A failure is artwork to regenerate, not a test

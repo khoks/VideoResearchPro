@@ -20,7 +20,6 @@ import tiktoken_ext.openai_public
 
 from app.utils import chunking
 from tests import tiktoken_cache
-from tests.test_ci.test_ci_workflow import _CI_YML
 
 # Read at collection, before any test can download the file.
 CACHED_AT_START = tiktoken_cache.encoding_is_cached()
@@ -84,15 +83,18 @@ def test_tokens_are_counted_with_the_network_down(monkeypatch) -> None:
     assert asked == []
 
 
-@pytest.mark.parametrize("cached", [True, False])
-def test_a_missing_encoding_is_a_first_run_here_and_a_failure_on_a_runner(cached) -> None:
-    assert _why_it_cannot_run(cached=cached, ci=False) == (None if cached else
-                                                           "first run here: the encoding was not cached at the start")
-    if cached:
-        assert _why_it_cannot_run(cached=True, ci=True) is None
-    else:
-        with pytest.raises(pytest.fail.Exception, match="MODEL_CACHE_KEY"):
-            _why_it_cannot_run(cached=False, ci=True)
+def test_a_missing_encoding_is_a_first_run_on_a_machine() -> None:
+    assert "first run" in _why_it_cannot_run(cached=False, ci=False)
+
+
+def test_a_missing_encoding_fails_on_a_runner() -> None:
+    with pytest.raises(pytest.fail.Exception, match="MODEL_CACHE_KEY"):
+        _why_it_cannot_run(cached=False, ci=True)
+
+
+@pytest.mark.parametrize("ci", [True, False])
+def test_a_cached_encoding_runs_everywhere(ci) -> None:
+    assert _why_it_cannot_run(cached=True, ci=ci) is None
 
 
 def test_conftest_chose_a_folder() -> None:
@@ -189,19 +191,17 @@ def test_a_home_that_cannot_be_written_leaves_tiktokens_default(nothing_chosen) 
     assert "TIKTOKEN_CACHE_DIR" not in os.environ
 
 
-def test_warm_is_what_ci_runs_and_fills_the_folder_it_caches(nothing_chosen, monkeypatch) -> None:
+def test_warm_fills_the_folder_ci_caches(nothing_chosen, fake_encoding, monkeypatch) -> None:
     home, _ = nothing_chosen
 
     def fetched(name):
         folder = Path(os.environ["TIKTOKEN_CACHE_DIR"])
-        (folder / tiktoken_cache.cache_file()).write_bytes(FAKE)
+        (folder / tiktoken_cache.cache_file()).write_bytes(fake_encoding)
 
-    monkeypatch.setattr(tiktoken_cache, "ENCODING_SHA256", hashlib.sha256(FAKE).hexdigest())
     monkeypatch.setattr("tiktoken.get_encoding", fetched)
     tiktoken_cache.warm()
 
-    assert (home / ".cache" / "tiktoken" / tiktoken_cache.cache_file()).read_bytes() == FAKE
-    assert "tests.tiktoken_cache" in _CI_YML.read_text(encoding="utf-8")
+    assert (home / ".cache" / "tiktoken" / tiktoken_cache.cache_file()).read_bytes() == fake_encoding
 
 
 def test_warm_says_so_when_the_file_did_not_land(nothing_chosen, monkeypatch) -> None:

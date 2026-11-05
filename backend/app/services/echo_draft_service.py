@@ -62,7 +62,7 @@ VOICE_TEST_RULE_VERSION = "2026-10-19"
 #: The prompts name this label, and the user reads it under a draft.
 UNVERIFIED_MAIL_LABEL = "an unverified email, not your view"
 _GO_AHEAD = "To go ahead, add a source on this to your library or write a note saying what you think, then draft again."
-#: The agent's reasons, in the words the user reads: what stopped it, and what would not.
+#: The agent's reasons, in the words the user reads: what stopped it, and what would let it go ahead.
 REFUSALS = {
     "nothing": (
         "Echo did not write this reply: nothing in your library, your notes or what it knows about you backs it, "

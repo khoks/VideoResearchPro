@@ -36,6 +36,7 @@ vi.mock('../../services/api', () => ({
 }));
 
 import { AuthProvider } from '../../contexts/AuthContext';
+import { PublicOnlyRoute } from '../../routes/guards';
 import { LoginPage } from '../LoginPage';
 import { OAuthCallbackPage } from '../OAuthCallbackPage';
 import { ForgotPasswordPage } from '../ForgotPasswordPage';
@@ -74,8 +75,10 @@ function mount(path: string) {
         <AuthProvider>
           <MemoryRouter initialEntries={[path]}>
             <Routes>
-              <Route path="/login" element={<LoginPage />} />
-              <Route path="/login/oauth/:provider/callback" element={<OAuthCallbackPage />} />
+              <Route element={<PublicOnlyRoute />}>
+                <Route path="/login" element={<LoginPage />} />
+                <Route path="/login/oauth/:provider/callback" element={<OAuthCallbackPage />} />
+              </Route>
               <Route path="/forgot-password" element={<ForgotPasswordPage />} />
               <Route path="/reset-password" element={<ResetPasswordPage />} />
               <Route path="*" element={<p>app home</p>} />

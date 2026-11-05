@@ -40,6 +40,8 @@ import {
   FormField,
   Input,
   Select,
+  Tab,
+  Tabs,
   Textarea,
 } from '../components/primitives';
 import { useColors } from '../hooks/useTheme';
@@ -442,32 +444,17 @@ export function SubmitJobPage() {
         />
       )}
 
-      <div
-        role="tablist"
-        aria-label="Research type"
-        style={{
-          display: 'flex',
-          gap: space['1'],
-          marginBottom: space['5'],
-          borderBottom: `1px solid ${c.border}`,
-        }}
-      >
-        <TypeToggle active={form.jobType === 'topic'} onClick={() => update('jobType', 'topic')}>
+      <Tabs label="Research type" style={{ marginBottom: space['5'] }}>
+        <Tab active={form.jobType === 'topic'} onClick={() => update('jobType', 'topic')}>
           Topic
-        </TypeToggle>
-        <TypeToggle
-          active={form.jobType === 'channel'}
-          onClick={() => update('jobType', 'channel')}
-        >
+        </Tab>
+        <Tab active={form.jobType === 'channel'} onClick={() => update('jobType', 'channel')}>
           Channels
-        </TypeToggle>
-        <TypeToggle
-          active={form.jobType === 'subscription'}
-          onClick={() => update('jobType', 'subscription')}
-        >
+        </Tab>
+        <Tab active={form.jobType === 'subscription'} onClick={() => update('jobType', 'subscription')}>
           Subscription
-        </TypeToggle>
-      </div>
+        </Tab>
+      </Tabs>
 
       <Card>
         <form
@@ -918,41 +905,6 @@ export function SubmitJobPage() {
         onSubmit={saveFormAsTemplate}
       />
     </div>
-  );
-}
-
-function TypeToggle({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  const c = useColors();
-  return (
-    <button
-      type="button"
-      role="tab"
-      aria-selected={active}
-      onClick={onClick}
-      style={{
-        background: 'transparent',
-        color: active ? c.accent : c.textSecondary,
-        border: 'none',
-        borderBottom: `2px solid ${active ? c.accent : 'transparent'}`,
-        padding: `${space['2']} ${space['4']}`,
-        marginBottom: -1,
-        cursor: 'pointer',
-        fontFamily: fonts.ui,
-        fontWeight: active ? fontWeight.semibold : fontWeight.medium,
-        fontSize: fontSize.sm,
-        letterSpacing: '0.02em',
-      }}
-    >
-      {children}
-    </button>
   );
 }
 

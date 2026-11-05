@@ -260,7 +260,7 @@ Reports are the longest single piece of content. They get the most editorial tre
 └──────────────────────────└──────────────────────┘
 ```
 
-- Drop cap on the first paragraph: `display` font, `3xl` size, multi-line.
+- Drop cap on the first substantial paragraph of the text itself, not on a note about it: `display` font, `3xl` size, multi-line.
 - Sticky outline on the right (desktop only) with active section highlight.
 - Citations render inline as small `mono`-font superscripts; hover surfaces a popover with the source title + timestamp + quote.
 - Reading-progress bar floats at bottom-right; updates from scroll position.
@@ -291,7 +291,7 @@ A small, opinionated set of primitives lives at `frontend/src/components/primiti
 | Primitive | Notes |
 |-----------|-------|
 | `Button` | Variants: `primary`, `secondary`, `tertiary`, `danger`. Sizes: `sm`, `md`, `lg`. Loading state with inline spinner. Disabled state dims to `textMuted` and disables pointer events. |
-| `IconButton` | Like `Button` but square; ARIA-label required. Not built yet. |
+| `IconButton` | A bare glyph that acts as a button: transparent, borderless, with a required `label` (its accessible name). Each place sets its size and colour through `style`. A bordered control with a glyph in it, such as the library map's pan and zoom, is a `Button`. |
 | `Card` | `surface` fill, `border` outline, `radius.md`. Hover variant lifts 2 px with `shadow.hover`. Optional `as` prop for `<a>` / `<button>` semantics. |
 | `Input`, `Textarea`, `Select` | `surface` fill, focus ring in `accent`. Errors render `error`-colored border + helper text below. |
 | `FormField` | Wraps a label + control + helper text. Generates IDs for `htmlFor`. |
@@ -300,14 +300,14 @@ A small, opinionated set of primitives lives at `frontend/src/components/primiti
 | Charts (`components/charts/`) | `ColumnChart` (single or stacked columns over an ordered axis: ≤24px marks with a 4px rounded data-end and square baseline, 2px surface gaps, hairline grid, a legend only for ≥2 series, a hover and keyboard readout — focus the chart, then ←/→, Home, End, Escape — and a **Show as table** view), `BarList` (ranked horizontal bars, value at the tip, rows that open for drill-down), `ChartTable`. Colours come from `chartColors` (§1.1); text never wears them. |
 | `LabelPill` | A user-applied label (shelf, tag) in one of the ten label-palette colours (§1.1): bordered pill, text always present. Optional `to` (router link, clicks never bubble to an enclosing card) and `onRemove` (a small ×). |
 | `StatusPill` | Specialized Badge with semantic statuses for jobs (pending, searching, awaiting_approval, etc.). |
-| `Tabs` | Underlined active tab in `accent`. Keyboard accessible (arrow keys). Not built yet: pages render their own tab buttons. |
+| `Tabs`, `Tab` | Underlined active tab in `accent`, on the library, submit and channel pages. The active tab and its panel are the parent's state. Reached with the Tab key; arrow keys are not wired. Echo's mode switch keeps its own pill-shaped `ModeTab`, the only one of its look. |
 | `Modal` | Centered, `surface` fill, `shadow.floating`, focus trap, ESC-to-close, scroll lock on body. |
 | `Drawer` | Slides from right, `shadow.floating`, focus trap. Not a primitive yet: `VideoKnowledgeDrawer` is its own component. |
-| `Tooltip` | Hover/focus-triggered, `surface` fill, `shadow.floating`. ARIA-described. Not built yet: controls use the `title` attribute. |
+| `Tooltip` | Not a primitive: controls use the `title` attribute, and the one custom hover card (`CitationCard`) has no second call site to share it with. |
 | `Spinner` | 14 px circular, `accent` color. |
 | `Skeleton` | Shimmer in `surfaceAlt` with `border` outline. Variants: `text`, `paragraph`, `card`, `row`. |
 | `EmptyState` | Hero-style empty state: icon + display heading + secondary line + optional CTA. The voice (per [branding.md](branding.md) §voice) is editorial — never "No data." |
-| `Toast` (`components/common/Toast.tsx`) | Slides up from bottom-right, auto-dismisses after 5 s, click to dismiss. Status-colored left border. |
+| `Toast` (`ToastContainer`) | Slides up from bottom-right, auto-dismisses after 5 s, click to dismiss. Status-colored left border. |
 | `SystemStatusBanner` (`components/common/`) | Pull-quote-style banner for degraded or down LLM services. Editorial, not modal. |
 | `CitationChip` | Inline citation in body text. Mono superscript number → hover popover with source + timestamp + quote. |
 
@@ -333,7 +333,7 @@ Driven by `useSystemStatus()` (polls `/api/v1/health` every 60 s).
 
 ### 4.3. Toast queue
 
-Triggered by errors (the React Query caches' global `onError`), and by success notifications from the action that succeeded. The rules are in `components/common/Toast.tsx` and `stores/jobStore.ts`.
+Triggered by errors (the React Query caches' global `onError`), and by success notifications from the action that succeeded. The rules are in `components/primitives/Toast.tsx` and `stores/jobStore.ts`.
 
 ---
 

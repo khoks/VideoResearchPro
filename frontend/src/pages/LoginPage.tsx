@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { AuthShell, AuthError } from '../components/auth/AuthShell';
 import { MfaCodeStep } from '../components/auth/MfaCodeStep';
@@ -8,13 +8,11 @@ import { Button, FormField, Input } from '../components/primitives';
 import { useColors } from '../hooks/useTheme';
 import { fonts, fontSize, fontWeight, space } from '../theme';
 
-interface LocationState {
-  from?: { pathname: string };
-}
-
+/**
+ * A sign-in here only sets the token. `PublicOnlyRoute` sees it and goes on to
+ * the page in `location.state.from`, or to `/` (T-5.4.20).
+ */
 export function LoginPage() {
-  const navigate = useNavigate();
-  const location = useLocation();
   const c = useColors();
   const { login, isLoading } = useAuth();
   const [email, setEmail] = useState('');
@@ -23,18 +21,12 @@ export function LoginPage() {
   // T-5.4.6: the password was right and the account owes a second factor.
   const [mfaToken, setMfaToken] = useState<string | null>(null);
 
-  const redirectTo = (location.state as LocationState | null)?.from?.pathname ?? '/';
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     try {
       const result = await login(email, password);
-      if (result.status === 'mfa_required') {
-        setMfaToken(result.mfaToken);
-        return;
-      }
-      navigate(redirectTo, { replace: true });
+      if (result.status === 'mfa_required') setMfaToken(result.mfaToken);
     } catch (err) {
       const detail = extractError(err);
       setError(detail ?? 'Login failed. Check your credentials and try again.');
@@ -47,7 +39,6 @@ export function LoginPage() {
         <MfaCodeStep
           mfaToken={mfaToken}
           email={email}
-          onSignedIn={() => navigate(redirectTo, { replace: true })}
           onStartOver={() => {
             setMfaToken(null);
             setPassword('');

@@ -1,5 +1,5 @@
 import { lazy, Suspense, type ReactNode } from 'react';
-import { createBrowserRouter, Navigate, Outlet, useLocation } from 'react-router-dom';
+import { createBrowserRouter, Navigate, type RouteObject } from 'react-router-dom';
 import { AppLayout } from '../layouts/AppLayout';
 import { MarketingLayout } from '../pages/marketing/MarketingLayout';
 import { LandingPage } from '../pages/marketing/LandingPage';
@@ -26,9 +26,10 @@ import { EchoConnectorCallbackPage } from '../pages/EchoConnectorCallbackPage';
 import { WelcomePage } from '../pages/WelcomePage';
 import { SavedSearchesPage } from '../pages/SavedSearchesPage';
 import { OnboardingGate } from '../components/onboarding/OnboardingGate';
+import { RouteError } from '../components/common/RouteError';
 import { RouteLoadError } from '../components/common/RouteLoadError';
-import { useAuth } from '../contexts/AuthContext';
 import { Spinner } from '../components/primitives';
+import { ProtectedRoute, PublicOnlyRoute } from './guards';
 // Direct, not through `components/reader/index`: the barrel would pull the
 // sanitiser and the parsers back into this chunk.
 import { ReaderLoading } from '../components/reader/ReaderLoading';
@@ -79,25 +80,7 @@ function lazyPage(element: ReactNode, loading: string) {
   return lazyRoute(element, <Spinner label={loading} />);
 }
 
-function ProtectedRoute() {
-  const { isAuthenticated } = useAuth();
-  const location = useLocation();
-  if (!isAuthenticated) {
-    return <Navigate to="/login" replace state={{ from: location }} />;
-  }
-  return <Outlet />;
-}
-
-function PublicOnlyRoute() {
-  const { isAuthenticated } = useAuth();
-  if (isAuthenticated) {
-    // `/` decides between the wizard and the submit page (S-8.10.1).
-    return <Navigate to="/" replace />;
-  }
-  return <Outlet />;
-}
-
-export const router = createBrowserRouter([
+const pages: RouteObject[] = [
   // Truly-public marketing routes — anyone can view, authed or not.
   // Header chrome adapts (Sign in/Get started vs Open app →).
   {
@@ -107,7 +90,7 @@ export const router = createBrowserRouter([
       { path: '/pricing', element: <PricingPage /> },
     ],
   },
-  // Auth pages — public-only (redirect to /submit if already authed).
+  // Auth pages — public-only: a token sends the reader on (`PublicOnlyRoute`).
   {
     element: <PublicOnlyRoute />,
     children: [
@@ -166,4 +149,10 @@ export const router = createBrowserRouter([
     ],
   },
   { path: '*', element: <Navigate to="/" replace /> },
-]);
+];
+
+// T-4.11.2.3: every page sits under one error element, so a page that throws
+// never reaches React Router's default screen, whatever group it is in.
+export const routes: RouteObject[] = [{ errorElement: <RouteError />, children: pages }];
+
+export const router = createBrowserRouter(routes);

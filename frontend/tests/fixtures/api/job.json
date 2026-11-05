@@ -16,6 +16,7 @@
   "videos_per_channel": 10,
   "output_length": null,
   "visual_analysis": false,
+  "source_types": ["video"],
   "search_queries_used": [
     "pratidhvani smoke test overview",
     "how to run smoke testing",

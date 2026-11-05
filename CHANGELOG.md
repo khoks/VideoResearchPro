@@ -10,6 +10,108 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Changed: Alembic follows `DATABASE_URL`, four unused settings are gone, and the docs match the pages (T-2.6.7, T-4.11.1.4, T-4.11.1.5, 2026-11-05)
+
+PR [#412](https://github.com/khoks/VideoResearchPro/pull/412). [D-139](docs/decisions.md#d-139--alembic-uses-the-url-a-caller-names-else-the-setting-and-alembicini-holds-none-2026-11-05).
+
+- `alembic` now uses the URL a caller names, else `DATABASE_URL`, and `backend/alembic.ini` holds no URL, so renaming the database file no longer leaves Alembic migrating the old one. A `sqlalchemy.url` line an operator adds still wins. Section B of the runbook says so and adds `alembic current` as a check.
+- **Fixed:** `./venv/Scripts/alembic`, the command in the README, could not run at all (`ModuleNotFoundError: No module named 'app'`).
+- **Removed settings:** `MAX_VIDEOS_PER_JOB`, `MAX_REPORT_WORDS`, `LLM_MAX_CONTEXT_TOKENS` and `OAUTH_REDIRECT_BASE_URL`. An `.env` that still sets one starts. `TWITTER_REPLY_DEPTH_DEFAULT` and the two `OAUTH_GOOGLE_CONNECTOR_*` settings stay, marked reserved.
+- `docs/ui-pages.md` gained seven routes and sections for eleven pages, and about 35 false statements left `docs/requirements.md`. `ui-design`, `testing`, `source-types`, `vision`, `personal-brain`, `saas-roadmap`, `feature-roadmap`, `contributing` and the two READMEs that had drifted are corrected. CLAUDE.md's test count is 4,400+.
+- New drift tests hold the page table to the router and read claims about tenancy, scheduler kinds and the Echo graph against the code.
+- The audit's gaps are documented as they are and filed, not fixed: nothing schedules a channel sync (S-8.3.4), and there is no `Content-Security-Policy` among others (S-4.11.2).
+
+### Fixed: sign-in, session and rate-limit follow-ups (T-5.4.16, T-5.4.18, T-5.4.19, T-5.5.8, T-5.6.10, T-5.6.11, 2026-11-05)
+
+PR [#411](https://github.com/khoks/VideoResearchPro/pull/411). [D-138](docs/decisions.md#d-138--code-attempts-count-on-a-shared-row-sockets-end-with-their-session-one-reader-takes-the-client-address-from-the-right-and-a-rotated-key-is-reported-2026-11-05).
+
+- `DELETE /auth/mfa` allows five codes per user per 15 minutes. The fifth miss and everything after it answer 429 with no code checked. Sign-in is untouched.
+- `POST /auth/mfa/verify-enrollment` answers 409 on an account that already has two-step verification on. It was an uncounted way to guess the live secret, and a match replaced the recovery codes. **Changed:** if your first confirm succeeded but its response was lost, you now turn two-step off and set it up afresh.
+- A NUL character in a password is a 400 on register and reset, with the reset code not spent, and a plain 401 at login. On register and reset it was a bare 500.
+- A revoked session's open socket now closes with 1008, within about a minute even with Redis down, and the web client does not reconnect after one.
+- New setting `TRUSTED_PROXY_IPS`, default empty: `X-Forwarded-For` counts only from a trusted proxy and is read from the right. Before, a client that sent a new value each time was never limited. `scripts/start.ps1` and `restart_services.ps1` pass `--no-proxy-headers`, because uvicorn's default would undo this on a local install. The README has a new section, "Running behind a reverse proxy".
+- Both clarify routes honour your model pins and keep room for a pinned model's thinking, and on Studio they run on your own key.
+- A rotated or unset encryption key now gives a 503 naming the cause instead of reading as a wrong code, and recovery codes still work.
+- No migration. Run `./scripts/restart_services.ps1` to pick this up.
+
+### Added: share to Echo from a phone or a mailbox (S-3.7.6, T-3.7.4.1, 2026-11-04)
+
+PR [#407](https://github.com/khoks/VideoResearchPro/pull/407). [D-137](docs/decisions.md#d-137--a-share-target-posts-to-a-worker-scoped-to-one-path-and-waits-for-one-tap-mail-is-unverified-text-that-never-trains-the-voice-shared-links-go-through-the-public-address-guard-2026-11-04).
+
+- **Android:** the installed app appears in the share sheet. Text, links and files arrive on a page that shows them and adds them on one tap, because any website can post that form. Shared words never reach a URL, the history or a server log. A share made signed out waits on the device through any sign-in, is dropped unread after 24 hours and is dropped at sign-out.
+- **iPhone:** Shortcut steps are on the Echo page beside the share tokens and in the new `docs/echo-share-surfaces.md`.
+- **IMAP mailbox (self-host):** new `ECHO_IMAP_*` settings, off by default. Each message from an allowed sender becomes one text share, polled from the single scheduler tick. An empty allow list accepts nothing and the mailbox is not opened.
+- Mail cannot train your voice, even if you ask: the "These are my words" button is gone on mail. In a draft it is labelled an unverified email, and a draft citing it says so. Attachments are listed, not read, and a link in mail is not fetched.
+- **Security:** a shared link's fetch now goes through the public-address guard, on the first address and every redirect, on every share surface.
+- **Not tried yet:** none of the three has run on a real phone or mailbox. New table `echo_email_messages` (migration `c62da1d081c6`).
+
+### Changed: a lighter first load, book contents links that land, and three test flakes (T-8.8.4.2, T-8.8.4.5, T-8.8.4.6, T-8.8.4.7, T-3.7.3.4, 2026-11-04)
+
+PR [#410](https://github.com/khoks/VideoResearchPro/pull/410). [D-136](docs/decisions.md#d-136--a-books-contents-take-their-ids-from-the-rendered-manuscript-the-main-chunk-meets-its-budget-with-lazy-markdown-and-lazy-routes-and-the-device-suites-server-is-dual-stack-2026-11-04).
+
+- The main chunk went from 246.49 to 162.88 kB gzip, under the 170 kB budget, and first paint from about 317 to about 238 kB. The Markdown renderer loads on demand, with the text on the page first in the same elements, and seven occasional pages became lazy routes. Moving between Echo or Author pages shows a brief spinner the first time in a session.
+- A book's contents links land on the heading they name, in Markdown, EPUB, PDF and the reader. A book's Conclusion used to link to a report's, and titles such as `a ] b` broke their links. Stored books change only when regenerated.
+- Device suite: the refused connection is explained, by a Chromium NetLog. Windows now and then fails a connect outright, and Chromium falls back to an address nothing listened on. The dev server now listens on both, with 0 failures in 5,899 pages. No retries were added.
+- The backend suite stays off huggingface.co once the model is cached, so a DNS drop no longer fails it, and the share-token flake (T-3.7.3.4) is gone.
+
+### Added: a relative publish window and two starters that read podcasts (S-8.6.3, S-8.6.4, 2026-11-04)
+
+PR [#408](https://github.com/khoks/VideoResearchPro/pull/408). [D-135](docs/decisions.md#d-135--the-publish-window-is-a-preference-that-leads-the-inferred-profile-a-window-that-cannot-act-is-refused-and-starters-name-only-sources-that-need-no-search-credential-2026-11-04).
+
+- A topic run can prefer sources from the last N days, set on the submit form or saved in a template. It is stored as days and resolved when the run ranks, so a saved recipe never goes stale. It is a ranking preference, never a filter: a foundational older video can still win. With no window the prompt is byte-identical.
+- A window on a channel or subscription run, or on a topic run without YouTube, is a 422, because only YouTube results are ranked.
+- Two new starters: **Podcast digest** (podcasts, 8 results, brief) and **Mixed-source debate** (YouTube, Hacker News and podcasts, 18). Both were checked with read-only live calls. Bluesky and Mastodon are left out because those calls returned nothing.
+- **Long podcast episodes are now read.** An episode over Whisper's 25 MB cap goes through the chunked path videos use, which lifts D-033's limit. This is new spend: such an episode used to fail for free and now costs its full length, on any run that names podcasts. `WHISPER_MAX_PER_JOB=0` turns it off, and `ffmpeg` and `ffprobe` must be on the worker's PATH.
+- `/templates` warns when a template reads podcasts and the install cannot transcribe them. Podcast search takes shows in turn, so one show cannot fill a share.
+- Migrations `b84e405ab989` and `927718ee5b78`. Restart after pulling.
+
+### Fixed: your edits to Echo facts survive a sync, and connector tokens hold up at the edges (T-3.2.1.11, T-3.2.1.12, T-3.3.1.7, T-3.4.1.10, 2026-11-04)
+
+PR [#409](https://github.com/khoks/VideoResearchPro/pull/409). [D-134](docs/decisions.md#d-134--a-live-manual-fact-holds-its-key-against-every-source-a-401-retries-one-call-a-lease-guards-the-refresh-token-and-a-changed-row-beats-a-refresh-answer-2026-11-04).
+
+- A fact you wrote holds its key against a connector sync and an export import. The connector panel says when one was kept, and a fact you then delete stays deleted. A row past its expiry holds nothing.
+- A 401 in the middle of a sync now refreshes once and retries that one call, so pages already fetched are not fetched again. Only a refused refresh, a 401 on a token just issued, or a 401 with nothing to renew with asks you to reconnect.
+- A scheduled sync and "Sync now" no longer race for a rotating refresh token: one spends it and the other uses the result. A reconnect during a refresh is not written over. Tokens are scrubbed from logs and from `last_error`.
+- The full brain archive now carries only the evidence that still stands for a rejected signal, and the manifest counts what it held back. New script `sweep_rejected_signal_evidence.py`, a dry run by default, clears such words at rest; it found nothing on this install.
+- `echo_drafts.model` is `String(128)`. Migration `5f8caf39b5b1`.
+
+### Changed: the language tagger stops calling languages it does not know Hindi (T-1.16.2.15, T-1.16.2.8, T-1.16.1.10, T-1.16.2.14, T-1.17.3.3, 2026-11-04)
+
+PR [#403](https://github.com/khoks/VideoResearchPro/pull/403). [D-133](docs/decisions.md#d-133--the-tagger-abstains-without-hindi-evidence-the-presence-floor-reads-grammar-an-offline-lexicon-sees-english-in-devanagari-and-scores-are-quoted-from-the-production-row-2026-11-04).
+
+- Latin text with no Hindi evidence now reads as another language rather than romanised Hindi, so no prompt tells a model that a Spanish source is Hindi. It still counts as non-English, so such a chunk is still rendered for retrieval.
+- A new offline lexicon sees most English written in Devanagari. On the held-out split, precision went from 0.792 to 0.940 with recall still 1.000, and the error in the Hindi share from 0.204 to 0.051. No LLM is involved.
+- The language badge reads `eng`, `hin` and `urd`, and shows "Other language", or "Other language + English", where it cannot name the language.
+- New script `backfill_chunk_language_fields.py` stamps language fields on older chunks: a dry run by default, no LLM, no re-embedding. Those chunks stay embedded as their original text, so retrieval does not change for them. `--clear-stale` removes the fields from documents that now read as plain English.
+- A job that extracts a document's era for the first time now stamps its stored chunks.
+- **Owner steps, none run:** four, in one order, under S-1.16.2 on the board. `backfill_language_mix.py` must be rerun with the new tagger before the chunk pass.
+
+### Fixed: Q&A brief keeps room for thinking, and a report cut off at its budget says so (T-1.15.4.4, T-1.15.3.8, T-1.15.3.7, T-8.3.3.10, S-8.13.2, 2026-11-04)
+
+PR [#406](https://github.com/khoks/VideoResearchPro/pull/406). [D-132](docs/decisions.md#d-132--qa-brief-keeps-the-whole-thinking-reserve-a-cut-off-report-offers-deep-a-citation-with-no-document-casts-no-vote-and-clarify-is-one-optional-route-2026-11-04).
+
+- Q&A brief could truncate, by arithmetic: thinking counts inside the token budget, and the reserve for medium is more than the whole brief. Brief on the default model goes from 2,025 to 6,121 tokens, on job, library and shelf answers. It is a ceiling; the brief does the shortening. Reasoning-off brief, unset, standard and deep do not change. Nothing has run on a live model.
+- A knowledge report cut off at its budget now says so, on the drawer and the reader, with **Regenerate at Deep depth**. Both knowledge endpoints return `report_cut_off`.
+- The channel page's batch knowledge run has one depth select at the confirm step, on Auto, which sends what it always sent.
+- Saved-search change detection now counts PDF, page, thread and podcast citations, keyed on `document_id`. A stored citation with no document casts no vote for that one run, recorded as `embedding_only`.
+- The shelf panel has the library's clarify step, shared as `ClarifyStep`. A failed clarify asks directly instead of stopping the ask. `POST /library/qa/clarify` now runs on the asker's key.
+
+### Added: audio minutes on your usage page, and usage written part-way through long tasks (T-5.2.12, T-5.2.13, 2026-11-04)
+
+PR [#405](https://github.com/khoks/VideoResearchPro/pull/405). [D-131](docs/decisions.md#d-131--whisper-is-charged-at-the-shared-call-and-usage-is-written-part-way-on-a-timer-after-every-billed-response-2026-11-04).
+
+- New metric `whisper_seconds`, on `GET /usage` and "Your usage" (e.g. "90 min of audio transcribed"). It covers the YouTube fallback, podcast audio and Echo recordings, and a split recording counts each billed chunk.
+- A long task now writes its usage as it goes, at most every `USAGE_FLUSH_INTERVAL_SECONDS` (new setting, default 60, `0` = only at the end). A worker that dies mid-way keeps what was written, and a redelivered task charges only what it spends again.
+- Recorded, never limited. No migration, and `/auth/quota` is unchanged.
+
+### Added: the full logo and the marketing logo set (T-2.8.2, T-2.8.4, 2026-11-04)
+
+PR [#404](https://github.com/khoks/VideoResearchPro/pull/404). [D-130](docs/decisions.md#d-130--the-brand-lockup-follows-branding-section-3-dark-logos-are-separate-files-and-the-outline-generators-tools-are-not-dependencies-2026-11-04).
+
+- `logo-full.svg`, `logo-full-dark.svg` and `logo-mark-dark.svg` in `frontend/public`: the echo mark with the Devanagari and Latin wordmarks, outlined so no font is needed. `marketing/public` gains the same four logos and the `/favicon.svg` its layout links to, which was a 404.
+- `frontend/scripts/outline-logos.py` builds them from `logo-mark.svg`, and `docs/branding.md` section 8 has the inventory, lockup rules, fonts and licences.
+- **The owner has not seen this artwork,** so it stands as a proposal. No app page uses the new logos yet.
+
 ### Changed: the docs match the code, and CI holds them to it (T-4.8.5, T-5.6.7, 2026-11-04)
 
 PR [#401](https://github.com/khoks/VideoResearchPro/pull/401). [D-129](docs/decisions.md#d-129--drift-tests-hold-the-docs-to-the-code-the-repo-has-one-env-template-and-the-anchor-checker-writes-only-when-told-to-2026-11-04).

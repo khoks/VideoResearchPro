@@ -24,6 +24,7 @@ from pathlib import Path
 import pytest
 
 from app.config import settings
+from app.middleware.content_security_policy import FILE_POLICY
 from app.models.personal_context import PersonalContext
 from app.models.share import Share
 from app.services import auth_service, echo_service, echo_vectors
@@ -212,6 +213,7 @@ def test_file_share_is_stored_under_the_tenant_and_downloads_as_attachment(
     assert dl.content == data
     assert dl.headers["content-disposition"].startswith("attachment")
     assert dl.headers["x-content-type-options"] == "nosniff"
+    assert dl.headers["content-security-policy"] == FILE_POLICY
 
 
 def test_traversal_filename_writes_nothing_outside(unauthenticated_client, db, two, shares_dir, tmp_path):

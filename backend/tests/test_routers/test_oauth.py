@@ -24,6 +24,8 @@ def _configure_providers(monkeypatch):
     monkeypatch.setattr(settings, "OAUTH_GOOGLE_CLIENT_SECRET", "google-secret")
     monkeypatch.setattr(settings, "OAUTH_GITHUB_CLIENT_ID", "github-client-id")
     monkeypatch.setattr(settings, "OAUTH_GITHUB_CLIENT_SECRET", "github-secret")
+    monkeypatch.setattr(settings, "APP_BASE_URL", "http://localhost:5173")
+    monkeypatch.setattr(settings, "OAUTH_ALLOWED_REDIRECT_ORIGINS", "https://app.example.com")
 
 
 # ---------------------------------------------------------------------------
@@ -85,6 +87,144 @@ def test_start_400_for_unknown_provider(unauthenticated_client):
         "/api/v1/auth/oauth/yahoo/start?redirect_uri=https://x.example.com"
     )
     assert r.status_code == 400
+
+
+# ---------------------------------------------------------------------------
+# T-4.11.2.4: the redirect allow-list
+#
+# Mutation checks (each failed the named test when this shipped): dropping the
+# check from `start_flow`, comparing without the port, or dropping the
+# credentials or the backslash refusal (`test_start_refuses_an_address_off_the_list`);
+# leaving APP_BASE_URL out of the list (`test_a_dev_install_keeps_working_untouched`).
+# ---------------------------------------------------------------------------
+
+
+DEV = "http://localhost:5173/login/oauth/google/callback"
+
+
+def _start(client, redirect_uri: str, provider: str = "google"):
+    return client.get(
+        f"/api/v1/auth/oauth/{provider}/start", params={"redirect_uri": redirect_uri}
+    )
+
+
+def _sent_to_provider(response) -> str:
+    query = urllib.parse.urlparse(response.json()["authorize_url"]).query
+    return urllib.parse.parse_qs(query)["redirect_uri"][0]
+
+
+def test_a_dev_install_keeps_working_untouched(unauthenticated_client, db, monkeypatch):
+    """No setting at all: APP_BASE_URL's default names where Vite serves."""
+    monkeypatch.setattr(settings, "OAUTH_ALLOWED_REDIRECT_ORIGINS", "")
+    assert type(settings).model_fields["APP_BASE_URL"].default == "http://localhost:5173"
+
+    r = _start(unauthenticated_client, DEV)
+
+    assert r.status_code == 200
+    assert _sent_to_provider(r) == DEV
+    assert db.query(OAuthState).one().redirect_uri == DEV
+
+
+@pytest.mark.parametrize(
+    "redirect_uri",
+    [
+        "https://evil.example/login/oauth/google/callback",
+        # Same host, another scheme or port.
+        "https://localhost:5173/login/oauth/google/callback",
+        "http://localhost:5174/login/oauth/google/callback",
+        "http://localhost/login/oauth/google/callback",
+        "http://app.example.com/oauth/callback",
+        # Look-alikes that start with an allowed origin.
+        "http://localhost:5173.evil.example/cb",
+        "https://app.example.com.evil.example/cb",
+        "http://localhost:5173@evil.example/cb",
+        "https://app.example.com:443@evil.example/cb",
+        # Credentials before an allowed host. Nothing needs them.
+        "http://user:secret@localhost:5173/cb",
+        "http://evil.example@localhost:5173/cb",
+        # Two parsers, two hosts. A browser turns the backslash into a slash.
+        "http://evil.example\\@localhost:5173/cb",
+        "http://localhost:5173\\.evil.example/cb",
+        # urlsplit quietly drops these; a provider might not.
+        "http://local\thost:5173/cb",
+        "http://localhost:5173/cb\nX-Injected: 1",
+        " http://localhost:5173/cb",
+        # Not web addresses.
+        "javascript:alert(1)//localhost:5173/",
+        "data:text/html,http://localhost:5173/",
+        "file:///localhost:5173/etc/passwd",
+        "//localhost:5173/cb",
+        "/login/oauth/google/callback",
+        # Unparseable.
+        "http://localhost:notaport/cb",
+        "http://[::1/cb",
+    ],
+)
+def test_start_refuses_an_address_off_the_list(unauthenticated_client, db, redirect_uri):
+    r = _start(unauthenticated_client, redirect_uri)
+    assert r.status_code == 400, redirect_uri
+    assert "OAUTH_ALLOWED_REDIRECT_ORIGINS" in r.json()["detail"]
+    assert "authorize_url" not in r.json()
+    assert db.query(OAuthState).count() == 0, "nothing is stored"
+
+
+@pytest.mark.parametrize(
+    "redirect_uri",
+    [
+        "https://app.example.com/oauth/callback",
+        "https://app.example.com:443/oauth/callback",  # the default port, spelt out
+        "https://APP.example.com/oauth/callback",
+        "HTTPS://app.example.com/oauth/callback",
+        "https://app.example.com/oauth/callback?from=login",
+        DEV,
+    ],
+)
+def test_the_provider_gets_exactly_what_was_sent(unauthenticated_client, db, redirect_uri):
+    r = _start(unauthenticated_client, redirect_uri)
+    assert r.status_code == 200, redirect_uri
+    assert _sent_to_provider(r) == redirect_uri
+    assert db.query(OAuthState).one().redirect_uri == redirect_uri
+
+
+def test_127_0_0_1_is_not_localhost(unauthenticated_client, db):
+    """Nothing else here treats them alike: CORS lists localhost alone, so a
+    page opened at 127.0.0.1:5173 cannot call the API on the default config,
+    and a provider registers each as its own callback."""
+    assert _start(unauthenticated_client, "http://127.0.0.1:5173/cb").status_code == 400
+
+
+def test_127_0_0_1_works_once_named(unauthenticated_client, monkeypatch):
+    monkeypatch.setattr(settings, "OAUTH_ALLOWED_REDIRECT_ORIGINS", "http://127.0.0.1:5173")
+    assert _start(unauthenticated_client, "http://127.0.0.1:5173/cb").status_code == 200
+
+
+def test_app_base_url_counts_by_its_origin(unauthenticated_client, monkeypatch):
+    monkeypatch.setattr(settings, "OAUTH_ALLOWED_REDIRECT_ORIGINS", "")
+    monkeypatch.setattr(settings, "APP_BASE_URL", "https://research.example.org/app/")
+    assert _start(unauthenticated_client, "https://research.example.org/elsewhere").status_code == 200
+    assert _start(unauthenticated_client, "http://research.example.org/app/").status_code == 400
+
+
+def test_a_list_of_origins_reads_loosely(unauthenticated_client, monkeypatch):
+    monkeypatch.setattr(
+        settings, "OAUTH_ALLOWED_REDIRECT_ORIGINS", " https://one.example , https://two.example:8443/ ,, "
+    )
+    assert _start(unauthenticated_client, "https://one.example/cb").status_code == 200
+    assert _start(unauthenticated_client, "https://two.example:8443/cb").status_code == 200
+    assert _start(unauthenticated_client, "https://two.example/cb").status_code == 400
+
+
+def test_a_bad_entry_is_logged_and_only_ever_allows_less(unauthenticated_client, monkeypatch):
+    log = MagicMock()
+    monkeypatch.setattr(oauth_service, "logger", log)
+    monkeypatch.setattr(settings, "OAUTH_ALLOWED_REDIRECT_ORIGINS", "not an origin, https://one.example")
+    assert _start(unauthenticated_client, "https://one.example/cb").status_code == 200
+    log.warning.assert_called_once()
+
+
+def test_an_unconfigured_provider_still_answers_503_first(unauthenticated_client, monkeypatch):
+    monkeypatch.setattr(settings, "OAUTH_GOOGLE_CLIENT_ID", None)
+    assert _start(unauthenticated_client, "https://evil.example/cb").status_code == 503
 
 
 # ---------------------------------------------------------------------------

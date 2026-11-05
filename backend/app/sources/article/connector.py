@@ -25,6 +25,7 @@ from app.sources.paste_url.connector import (
     hash_url,
 )
 from app.sources.types import Candidate
+from app.utils.shared_url_log import host_of
 
 logger = logging.getLogger(__name__)
 
@@ -181,8 +182,8 @@ class ArticleConnector(_PasteArticleConnector):
         except Exception as e:
             logger.warning(
                 "ArticleConnector.list_creator_items: feed fetch failed for %s: %s",
-                creator_external_id,
-                e,
+                host_of(creator_external_id),
+                type(e).__name__,
                 extra={"job_id": job_id},
             )
             return

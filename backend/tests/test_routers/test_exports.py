@@ -22,6 +22,7 @@ from unittest.mock import patch
 import pytest
 
 from app.config import settings
+from app.middleware.content_security_policy import FILE_POLICY
 from app.models.document import Document
 from app.models.job import Job
 from app.models.job_video import JobVideo
@@ -111,6 +112,7 @@ def test_qa_openai_returns_valid_jsonl_with_messages_envelope(client, db, test_u
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("application/x-ndjson")
     assert 'filename="qa-dataset-openai.jsonl"' in response.headers.get("content-disposition", "")
+    assert response.headers["content-security-policy"] == FILE_POLICY
 
     records = _parse_jsonl(response.text)
     assert len(records) == 3

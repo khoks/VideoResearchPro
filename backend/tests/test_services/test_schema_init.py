@@ -45,6 +45,32 @@ def fake_orm_metadata():
     return md
 
 
+@pytest.mark.parametrize("folder", ["50%done", "a%(b)s", "c%%d"])
+def test_a_percent_in_the_database_path_migrates(tmp_path, folder):
+    """T-4.11.2.7: real Alembic, a real file. `set_main_option` goes through
+    ConfigParser, where a bare `%` raises and `%(b)s` asks for a variable. The
+    file must land at the path as written, `%%` included: a double unescape
+    would put it in another folder without a word."""
+    from app.services.schema_init_service import ensure_schema_at_head
+
+    directory = tmp_path / folder
+    directory.mkdir()
+    database = directory / "app.db"
+    url = f"sqlite:///{database.as_posix()}"
+    metadata = _empty_orm_metadata_for_fresh_install()
+
+    assert ensure_schema_at_head(url, metadata) == "fresh_install"
+
+    assert database.exists(), f"nothing at {database}: {list(tmp_path.rglob('*'))}"
+    assert [p for p in tmp_path.rglob("*.db")] == [database]
+    assert ensure_schema_at_head(url, metadata) == "already_at_head"
+
+
+def _empty_orm_metadata_for_fresh_install() -> MetaData:
+    """A fresh install never reads the ORM; the second call is at head."""
+    return MetaData()
+
+
 def _create_tables_via_metadata(url: str, metadata: MetaData) -> None:
     eng = create_engine(url)
     metadata.create_all(bind=eng)

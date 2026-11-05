@@ -28,6 +28,7 @@ import pytest
 
 from app.config import settings
 from app.connectors.base import ActivityEvent as EventIn
+from app.middleware.content_security_policy import FILE_POLICY
 from app.models.activity_event import ActivityEvent
 from app.models.audit_log import AuditLog
 from app.models.echo_connector import EchoConnectorCredential, EchoConnectorGrant, EchoConnectorOAuthState
@@ -247,6 +248,7 @@ def test_export_round_trip_is_lossless(unauthenticated_client, db, brains, share
     r = unauthenticated_client.get(EXPORT, headers=brains["ha"])
     assert r.status_code == 200, r.text
     assert r.headers["content-type"] == "application/zip"
+    assert r.headers["content-security-policy"] == FILE_POLICY
     assert "echo-export-" in r.headers["content-disposition"]
 
     archive = read_archive(io.BytesIO(r.content))

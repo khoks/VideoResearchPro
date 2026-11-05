@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse
 
 from app.config import settings
 from app.database import Base, engine
+from app.middleware.content_security_policy import ContentSecurityPolicyMiddleware
 from app.middleware.rate_limit import RateLimitMiddleware
 from app.routers import (
     admin,
@@ -196,6 +197,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+# T-4.11.2.1: added last, so outermost, so a 429 and a preflight carry it too.
+app.add_middleware(ContentSecurityPolicyMiddleware)
 
 app.include_router(health.router, prefix="/api/v1", tags=["health"])
 app.include_router(auth.router, prefix="/api/v1")

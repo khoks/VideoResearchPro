@@ -163,6 +163,28 @@ def test_a_held_out_note_in_another_language_gets_a_pair():
     assert set(vt.LANGUAGE_NAMES) == set(signals.LANGUAGES)
 
 
+def test_the_other_wording_relies_on_the_topic_call_a_known_gap():
+    """A gap, pinned. FakeModel echoes the note, so the test above cannot show
+    it: TOPIC_PROMPT names no language and the drafter never sees the note, so
+    an English topic leaves an `other` draft with only English to go on. Only a
+    live run can say how often that happens; the comment on LANGUAGE_NAMES says
+    what to do then."""
+    spanish = "Creo que los incentivos importan mas que las intenciones en este caso, y la gente responde a lo que le conviene."
+    assert "language" not in vt.TOPIC_PROMPT.lower()
+    prompts: list[str] = []
+
+    def answers_in_english(prompt: str) -> tuple[str, int, int]:
+        prompts.append(prompt)
+        return "Whether incentives outweigh intentions" if len(prompts) == 1 else "Un borrador", 1, 1
+
+    vt.build_pairs([("n1", spanish)], NOTES, ask=answers_in_english, trait_card=lambda topic: [], rng=random.Random(3))
+
+    draft_prompt = prompts[1]
+    assert "Situation:\nWhether incentives outweigh intentions\n" in draft_prompt
+    assert "in the language of the situation above reacting to this" in draft_prompt
+    assert spanish not in draft_prompt
+
+
 def test_score_picks_is_the_pre_registered_rule():
     keys = [{"pair": f"p{i:02d}", "own_is": "A" if i % 2 else "B"} for i in range(20)]
     own = {k["pair"]: k["own_is"] for k in keys}

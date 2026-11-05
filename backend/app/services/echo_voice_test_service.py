@@ -103,7 +103,11 @@ LANGUAGE_NAMES = {
     "hi-Deva": "Hindi",
     "hi-Latn": "Hindi in Roman letters",
     "mixed": "Hinglish",
-    # `language_of` could not name it, and the situation was drawn from the note.
+    # `language_of` could not name it. This relies on the topic call answering in
+    # the note's language, which TOPIC_PROMPT does not ask for and, being fixed by
+    # the pre-registration, cannot. Unchecked on a real note: an English topic
+    # gets an English draft beside the user's note, and the pair gives itself
+    # away. If a live run shows that, hold `other` notes out of the pairs.
     "other": "the language of the situation above",
 }
 

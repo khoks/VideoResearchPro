@@ -111,9 +111,9 @@ def public_view(document: Any) -> dict[str, Any] | None:
     ``code_mixed`` applies the chunker's own rule (``chunk_metadata_from_profile``,
     with its 3% presence floor) to the stored profile, so it says whether the
     TEXT is not plain English. It is not a fact about the chunks: a document
-    chunked before S-1.16.2 and profiled since (the backfill, or a job that
-    reused its chunks without re-embedding) reads true while its chunks carry
-    no ``code_mix_*`` until it is re-chunked.
+    chunked before S-1.16.2 and profiled by the backfill reads true while its
+    chunks carry no ``code_mix_*`` until the chunk backfill reaches them or a
+    job reuses it (``metadata_backfill_service.stamp_chunk_language_fields``).
     """
     profile = load(document)
     if profile is None:

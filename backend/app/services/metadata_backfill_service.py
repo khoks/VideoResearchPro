@@ -16,7 +16,9 @@ Three passes over what the library already holds, each dry-run by default:
   for the first time (T-1.17.3.3).
 * ``backfill_chunk_language_fields`` — the document-level ``code_mix_*``
   fields on chunks written before S-1.16.2, from the stored
-  ``documents.language_mix`` (T-1.16.2.14).
+  ``documents.language_mix`` (T-1.16.2.14). ``stamp_chunk_language_fields``
+  adds them to one document's chunks that lack them, which a job runs when it
+  reuses that document (T-1.16.2.16).
 
 All are idempotent (a second run finds nothing to change) and resumable (an
 interrupted run is finished by running it again). The CLIs are
@@ -62,9 +64,9 @@ class LanguageMixReport:
     failed: int = 0
     by_origin: Counter = field(default_factory=Counter)
     by_primary: Counter = field(default_factory=Counter)
-    # Profiles that are not plain English by the chunker's 3% rule. Their
-    # chunks gain `code_mix_*` only when re-chunked; this pass writes the
-    # column, never the chunks.
+    # Profiles that are not plain English by the chunker's 3% rule. This pass
+    # writes the column, never the chunks: those gain `code_mix_*` from the
+    # chunk backfill, or when a job reuses the document.
     code_mixed: int = 0
 
     def as_dict(self) -> dict[str, Any]:
@@ -416,15 +418,28 @@ def backfill_chunk_temporal_fields(
     return report
 
 
+def _document_chunks(document: Any, collection: Any) -> list[tuple[str, dict[str, Any]]]:
+    """``(chunk id, metadata)`` for one document's chunks, without a collection scan.
+
+    By ``document_id``, then ``video_id``, like
+    ``chroma_service.get_document_chunks``. Raises on a Chroma read error.
+    """
+    got = collection.get(where={"document_id": document.document_id}, include=["metadatas"])
+    video_id = getattr(document, "video_id", None)
+    if not (got.get("ids") or []) and video_id:
+        got = collection.get(where={"video_id": video_id}, include=["metadatas"])
+    ids = got.get("ids") or []
+    metas = got.get("metadatas") or [None] * len(ids)
+    return [(chunk_id, meta or {}) for chunk_id, meta in zip(ids, metas)]
+
+
 def stamp_chunk_temporal_fields(document: Any, *, collection: Any = None, page_size: int = 1000) -> int:
     """The same update for one document's chunks (T-1.17.3.3). Returns how many changed.
 
     A job that reuses an embedded document re-chunks it without re-inserting,
     so an era extracted on that run would otherwise reach the stored chunks
-    only at the next backfill. Reads the document's chunks by ``document_id``
-    (then ``video_id``, like ``chroma_service.get_document_chunks``) instead
-    of scanning the collection. Raises on a Chroma read error and logs a
-    failed write; the caller decides what that means for its job.
+    only at the next backfill. Raises on a Chroma read error and logs a failed
+    write; the caller decides what that means for its job.
     """
     fields = chunk_temporal_fields(document)
     if not fields:
@@ -433,15 +448,9 @@ def stamp_chunk_temporal_fields(document: Any, *, collection: Any = None, page_s
         from app.services import chroma_service
 
         collection = chroma_service.get_global_collection()
-    got = collection.get(where={"document_id": document.document_id}, include=["metadatas"])
-    video_id = getattr(document, "video_id", None)
-    if not (got.get("ids") or []) and video_id:
-        got = collection.get(where={"video_id": video_id}, include=["metadatas"])
-    ids = got.get("ids") or []
-    metas = got.get("metadatas") or [None] * len(ids)
     pending = []
-    for chunk_id, meta in zip(ids, metas):
-        diff, _, _ = _diff_fields(fields, meta or {})
+    for chunk_id, meta in _document_chunks(document, collection):
+        diff, _, _ = _diff_fields(fields, meta)
         if diff:
             pending.append((chunk_id, diff))
     updated, _ = _write_pending(collection, pending, page_size, "stamp_chunk_temporal_fields")
@@ -509,6 +518,38 @@ def chunk_language_fields(profile: dict[str, Any] | None) -> dict[str, Any]:
     """
     fields = code_mixing_service.chunk_metadata_from_profile(profile)
     return {name: value for name, value in fields.items() if value != ""}
+
+
+def stamp_chunk_language_fields(document: Any, *, collection: Any = None, page_size: int = 1000) -> int:
+    """Add the stored profile's fields to a document's chunks that lack them (T-1.16.2.16).
+
+    Returns how many chunks changed. A job that reuses an embedded document
+    re-chunks it without re-inserting, so its stored chunks would otherwise
+    wait for ``backfill_chunk_language_fields``. Metadata only, through
+    ``_write_pending``: the chunks keep their vectors and gain no ``text_en``,
+    and a plain-English document costs no Chroma read at all.
+
+    Narrower than the backfill on purpose. A chunk that carries
+    ``code_mix_primary`` was chunked or stamped with a profile, so it is left
+    alone even when today's profile says something else: a job only fills
+    what is missing, and only the owner's backfill rewrites a value or clears
+    a stale chunk. Raises on a Chroma read error and logs a failed write; a
+    chunk not reached is picked up by the next job.
+    """
+    fields = chunk_language_fields(language_mix_service.load(document))
+    if not fields:
+        return 0
+    if collection is None:
+        from app.services import chroma_service
+
+        collection = chroma_service.get_global_collection()
+    pending = [
+        (chunk_id, fields)
+        for chunk_id, meta in _document_chunks(document, collection)
+        if not meta.get("code_mix_primary")
+    ]
+    updated, _ = _write_pending(collection, pending, page_size, "stamp_chunk_language_fields")
+    return updated
 
 
 def backfill_chunk_language_fields(

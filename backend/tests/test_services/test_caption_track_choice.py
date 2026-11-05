@@ -317,3 +317,21 @@ def test_missing_internals_fall_back_to_the_public_list():
     tracks, audio = youtube_service._list_caption_tracks(PublicOnly(), shape.video_id)
     assert [t.language_code for t in tracks] == ["en-US", "hi"]
     assert audio is None
+
+
+@pytest.mark.parametrize("name", sorted(SHAPES))
+def test_a_carried_language_ingests_what_the_lookup_ingests(harness, name):
+    """T-1.11.11.4 hands every video its declared language, where the lazy
+    lookup asked only when the tracks offered a choice. On one language that
+    can change the recorded reason, never the language ingested."""
+    shape = SHAPES[name]
+    looked_up = harness["run"](shape)
+    lookups = len(harness["lookups"])
+
+    carried = harness["run"](shape, audio_language=shape.declared)
+
+    assert len(harness["lookups"]) == lookups, "a carried value never asks"
+    if shape.expect is None:
+        assert looked_up is None and carried is None
+        return
+    assert (carried.language, carried.track["kind"]) == (looked_up.language, looked_up.track["kind"]) == shape.expect

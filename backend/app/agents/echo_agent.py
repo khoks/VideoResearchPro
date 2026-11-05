@@ -125,7 +125,7 @@ class DraftDeps:
     facts: Callable[[str], list[ContextItem]]
     #: language -> up to five of the user's own texts, style-diverse
     exemplars: Callable[[str], list[str]]
-    #: text -> en | hi-Deva | hi-Latn | mixed
+    #: text -> en | hi-Deva | hi-Latn | mixed | other (drafted in English)
     language_of: Callable[[str], str]
     models: dict[str, str] = field(default_factory=dict)
     #: Whether the stores answer: retrieval swallows their failures and returns nothing.

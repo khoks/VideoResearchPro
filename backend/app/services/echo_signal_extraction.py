@@ -94,12 +94,24 @@ class Input:
 
 
 def language_of(text: str) -> str:
-    """en | hi-Deva | hi-Latn | mixed, from the script and the word-level
-    Hindi share (``code_mixing_service``, which sees romanised Hindi)."""
+    """en | hi-Deva | hi-Latn | mixed | other, from the script and the words
+    ``code_mixing_service`` can name (it sees romanised Hindi).
+
+    ``hi_share`` counts every non-English word, the ones the tagger abstained
+    on included, so alone it reads a Spanish note as ``hi-Latn`` (T-3.3.2.11).
+    The share here is ``hi_share`` times ``named_share``, the figure the
+    chunker's presence floor reads: the words the tagger could name. That alone
+    would read the same note as ``en``, so text no label fits is ``other``: the
+    tagger's own ``primary_language`` verdict, and any script but Latin or
+    Devanagari, which these labels cannot describe. Text with no words is ``en``.
+    """
     from app.services import code_mixing_service, language_service
 
-    share = code_mixing_service.profile_text(text)["hi_share"]
+    profile = code_mixing_service.profile_transcript(text)
     script = language_service.dominant_script(text)
+    if profile["primary_language"] == "other" or script not in (None, "Latin", "Devanagari"):
+        return signals.UNNAMED_LANGUAGE
+    share = profile["hi_share"] * (profile["named_share"] or 0.0)
     dominant = settings.CODE_MIX_DOMINANT_SHARE
     borrowing = settings.CODE_MIX_BORROWING_MAX_SHARE
     if script == "Devanagari":

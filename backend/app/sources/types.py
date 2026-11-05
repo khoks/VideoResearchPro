@@ -13,6 +13,13 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
+#: A YouTube video's ``snippet.defaultAudioLanguage`` (T-1.11.11.4), under this
+#: key in ``SourceMetadata.extra``, ``Candidate.extra`` and
+#: ``documents.source_metadata_json``. The key with None means the details were
+#: read and the video declares nothing; no key means nobody has looked, so
+#: ``fetch_transcript`` may still ask. That difference is the unit it saves.
+DEFAULT_AUDIO_LANGUAGE = "default_audio_language"
+
 
 @dataclass
 class Candidate:

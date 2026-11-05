@@ -10,7 +10,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RejectedSignal, VoiceSignal, VoiceSignalList } from '../../services/echoApi';
-import { SIGNAL_TYPES, evidenceSummary, groupSignals, learningSummary, originLabel, restoreToast, sourceLabel } from '../../utils/echoSignals';
+import { SIGNAL_LANGUAGES, SIGNAL_TYPES, evidenceSummary, groupSignals, languageLabel, learningSummary, originLabel, restoreToast, sourceLabel } from '../../utils/echoSignals';
 import { useJobStore } from '../../stores/jobStore';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -127,6 +127,12 @@ afterEach(() => {
 });
 
 describe('signal helpers', () => {
+  it('names a language Echo could not (T-3.3.2.11), and offers it when correcting a signal', () => {
+    expect(languageLabel('other')).toBe('Other language');
+    expect(languageLabel(null)).toBeNull();
+    expect(SIGNAL_LANGUAGES.map((l) => l.value)).toContain('other');
+  });
+
   it('carry the server’s closed vocabulary, style first', () => {
     // echo_signal_service.STYLE_TYPES + PERSONALITY_TYPES, in order.
     expect(SIGNAL_TYPES.map((t) => t.type)).toEqual([

@@ -211,7 +211,7 @@
 
 ### NFR-5 — Observability
 
-- **NFR-5.1.** Logs go through stdlib `logging`: plain text by default, and with `LOG_FORMAT=json` one JSON object per line (`time`, `level`, `logger`, `message`, `exception`) from the API, the worker and beat. Their start banners are printed, not logged, so under `json` they are off. Two exceptions: a worker told to stop writes one notice (`worker: Warm shutdown (MainProcess)`) straight to the stream from its signal handler, where logging is not safe; and under `uvicorn --reload` or `--workers`, which the launchers do not pass, a parent process that never imports the app writes a few start lines as text.
+- **NFR-5.1.** Logs go through stdlib `logging`: plain text by default, and with `LOG_FORMAT=json` one JSON object per line (`time`, `level`, `logger`, `message`, `exception`) from the API, the worker and beat. Their start banners are printed, not logged, so under `json` they are off. Two exceptions: a worker told to stop writes its shutdown notices (`worker: Warm shutdown (MainProcess)`) straight to the stream from its signal handler, where logging is not safe; and under `uvicorn --reload` or `--workers`, which the launchers do not pass, a parent process that never imports the app writes a few start lines as text.
 - **NFR-5.2.** Celery task logs include `job_id` in every record.
 - **NFR-5.3.** YouTube API calls are tracked in `api_quota_log` with cost units.
 - **NFR-5.4.** LLM startup probes record `latency_ms` per `(provider, model)` pair on the `LLMStatus` singleton.

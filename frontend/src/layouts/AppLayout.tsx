@@ -16,6 +16,7 @@ import { SearchButton } from '../components/palette/SearchButton';
 import { NotificationBell } from '../components/notifications/NotificationBell';
 import { useLiveNotifications } from '../hooks/useNotifications';
 import { useShowGettingStarted } from '../hooks/useOnboarding';
+import { IconButton } from '../components/primitives';
 import { useColors } from '../hooks/useTheme';
 import { fonts, fontSize, fontWeight, lineHeight, radius, space, motion } from '../theme';
 
@@ -605,16 +606,12 @@ function HamburgerButton({ open, onClick }: { open: boolean; onClick: () => void
     transition: `transform ${motion.duration.fast}ms ${motion.easing.standard}, opacity ${motion.duration.fast}ms`,
   };
   return (
-    <button
-      type="button"
+    <IconButton
+      label={open ? 'Close navigation' : 'Open navigation'}
       onClick={onClick}
-      aria-label={open ? 'Close navigation' : 'Open navigation'}
       aria-expanded={open}
       style={{
-        background: 'transparent',
-        border: 'none',
         padding: space['2'],
-        cursor: 'pointer',
         display: 'flex',
         flexDirection: 'column',
         gap: 4,
@@ -624,6 +621,6 @@ function HamburgerButton({ open, onClick }: { open: boolean; onClick: () => void
       <span style={{ ...bar, transform: open ? 'translateY(6px) rotate(45deg)' : 'none' }} />
       <span style={{ ...bar, opacity: open ? 0 : 1 }} />
       <span style={{ ...bar, transform: open ? 'translateY(-6px) rotate(-45deg)' : 'none' }} />
-    </button>
+    </IconButton>
   );
 }

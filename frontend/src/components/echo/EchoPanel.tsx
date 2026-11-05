@@ -25,7 +25,7 @@ import { Markdown } from '../common/Markdown';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { CitationLink } from '../citation';
 import { citedFileFailed } from '../citation/citedFile';
-import { Badge, Button, Spinner, Textarea } from '../primitives';
+import { Badge, Button, IconButton, Spinner, Textarea } from '../primitives';
 import { useAskLibraryQA } from '../../hooks/useLibraryQA';
 import { useAskQAHistoryChat } from '../../hooks/useQAHistoryChat';
 import { useEchoConnectors, useEchoStatus } from '../../hooks/useEcho';
@@ -117,31 +117,28 @@ export function EchoHeaderButton() {
   const open = useEchoPanelStore((st) => st.open);
   const toggle = useEchoPanelStore((st) => st.toggle);
   return (
-    <button
-      type="button"
+    <IconButton
+      label="Echo"
       data-echo-opener=""
       onClick={toggle}
       aria-expanded={open}
       aria-controls={PANEL_ID}
       aria-haspopup="dialog"
-      aria-label="Echo"
       style={{
         width: touch.primary,
         height: touch.primary,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        border: 'none',
         borderRadius: radius.md,
         background: open ? c.accentSubtle : 'transparent',
         color: c.accent,
         fontFamily: fonts.display,
         fontSize: fontSize.md,
-        cursor: 'pointer',
       }}
     >
       <span aria-hidden>ध्व</span>
-    </button>
+    </IconButton>
   );
 }
 
@@ -255,24 +252,20 @@ export function EchoPanel() {
               Clear
             </Button>
           )}
-          <button
-            type="button"
-            aria-label="Close Echo"
+          <IconButton
+            label="Close Echo"
             data-echo-first=""
             onClick={() => setOpen(false)}
             style={{
               width: 36,
               height: 36,
-              border: 'none',
               borderRadius: radius.md,
-              background: 'transparent',
               color: c.textSecondary,
               fontSize: fontSize.lg,
-              cursor: 'pointer',
             }}
           >
             ×
-          </button>
+          </IconButton>
         </div>
         <p style={{ margin: `${space['1']} 0 0`, fontFamily: fonts.ui, fontSize: fontSize.xs, color: c.textSecondary, lineHeight: lineHeight.normal }}>
           You are talking to an AI. It answers from your library, notes and past questions, and can be wrong: check what it cites.
@@ -462,14 +455,13 @@ function CardFrame({ card, onDismiss, children }: { card: EchoCard; onDismiss: (
     >
       <p style={{ margin: 0, fontFamily: fonts.ui, fontSize: fontSize.sm, fontWeight: fontWeight.semibold, color: c.textPrimary }}>{card.title}</p>
       {children}
-      <button
-        type="button"
-        aria-label={`Dismiss: ${card.title}`}
+      <IconButton
+        label={`Dismiss: ${card.title}`}
         onClick={() => onDismiss(card.key)}
-        style={{ position: 'absolute', top: 2, right: 2, width: 32, height: 32, border: 'none', background: 'transparent', color: c.textMuted, cursor: 'pointer', fontSize: fontSize.md }}
+        style={{ position: 'absolute', top: 2, right: 2, width: 32, height: 32, color: c.textMuted, fontSize: fontSize.md }}
       >
         ×
-      </button>
+      </IconButton>
     </div>
   );
 }

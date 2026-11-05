@@ -3,8 +3,7 @@ import { DocumentsBrowser } from '../library/DocumentsBrowser';
 import { libraryApi } from '../../services/libraryApi';
 import type { Channel } from '../../services/channelsApi';
 import { IntelligenceTab } from './IntelligenceTab';
-import { useColors } from '../../hooks/useTheme';
-import { fonts, fontSize, fontWeight, space } from '../../theme';
+import { Tab, Tabs } from '../primitives';
 
 type TabKey = 'documents' | 'intelligence';
 
@@ -13,7 +12,6 @@ type TabKey = 'documents' | 'intelligence';
  * `?tab=` so the Intelligence view can be linked to.
  */
 export function ChannelTabs({ channel }: { channel: Channel }) {
-  const c = useColors();
   const [params, setParams] = useSearchParams();
   const tab: TabKey = params.get('tab') === 'intelligence' ? 'intelligence' : 'documents';
   const select = (next: TabKey) =>
@@ -27,33 +25,16 @@ export function ChannelTabs({ channel }: { channel: Channel }) {
       { replace: true },
     );
 
-  const tabStyle = (active: boolean) => ({
-    background: 'transparent',
-    color: active ? c.accent : c.textSecondary,
-    border: 'none',
-    borderBottom: `2px solid ${active ? c.accent : 'transparent'}`,
-    padding: `${space['2']} ${space['4']}`,
-    marginBottom: -1,
-    cursor: 'pointer',
-    fontFamily: fonts.ui,
-    fontWeight: active ? fontWeight.semibold : fontWeight.medium,
-    fontSize: fontSize.sm,
-  });
-
   return (
     <>
-      <div
-        role="tablist"
-        aria-label="Channel sections"
-        style={{ display: 'flex', gap: space['1'], marginBottom: space['4'], borderBottom: `1px solid ${c.border}` }}
-      >
-        <button type="button" role="tab" aria-selected={tab === 'documents'} style={tabStyle(tab === 'documents')} onClick={() => select('documents')}>
+      <Tabs label="Channel sections">
+        <Tab active={tab === 'documents'} onClick={() => select('documents')} style={{ letterSpacing: 'normal' }}>
           Documents
-        </button>
-        <button type="button" role="tab" aria-selected={tab === 'intelligence'} style={tabStyle(tab === 'intelligence')} onClick={() => select('intelligence')}>
+        </Tab>
+        <Tab active={tab === 'intelligence'} onClick={() => select('intelligence')} style={{ letterSpacing: 'normal' }}>
           Intelligence
-        </button>
-      </div>
+        </Tab>
+      </Tabs>
       {tab === 'documents' ? (
         <DocumentsBrowser
           queryKey={['libraryVideos', 'channel', channel.channel_id]}

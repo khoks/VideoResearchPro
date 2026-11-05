@@ -4,7 +4,7 @@
  * (centred node with its depth, channel, run) as removable chips.
  */
 import { type CSSProperties, type ReactNode } from 'react';
-import { Button, Select } from '../primitives';
+import { Button, IconButton, Select } from '../primitives';
 import { useColors } from '../../hooks/useTheme';
 import { fonts, fontSize, fontWeight, radius, space } from '../../theme';
 import { GRAPH_EXTRA_TYPES, type GraphExtraType } from '../../services/graphApi';
@@ -105,24 +105,20 @@ export function GraphControls({
       }}
     >
       <span style={{ overflowWrap: 'anywhere' }}>{content}</span>
-      <button
-        type="button"
+      <IconButton
+        label={removeLabel}
         onClick={onRemove}
-        aria-label={removeLabel}
         title={removeLabel}
         style={{
-          background: 'none',
-          border: 'none',
           padding: `0 ${space['1']}`,
           minWidth: 24,
           minHeight: 24,
-          cursor: 'pointer',
           color: c.textSecondary,
           fontSize: fontSize.base,
         }}
       >
         <span aria-hidden="true">×</span>
-      </button>
+      </IconButton>
     </span>
   );
 

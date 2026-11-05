@@ -2,6 +2,7 @@ import type { CSSProperties, ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { usePaletteColor } from '../../hooks/useTheme';
 import { fonts, fontSize, fontWeight, radius, space } from '../../theme';
+import { IconButton } from './IconButton';
 
 export interface LabelPillProps {
   /** A label-palette NAME (`theme.ts` `PALETTE_COLORS`); unknown names render as `default`. */
@@ -70,17 +71,14 @@ export function LabelPill({
         </span>
       )}
       {onRemove && (
-        <button
-          type="button"
-          aria-label={removeLabel}
+        <IconButton
+          label={removeLabel}
           disabled={removeBusy}
           onClick={(e) => {
             e.stopPropagation();
             onRemove();
           }}
           style={{
-            background: 'transparent',
-            border: 'none',
             padding: 0,
             marginLeft: 2,
             color: 'inherit',
@@ -90,7 +88,7 @@ export function LabelPill({
           }}
         >
           ×
-        </button>
+        </IconButton>
       )}
     </span>
   );

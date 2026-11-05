@@ -15,10 +15,10 @@
   - `num_videos` (default 10; the plan sets the cap)
   - `source_types`, `output_length`, duration bounds, `channel_type_filters` and `published_after_days` (all optional)
 - **FR-1.2.** Users can create **channel-based** jobs by providing:
-  - `channel_urls` (1+ YouTube channel URLs or handles)
-  - `videos_per_channel`
+  - `channel_list` (1+ YouTube channel URLs, handles or UC ids)
+  - `videos_per_channel` (default 10, at most 50)
 - **FR-1.3.** Users can create **subscription-based** jobs by providing:
-  - `channel_urls` (1+ YouTube channel URLs or handles)
+  - `channel_list` (1+ YouTube channel URLs, handles or UC ids)
   - The channels become *subscribed* for that user.
 - **FR-1.4.** The install runs at most `MAX_CONCURRENT_JOBS` (default 5) active jobs at once, counted over every user. One more is refused.
 - **FR-1.5.** Jobs are user-scoped: each job belongs to the user who created it; users do not see one another's jobs. The `documents` table is one global cache, but a user sees only the documents they ingested ([D-063](decisions.md#d-063--per-user-isolation-shared-cache-private-catalogue-2026-07-31)).
@@ -192,7 +192,7 @@
 
 - **NFR-2.1.** Job lifecycle is deterministic: every state transition is an atomic DB write paired with a single Celery task dispatch.
 - **NFR-2.2.** Approval-pause does not block worker capacity. A job can sit in `awaiting_approval` for arbitrary time.
-- **NFR-2.3.** Chroma upserts retry once and surface as a `building_rag` failure on the second miss.
+- **NFR-2.3.** A failed chunk insert fails the job at `building_rag`; nothing retries it.
 - **NFR-2.4.** Q&A library upserts are best-effort; Chroma failures never break the Q&A response.
 - **NFR-2.5.** Worker startup runs an idempotent backfill of `qa_library_global` from the three Q&A tables.
 

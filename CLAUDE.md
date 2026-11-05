@@ -225,7 +225,7 @@ Redis pub/sub → WebSocket Manager → Frontend React Query cache update
 | `backend/app/routers/channels.py` | Channels management API |
 | `backend/app/routers/library.py` | Library-wide Q&A API |
 | `frontend/src/pages/JobDetailPage.tsx` | Job detail: approval, report modal, Q&A panel |
-| `frontend/src/pages/LibraryPage.tsx` | Browse the global video library |
+| `frontend/src/pages/LibraryPage.tsx` | Browse the sources the caller can see; add PDFs and pasted pages |
 | `frontend/src/pages/LibraryQAPage.tsx` | Ask questions across the entire library |
 | `frontend/src/hooks/useJobProgress.ts` | WebSocket → React Query cache bridge |
 | `frontend/src/services/wsClient.ts` | WebSocket client with reconnection + ping/pong |

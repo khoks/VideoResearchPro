@@ -125,7 +125,7 @@ Today's queries use `where={"document_id": {"$in": visible_set}}`, with the set 
 | **Studio** | Power users, content creators using L2 outputs heavily | $49/mo |
 | **Team** | Small teams sharing a workspace | $99/mo per workspace, includes 5 seats |
 
-Self-host installs are functionally Studio (no caps), but the tier column exists. Operators upgrade users via SQL: `UPDATE users SET tier='pro' WHERE id='...'`.
+New accounts start on Free, on self-host too, and the limits are enforced. The install's operator changes a tier on `/account/subscription` (`PUT /auth/me/tier`, [D-111](decisions.md#d-111--operator-only-tier-switching-and-an-honest-pricing-page-2026-10-25)). Team is not built: the code has Free, Pro and Studio.
 
 ### Quotas (per month, per tenant)
 
@@ -142,7 +142,7 @@ Self-host installs are functionally Studio (no caps), but the tier column exists
 | Output storage | — | 1 GB | 10 GB | 50 GB |
 | Activity connectors enabled (L3) | 0 | 2 | 5 | 5 |
 
-Numbers are placeholders. The point is: the tier-quota table exists from day one, even if today every user gets the Studio limits.
+This is the target table, and its numbers are placeholders. The limits in force are in `app/services/tier_service.py`, and `/pricing` shows them.
 
 ### Quota schema
 

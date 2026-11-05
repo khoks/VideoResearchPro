@@ -286,7 +286,7 @@ Reports are the longest single piece of content. They get the most editorial tre
 
 ## 3. Component primitives
 
-A small, opinionated set of primitives lives at `frontend/src/components/primitives/`. Pages compose them; pages do not write raw `<div style={...}>`. Every primitive reads from tokens.
+A small, opinionated set of primitives lives at `frontend/src/components/primitives/`. Pages compose them, and lay them out with inline styles read from the same tokens. Every primitive reads from tokens.
 
 | Primitive | Notes |
 |-----------|-------|

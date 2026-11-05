@@ -9,7 +9,9 @@ import { fonts, fontSize, fontWeight, lineHeight, space } from '../../theme';
 /**
  * Public-facing pricing page — three-column tier grid.
  *
- * When logged out: each card's action navigates to `/register?intent=<tier>`.
+ * When logged out: each card's action goes to `/register`. Every new account
+ * starts on Free, and only the install's operator can change a plan (D-111), so
+ * a card there says so instead of offering that plan.
  * When logged in: the user's current tier is highlighted; other tiers
  * deep-link into `/account/subscription` for the actual upgrade flow.
  */
@@ -22,7 +24,7 @@ export function PricingPage() {
 
   const handleAction = (tier: 'free' | 'pro' | 'studio') => {
     if (!isAuthenticated) {
-      navigate(`/register?intent=${tier}`);
+      navigate('/register');
       return;
     }
     if (tier === currentTier) return;
@@ -84,7 +86,7 @@ export function PricingPage() {
           const actionLabel = !isAuthenticated
             ? td.tier === 'free'
               ? 'Get started free'
-              : `Sign up for ${td.name}`
+              : 'Start on Free'
             : isCurrent
             ? undefined
             : `Switch to ${td.name}`;
@@ -123,8 +125,9 @@ export function PricingPage() {
           Self-host today. SaaS soon. Cancel any time.
         </p>
         <p style={{ margin: `${space['2']} 0 0`, fontStyle: 'italic' }}>
-          (Demo mode: tier upgrades happen instantly without real payment. When the SaaS launches,
-          the same flow plugs into Stripe — the same UI, the same shape, just a real payment in the middle.)
+          (Demo mode: every new account starts on Free, and this install's operator changes plans
+          without real payment. When the SaaS launches, the same flow plugs into Stripe — the same
+          UI, the same shape, just a real payment in the middle.)
         </p>
       </section>
     </div>

@@ -6,7 +6,7 @@ import {
   QueryClientProvider,
 } from '@tanstack/react-query';
 import { router } from './routes';
-import { ToastContainer } from './components/common/Toast';
+import { ToastContainer } from './components/primitives';
 import { useJobStore } from './stores/jobStore';
 import { AuthProvider } from './contexts/AuthContext';
 import { globalErrorToastMessage } from './utils/apiError';

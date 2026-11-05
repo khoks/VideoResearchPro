@@ -1,6 +1,7 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
+import { IconButton } from '../primitives';
 import { useColors, useShadows } from '../../hooks/useTheme';
 import {
   useMarkAllNotificationsRead,
@@ -98,14 +99,13 @@ export function NotificationBell({ align = 'left' }: { align?: 'left' | 'right' 
 
   return (
     <div style={{ position: 'relative' }}>
-      <button
+      <IconButton
         ref={buttonRef}
-        type="button"
+        label={unread ? `Notifications, ${unread} unread` : 'Notifications'}
         onClick={() => setOpen((o) => !o)}
         aria-haspopup="dialog"
         aria-expanded={open}
         aria-controls={open ? panelId : undefined}
-        aria-label={unread ? `Notifications, ${unread} unread` : 'Notifications'}
         style={{
           position: 'relative',
           width: target.primary,
@@ -114,10 +114,8 @@ export function NotificationBell({ align = 'left' }: { align?: 'left' | 'right' 
           alignItems: 'center',
           justifyContent: 'center',
           background: open ? c.surfaceAlt : 'transparent',
-          border: 'none',
           borderRadius: radius.md,
           color: c.textSecondary,
-          cursor: 'pointer',
           flexShrink: 0,
         }}
       >
@@ -145,7 +143,7 @@ export function NotificationBell({ align = 'left' }: { align?: 'left' | 'right' 
             {unread > 99 ? '99+' : unread}
           </span>
         )}
-      </button>
+      </IconButton>
       {open && createPortal(
         <div
           ref={panelRef}

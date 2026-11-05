@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { accountSecurityApi } from '../../services/accountSecurityApi';
 import { Button } from '../primitives';
 import { AuthError } from './AuthShell';
 import { useColors } from '../../hooks/useTheme';
 import { apiErrorMessage } from '../../utils/apiError';
 import { oauthRedirectUri, providerName } from '../../utils/accountSecurity';
+import { rememberSignInDestination } from '../../utils/signInReturn';
 import { fonts, fontSize, space } from '../../theme';
 
 /**
@@ -15,6 +17,7 @@ import { fonts, fontSize, space } from '../../theme';
  */
 export function OAuthButtons() {
   const c = useColors();
+  const location = useLocation();
   const [providers, setProviders] = useState<string[]>([]);
   const [starting, setStarting] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -44,6 +47,7 @@ export function OAuthButtons() {
       // The server builds this from the provider's configured authorize
       // endpoint; refuse anything that is not a web address.
       if (!/^https?:\/\//i.test(url)) throw new Error('not a web address');
+      rememberSignInDestination(location.state);
       window.location.assign(url);
     } catch (err) {
       setError(apiErrorMessage(err, `Could not start signing in with ${providerName(provider)}. Try again.`));

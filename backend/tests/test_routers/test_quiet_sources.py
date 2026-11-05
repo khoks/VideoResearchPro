@@ -715,15 +715,17 @@ def test_the_most_a_youtube_search_can_cost(monkeypatch, target, pages_setting, 
     assert job_source_types.youtube_search_units(target) == units
 
 
-def test_the_cost_ceiling_tracks_the_agents_own_page_size():
-    """``youtube_search_units`` restates ``per_query_max``. If the agent asks
-    for more, the ceiling must move with it."""
+def test_the_cost_ceiling_tracks_what_the_agent_really_does():
+    """``youtube_search_units`` restates three facts from elsewhere. If the
+    agent asks for more, the ceiling must move with it."""
     import inspect
 
+    from app.agents.prompts.search_prompts import PLAN_SEARCHES_PROMPT
+    from app.services import youtube_service
+
     assert "per_query_max = max(target * 3, 50)" in inspect.getsource(search_agent._run_broad_searches)
-    assert '"maxResults": min(max_results, 50)' in inspect.getsource(
-        __import__("app.services.youtube_service", fromlist=["search_videos"]).search_videos
-    )
+    assert '"maxResults": min(max_results, 50)' in inspect.getsource(youtube_service.search_videos)
+    assert f"exactly 4-{job_source_types._MOST_BROAD_QUERIES} items" in PLAN_SEARCHES_PROMPT
 
 
 def test_a_note_reaches_the_api_for_a_run_with_none_too(client, db, sources, worker):

@@ -44,8 +44,9 @@ class StoredCutOff(BaseModel):
 
     Sent only when it did. A row from before the column is unknown and a checked
     row may say `false`, but neither reaches the wire: a finished answer's JSON
-    is what it was, and no stored row claims "not cut" (D-145). The fresh shapes
-    below replace this field, so they keep saying `false`.
+    is what it was, and no stored row claims "not cut" (D-145).
+    `QAAnswerResponse` and `LibraryQAAnswerResponse` replace this field, so a
+    fresh answer on those routes keeps saying `false`.
     """
 
     answer_cut_off: bool | None = Field(default=None, exclude_if=lambda cut: cut is not True)

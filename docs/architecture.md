@@ -190,7 +190,7 @@ backend/
 │       ├── chunking.py          # 256-token chunks (32 overlap) with timestamp mapping
 │       ├── html_builder.py      # Jinja2 env + custom number_format filter
 │       └── ...
-├── tests/                       # 4,400+ tests, mostly pytest + httpx test client
+├── tests/                       # 4,900+ tests, mostly pytest + httpx test client
 ├── alembic/                     # Alembic migrations
 └── scripts/                     # measurement harnesses, backfills (dry run unless --write), and
     ├── fix_anchor_links.py      # the Markdown anchor checker CI runs

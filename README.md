@@ -267,7 +267,7 @@ Pratidhvani/
 │   │   ├── tasks/               # Celery task definitions
 │   │   ├── websocket/           # WebSocket connection manager
 │   │   └── utils/               # Chunking, HTML builder, YouTube helpers
-│   ├── tests/                   # 4,400+ pytest tests
+│   ├── tests/                   # 4,900+ pytest tests
 │   ├── alembic/                 # Migrations
 │   ├── scripts/                 # stress_test_llm, etc.
 │   └── requirements*.txt

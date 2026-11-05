@@ -885,13 +885,18 @@ _PROBE_IMAGE_B64 = (
 # way, and Anthropic an account with no credit.
 _KEY_TROUBLE_IN_A_400 = ("api_key_invalid", "api key not valid", "api key expired", "credit balance")
 
+# A 403 that is about the model, not the key: OpenAI answers a project key
+# limited to other models this way, and that key works for what it was given.
+_MODEL_TROUBLE_IN_A_403 = ("model_not_found", "access to model")
+
 
 def _provider_status(exc: BaseException) -> int | None:
     """The HTTP status a provider answered with, or None if it never answered.
 
     OpenAI and Anthropic errors carry ``status_code``. ``langchain_google_genai``
     raises its own type from the SDK's, whose ``code`` holds it, so the chain
-    is followed. A 400 about the key reads as 401, which is what it means.
+    is followed. A 400 about the key reads as 401, and a 403 about the model as
+    404: that is what each means. The text is only searched here, never kept.
     """
     seen: BaseException | None = exc
     for _ in range(5):  # a chain is short, and can loop
@@ -900,8 +905,11 @@ def _provider_status(exc: BaseException) -> int | None:
         for attr in ("status_code", "code"):
             status = getattr(seen, attr, None)
             if isinstance(status, int) and 400 <= status < 600:
-                if status == 400 and any(m in str(seen).lower() for m in _KEY_TROUBLE_IN_A_400):
+                said = str(seen).lower()
+                if status == 400 and any(m in said for m in _KEY_TROUBLE_IN_A_400):
                     return 401
+                if status == 403 and any(m in said for m in _MODEL_TROUBLE_IN_A_403):
+                    return 404
                 return status
         seen = seen.__cause__ or seen.__context__
     return None
@@ -1024,8 +1032,9 @@ def check_api_key(provider: str, api_key: str) -> KeyCheck:
     * ``valid``: the provider answered the request, even with nothing to say.
     * ``refused``: it answered that this key may not be used.
     * ``unreachable``: anything else. No answer, the wall clock, a 5xx, or a
-      refusal of the request and not the key (a retired model): a check says a
-      key is good or bad only when the provider said so.
+      refusal of the request and not the key (a retired model, or one this key
+      was not given): a check says a key is good or bad only when the provider
+      said so.
 
     One of three words is all that leaves here. The probe's ``error`` is
     provider text, which can quote the key, so it is neither returned nor

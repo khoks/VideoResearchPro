@@ -111,8 +111,8 @@ Returns `{ "provider": "openai", "result": "valid" }`. `result` is one of three 
 | `result` | Means |
 |---|---|
 | `valid` | The provider answered the request. |
-| `refused` | The provider answered that this key may not be used: 401, 402, 403, 429, or a 400 about the key, which is how Google answers a bad key and Anthropic an account with no credit. |
-| `unreachable` | No answer about the key: no response within 30 seconds, a 5xx, or a refusal of the request itself (a retired model). Nothing is known about the key. |
+| `refused` | The provider answered that this key may not be used: 401, 402, 403 (unless it is about the model), 429, or a 400 about the key, which is how Google answers a bad key and Anthropic an account with no credit. |
+| `unreachable` | No answer about the key: no response within 30 seconds, a 5xx, or a refusal of the request itself: a retired model, or a 403 saying this key was not given the check model, as OpenAI answers a project key limited to others. Nothing is known about the key. |
 
 400 for an unknown provider and for `local`. 404 when no key is stored. 429 past `RATE_LIMIT_VERIFY_KEY_PER_MIN` presses a minute, counted per user. 503 when `BYOK_ENCRYPTION_KEY` is malformed, or cannot read the stored key because it changed since the key was saved.
 
@@ -462,7 +462,7 @@ List the current user's jobs. Returns `list[JobResponse]`.
 ### `GET /api/v1/jobs/{job_id}`
 Fetch a single job. Returns `JobResponse` or 404.
 
-`run_notes` (S-1.5.14) is what the run has to say about its sources and limits, oldest first, and empty on a run with nothing to say. Each note is `{ "kind", "text" }`, and `source_type` when it is about one source; `text` is written for the reader. The kinds are `source_unavailable` (the service refused, rate-limited or failed the search), `source_empty` (it answered and found nothing), `budget_moved` (a share went to other sources), `top_up_skipped` (YouTube could not take it within the day's quota) and `whisper_minutes_spent`.
+`run_notes` (S-1.5.14) is what the run has to say about its sources and limits, oldest first, and empty on a run with nothing to say. Each note is `{ "kind", "text" }`, and `source_type` when it is about one source; `text` is written for the reader. The kinds are `source_unavailable` (the service refused, rate-limited or failed the search), `source_empty` (it answered and found nothing), `budget_moved` (a share went to other sources), `top_up_skipped` (YouTube could not take it within the day's quota), `whisper_minutes_spent` and `whisper_budget_spent` (on a subscription job, `WHISPER_MAX_PER_JOB` stopped it).
 
 ### `PUT /api/v1/jobs/{job_id}/approve`
 Approve a subset of the searched documents and resume the job. Body: `{ "approved_video_ids": ["...", "..."] }`. The name is legacy: each value is a YouTube `video_id`, or a `document_id` for a source without one. Dispatches `resume_job_after_approval`. Topic jobs only — channel and subscription jobs do not have an approval phase. Returns updated `JobResponse`.

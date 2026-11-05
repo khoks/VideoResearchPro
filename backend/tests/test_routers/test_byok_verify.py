@@ -170,6 +170,7 @@ def test_a_good_key_is_valid(client, db, studio, provider, name, answer):
     [
         ("openai", 401, OPENAI_401),
         ("openai", 403, _openai_error("Your account may not use this", "forbidden")),
+        ("openai", 403, _openai_error("Missing scopes: model.request", "insufficient_permissions")),
         ("openai", 429, _openai_error("You exceeded your current quota", "insufficient_quota")),
         ("anthropic", 401, ANTHROPIC_401),
         ("anthropic", 403, _anthropic_error("permission_error", "This key may not use the API")),
@@ -195,14 +196,22 @@ def test_a_provider_that_says_no_to_the_key_refuses_it(client, db, studio, provi
     [
         ("openai", 500, _openai_error("The server had an error", "server_error")),
         ("openai", 404, _openai_error("The model does not exist", "model_not_found")),
+        (
+            "openai",
+            403,
+            _openai_error("Project `proj_x` does not have access to model `gpt-5.6-luna`", "model_not_found"),
+        ),
+        ("openai", 403, _openai_error("This key does not have access to model gpt-5.6-luna", "forbidden")),
         ("anthropic", 500, _anthropic_error("api_error", "Internal server error")),
         ("anthropic", 404, _anthropic_error("not_found_error", "model: not found")),
         ("anthropic", 400, _anthropic_error("invalid_request_error", "max_tokens: too small")),
     ],
 )
 def test_an_answer_that_says_nothing_about_the_key_is_no_verdict(client, db, studio, provider, name, status, body):
-    """A retired model or a bad day is not a bad key. Calling either "refused"
-    sends the user to replace a key that works."""
+    """A retired model, a model this key was not given, or a bad day is not a
+    bad key. Calling any of them "refused" sends the user to replace a key that
+    works: a project key limited to the models the app really calls is common,
+    and the check model need not be one of them."""
     _store(db, studio, name)
     provider.answer(status, body)
 

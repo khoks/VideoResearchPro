@@ -21,7 +21,8 @@ from app.config import settings
 from app.models.document import Document
 from app.models.job import Job
 from app.models.job_video import JobVideo
-from app.services import auth_service, byok_service, llm_service, usage_service, youtube_service
+from app.services import auth_service, byok_service, llm_service, run_notes, usage_service, youtube_service
+from app.tasks import job_tasks
 from tests.test_tasks.test_usage_metering_tasks import _channel_responses
 from tests.test_tasks.test_usage_whisper_and_crash import (  # noqa: F401
     WHISPER,
@@ -76,9 +77,15 @@ def _podcast_job(db, owner, monkeypatch) -> Document:
 
     feed_url = "https://example.com/feed.xml"
     entry = {"id": "ep-1", "title": "Tariffs", "enclosures": [{"href": "https://example.com/ep.mp3"}]}
+
+    def writes(url, path):
+        with open(path, "wb") as f:
+            f.write(b"mp3 bytes")
+        return 9
+
     monkeypatch.setattr(connector.podcast_client, "get_client", lambda: SimpleNamespace(
         fetch_feed=lambda url: {"feed": {}, "entries": [entry] if url == feed_url else []},
-        fetch_audio=lambda url: b"mp3 bytes",
+        fetch_audio_to_file=writes,
     ))
     doc = Document(source_type="podcast_episode", source_id="podcast:ep-1", title="Tariffs",
                    url="https://example.com/ep", channel_id=feed_url)
@@ -348,3 +355,141 @@ def test_echo_recordings_keep_the_rule_they_shared_with_the_rest(db):
 
     assert echo_media._openai_key(_account(db, key=USER_KEY).id, db) == USER_KEY
     assert echo_media._openai_key(_account(db).id, db) == INSTALL_KEY
+
+
+# ---------------------------------------------------------------- the job's budget
+#
+# WHISPER_MAX_PER_JOB on a sync, which has no approval step. Before this the
+# loop passed no budget, so a channel's whole history could go to Whisper, on
+# the subscriber's own account once T-5.6.13 moved the fallback there, and
+# ``0`` did not turn it off. These run the real task; only the network is fake.
+
+UPLOADS = ["vBudget0001", "vBudget0002", "vBudget0003"]
+
+
+def _read_and_unread(db) -> tuple[int, int]:
+    db.expire_all()
+    statuses = [d.transcript_status for d in db.query(Document)]
+    return statuses.count("fetched"), statuses.count("unavailable")
+
+
+def _notes(db, job) -> list[dict]:
+    db.expire_all()
+    return run_notes.read(db.get(Job, job.id))
+
+
+@pytest.mark.parametrize("own_key", [USER_KEY, None], ids=["own key", "install key"])
+def test_a_sync_stops_at_the_recording_budget(
+    no_captions, db, youtube_network, whisper_api, openai_keys, monkeypatch, own_key  # noqa: F811
+):
+    monkeypatch.setattr(settings, "WHISPER_MAX_PER_JOB", 1)
+    owner = _account(db, key=own_key)
+    job = _sync_job(db, owner)
+    youtube_network.responses = _channel_responses(UPLOADS)
+
+    _run_sync(job)
+
+    assert whisper_api.sent == 1
+    assert openai_keys == [own_key or INSTALL_KEY]
+    assert _read_and_unread(db) == (1, 2)
+    assert db.get(Job, job.id).status == "completed"
+
+
+@pytest.mark.parametrize("budget", [0, -1])
+def test_a_budget_of_zero_turns_whisper_off_on_a_sync(
+    no_captions, db, youtube_network, whisper_api, openai_keys, monkeypatch, budget  # noqa: F811
+):
+    """What CLAUDE.md and the template have always said the setting does."""
+    monkeypatch.setattr(settings, "WHISPER_MAX_PER_JOB", budget)
+    job = _sync_job(db, _account(db, key=USER_KEY))
+    youtube_network.responses = _channel_responses(UPLOADS)
+
+    _run_sync(job)
+
+    assert whisper_api.sent == 0
+    assert openai_keys == []
+    assert _read_and_unread(db) == (0, 3)
+    assert db.get(Job, job.id).status == "failed"
+    assert [n["text"] for n in _notes(db, job)] == [
+        "Whisper is off on this install (WHISPER_MAX_PER_JOB), so 3 sources could not be read. "
+        "A later sync tries them again."
+    ]
+
+
+def test_a_video_with_captions_spends_none_of_the_budget_on_a_sync(
+    no_captions, db, youtube_network, whisper_api, openai_keys, monkeypatch  # noqa: F811
+):
+    """The first upload the loop reaches has captions, whichever that is: the
+    query has no order, so naming a video here would pass or fail by luck."""
+    monkeypatch.setattr(settings, "WHISPER_MAX_PER_JOB", 1)
+    asked: list[str] = []
+
+    def captions_for_the_first(video_id, *args, **kwargs):
+        asked.append(video_id)
+        if video_id != asked[0]:
+            return None
+        return [{"text": "words from a caption track", "start": 0.0, "duration": 5.0}], "en", None
+
+    monkeypatch.setattr(youtube_service, "_fetch_transcript_once", captions_for_the_first)
+    job = _sync_job(db, _account(db, key=USER_KEY))
+    youtube_network.responses = _channel_responses(UPLOADS)
+
+    _run_sync(job)
+
+    assert whisper_api.sent == 1
+    assert _read_and_unread(db) == (2, 1)
+
+
+def test_the_next_sync_reads_what_the_budget_left(
+    no_captions, db, youtube_network, whisper_api, openai_keys, monkeypatch  # noqa: F811
+):
+    """A capped upload is unread, not lost. This is what makes the cap safe to
+    apply to a channel with many uncaptioned videos: each sync links the whole
+    channel again, and takes the next budget's worth."""
+    monkeypatch.setattr(settings, "WHISPER_MAX_PER_JOB", 1)
+    owner = _account(db)
+    youtube_network.responses = _channel_responses(UPLOADS)
+
+    for run, expected in enumerate([(1, 2), (2, 1), (3, 0)], start=1):
+        job = _sync_job(db, owner)
+        _run_sync(job)
+        assert whisper_api.sent == run
+        assert _read_and_unread(db) == expected
+
+    assert _notes(db, job) == [], "the last sync lost nothing to the budget"
+
+
+def test_a_sync_says_what_the_budget_cost_it(
+    no_captions, db, youtube_network, whisper_api, openai_keys, monkeypatch  # noqa: F811
+):
+    """"Completed successfully" is all a fire-and-forget run leaves behind, and
+    the progress line that names the budget moves on."""
+    monkeypatch.setattr(settings, "WHISPER_MAX_PER_JOB", 1)
+    job = _sync_job(db, _account(db))
+    youtube_network.responses = _channel_responses(UPLOADS)
+
+    _run_sync(job)
+
+    assert _notes(db, job) == [{
+        "kind": run_notes.WHISPER_BUDGET_SPENT,
+        "text": (
+            "Whisper stopped at this run's limit of 1 recording (WHISPER_MAX_PER_JOB), so "
+            "2 sources could not be read. A later sync tries them again."
+        ),
+    }]
+    published = [c.args[3] for c in job_tasks.progress_service.publish_progress.call_args_list]
+    assert any("Whisper budget exhausted" in m for m in published)
+
+
+def test_a_sync_within_the_budget_has_nothing_to_say(
+    no_captions, db, youtube_network, whisper_api, openai_keys, monkeypatch  # noqa: F811
+):
+    monkeypatch.setattr(settings, "WHISPER_MAX_PER_JOB", len(UPLOADS))
+    job = _sync_job(db, _account(db))
+    youtube_network.responses = _channel_responses(UPLOADS)
+
+    _run_sync(job)
+
+    assert whisper_api.sent == len(UPLOADS)
+    assert _read_and_unread(db) == (3, 0)
+    assert _notes(db, job) == []

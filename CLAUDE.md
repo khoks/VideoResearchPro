@@ -128,7 +128,7 @@ npm install
 ### Three Job Types
 - **Topic job**: User provides a topic + search instructions → Search Agent finds YouTube videos → user approves → transcripts fetched → RAG built → Report Agent generates full HTML report → Q&A enabled
 - **Channel job**: User provides channel URLs → videos fetched from playlists → user approves → transcripts fetched → RAG built → stats-only HTML report → Q&A enabled
-- **Subscription job**: User provides channel URLs → every video from each channel's uploads playlist is ingested into the global library → no approval step (fire-and-forget) → transcripts fetched (with Whisper fallback) → chunks added to the global Chroma collection → no report. Subsequent jobs that reference the same videos skip re-fetch / re-transcribe / re-embed entirely.
+- **Subscription job**: User provides channel URLs → every video from each channel's uploads playlist is ingested into the global library → no approval step (fire-and-forget) → transcripts fetched (with Whisper fallback, up to `WHISPER_MAX_PER_JOB`; the next sync tries the rest) → chunks added to the global Chroma collection → no report. Subsequent jobs that reference the same videos skip re-fetch / re-transcribe / re-embed entirely.
 
 ### Global Document Library
 - `documents` (renamed from `videos` in L1 PR 4) is a shared, global, deduplicated table: one row per source, whatever its type (YouTube videos, threads, podcasts, articles, PDFs, pasted pages). The primary key is `document_id`, a UUID (E-1.10); the legacy `video_id` column survives, NULL for every non-video source. The ORM class is `Document` in `app/models/document.py`.
@@ -451,8 +451,8 @@ Copy `.env.example` to `backend/.env` and fill in required keys. The repository 
 | `TRANSCRIPT_BREAKER_MAX_WAIT` | No | `300.0` | Max per-video wait (s) for an open breaker before falling to Whisper |
 | `WHISPER_SEGMENT_TARGET_MB` | No | `20` | Target chunk size when splitting >25 MB audio for Whisper |
 | `WHISPER_SEGMENT_OVERLAP_SECONDS` | No | `15.0` | Shared audio between neighbouring Whisper chunks |
-| `WHISPER_MAX_PER_JOB` | No | `50` | Max Whisper transcriptions per job (`0` disables Whisper) — bounds OpenAI spend |
-| `WHISPER_MAX_MINUTES_PER_JOB` | No | `0` | Minutes of audio per job, by each recording's whole length; once spent, no further recording goes to Whisper and the run says so. A recording that crosses the limit finishes. Also bounds subscription jobs, which `WHISPER_MAX_PER_JOB` does not. `0` = no minute cap |
+| `WHISPER_MAX_PER_JOB` | No | `50` | Max Whisper transcriptions per job (`0` disables Whisper) — bounds OpenAI spend, on a user's own key too. Subscription jobs included: what it stops stays `unavailable`, the run says so, and the next sync tries it |
+| `WHISPER_MAX_MINUTES_PER_JOB` | No | `0` | Minutes of audio per job, by each recording's whole length; once spent, no further recording goes to Whisper and the run says so. A recording that crosses the limit finishes. Applies with `WHISPER_MAX_PER_JOB`, whichever comes first. `0` = no minute cap |
 | `YOUTUBE_PROXY_URL` | No | (unset) | Proxy for transcript API + yt-dlp (`http://…` or `socks5://…`) — the D-051 escape hatch for IP blocks |
 | `YTDLP_COOKIES_FROM_BROWSER` | No | (unset) | Opt-in: use the operator's logged-in browser session for yt-dlp (`chrome`, `firefox`, `chrome:Profile`) — passes YouTube's bot-wall; requests then carry the operator's account |
 | `YTDLP_COOKIES_FILE` | No | (unset) | Netscape-format cookies.txt for yt-dlp (browser source wins when both set) |

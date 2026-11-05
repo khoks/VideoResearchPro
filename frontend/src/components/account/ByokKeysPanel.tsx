@@ -340,7 +340,7 @@ const KEY_CHECK_COPY: Record<
   unreachable: {
     label: 'Not checked',
     tone: 'warn',
-    text: 'Could not reach the provider, or it gave no answer about this key, so nothing is known about it. Try again in a moment.',
+    text: 'Could not reach the provider, or it gave no answer about this key, so nothing is known about it. Try again in a moment. A key limited to certain models stays here, and can still work.',
   },
 };
 

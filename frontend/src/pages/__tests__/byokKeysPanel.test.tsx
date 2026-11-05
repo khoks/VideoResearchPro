@@ -260,6 +260,7 @@ describe('verifying a stored key', () => {
   it.each([
     ['refused', 'Refused', 'The provider refused this key.'],
     ['unreachable', 'Not checked', 'nothing is known about it'],
+    ['unreachable', 'Not checked', 'A key limited to certain models stays here'],
   ] as const)('says what a %s answer means', async (result, badge, words) => {
     verifyAnswer = async () => ({ data: { provider: 'openai', result } });
     await mount();

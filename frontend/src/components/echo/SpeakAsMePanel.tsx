@@ -73,7 +73,9 @@ export function SpeakAsMePanel() {
           // No button goes past a refusal, so the names stop's goes too.
           setNames(null);
           setRefusal(e.message);
-        } else pushToast('error', e.message);
+        }
+        // Anything else is a toast, from `useCreateDraft`, whether or not this
+        // panel is still here to hear of it.
       },
     });
   };

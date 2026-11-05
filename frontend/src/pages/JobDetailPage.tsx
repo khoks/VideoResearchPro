@@ -948,6 +948,9 @@ function QASection({ jobId, jobDepth }: { jobId: string; jobDepth?: string | nul
           return false;
         }
       }
+      // Not the global toast's to filter: this one is `fetch`, and the session may
+      // have ended on another request, with the toasts already cleared (T-5.4.22).
+      if (err instanceof QAStreamHttpError && err.status === 401) return false;
       pushToast('error', err instanceof Error ? err.message : 'Q&A request failed.');
       return false;
     }

@@ -7,15 +7,18 @@
  * Mutation checks, run by hand on 2026-11-05: taking `/auth/logout` out of
  * `OWN_ANSWER` fails "leaves a sign-out to the sign-out"; taking `login` out fails
  * "a wrong password"; dropping the token comparison in `sessionRefused` fails "a
- * late refusal"; a `window.location` write in the interceptor fails "moves nothing".
+ * late refusal"; a `window.location` write in the interceptor fails "moves nothing";
+ * saying a token is gone only of a bare request fails "gone from storage since".
  */
 import { AxiosError, type AxiosAdapter, type InternalAxiosRequestConfig } from 'axios';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import api, { AUTH_TOKEN_KEY } from '../api';
-import { onSessionExpired, sessionRefused } from '../sessionExpiry';
+import { onSessionExpired, onSessionLost, sessionRefused } from '../sessionExpiry';
 
 const expired = vi.fn();
+const lost = vi.fn();
 let stop: () => void;
+let stopLost: () => void;
 let seen: InternalAxiosRequestConfig[] = [];
 
 function answering(status: number, then: () => void = () => undefined): AxiosAdapter {
@@ -36,11 +39,14 @@ beforeEach(() => {
   localStorage.clear();
   seen = [];
   expired.mockReset();
+  lost.mockReset();
   stop = onSessionExpired(expired);
+  stopLost = onSessionLost(lost);
 });
 
 afterEach(() => {
   stop();
+  stopLost();
   api.defaults.adapter = undefined;
 });
 
@@ -53,6 +59,7 @@ describe('a 401 with the current token', () => {
     expect(seen[0].headers.Authorization).toBe('Bearer jwt.live');
     expect(localStorage.getItem(AUTH_TOKEN_KEY)).toBeNull();
     expect(expired).toHaveBeenCalledTimes(1);
+    expect(lost).not.toHaveBeenCalled();
   });
 
   it('counts once when a page has several requests out', async () => {
@@ -91,12 +98,21 @@ describe('a 401 that says nothing about the session', () => {
     await refused(api.post(url, {}));
     expect(localStorage.getItem(AUTH_TOKEN_KEY)).toBe('jwt.live');
     expect(expired).not.toHaveBeenCalled();
+    expect(lost).not.toHaveBeenCalled();
+  });
+
+  it('a wrong password with nothing in storage is still only the page’s to show', async () => {
+    localStorage.removeItem(AUTH_TOKEN_KEY);
+    api.defaults.adapter = answering(401);
+    await refused(api.post('/auth/login', {}));
+    expect(lost).not.toHaveBeenCalled();
   });
 
   it('leaves a sign-out to the sign-out, which leaves no page (D-140)', async () => {
     api.defaults.adapter = answering(401);
     await refused(api.post('/auth/logout'));
     expect(expired).not.toHaveBeenCalled();
+    expect(lost).not.toHaveBeenCalled();
   });
 
   it('a late refusal of the last token leaves a new sign-in alone', async () => {
@@ -105,13 +121,17 @@ describe('a 401 that says nothing about the session', () => {
     expect(seen[0].headers.Authorization).toBe('Bearer jwt.live');
     expect(localStorage.getItem(AUTH_TOKEN_KEY)).toBe('jwt.new');
     expect(expired).not.toHaveBeenCalled();
+    expect(lost).not.toHaveBeenCalled();
   });
 
-  it('a request that carried no token ends nothing', async () => {
+  it('a request sent bare that lands after a sign-in leaves that sign-in alone', async () => {
     localStorage.removeItem(AUTH_TOKEN_KEY);
-    api.defaults.adapter = answering(401);
+    api.defaults.adapter = answering(401, () => localStorage.setItem(AUTH_TOKEN_KEY, 'jwt.new'));
     await refused(api.get('/library/videos'));
+    expect(seen[0].headers.Authorization).toBeUndefined();
+    expect(localStorage.getItem(AUTH_TOKEN_KEY)).toBe('jwt.new');
     expect(expired).not.toHaveBeenCalled();
+    expect(lost).not.toHaveBeenCalled();
   });
 
   it.each([403, 404, 429, 500])('a %i is not a 401', async (status) => {
@@ -119,6 +139,25 @@ describe('a 401 that says nothing about the session', () => {
     await refused(api.get('/jobs/run-1'));
     expect(localStorage.getItem(AUTH_TOKEN_KEY)).toBe('jwt.live');
     expect(expired).not.toHaveBeenCalled();
+  });
+});
+
+describe('a 401 with no token in storage', () => {
+  // Either this tab ended the session already, or the token went with nobody here
+  // hearing: `AuthProvider` knows which, and `routes/__tests__/sessionExpiry.test.tsx`
+  // has what it does.
+  it('says the token is gone, and not that this request expired it', async () => {
+    api.defaults.adapter = answering(401);
+    await refused(api.get('/library/videos'));
+    expect(seen[0].headers.Authorization).toBeUndefined();
+    expect(expired).not.toHaveBeenCalled();
+    expect(lost).toHaveBeenCalledTimes(1);
+  });
+
+  it('says the same of a request that carried a token, gone from storage since', () => {
+    sessionRefused('jwt.live');
+    expect(expired).not.toHaveBeenCalled();
+    expect(lost).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -130,6 +169,7 @@ describe('sessionRefused', () => {
     sessionRefused(undefined);
     expect(localStorage.getItem(AUTH_TOKEN_KEY)).toBe('jwt.new');
     expect(expired).not.toHaveBeenCalled();
+    expect(lost).not.toHaveBeenCalled();
   });
 
   it('stops telling a listener that has gone', () => {
@@ -137,5 +177,8 @@ describe('sessionRefused', () => {
     stop();
     sessionRefused('jwt.live');
     expect(expired).not.toHaveBeenCalled();
+    stopLost();
+    sessionRefused(null);
+    expect(lost).not.toHaveBeenCalled();
   });
 });

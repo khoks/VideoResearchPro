@@ -11,9 +11,10 @@ function toastError(error: unknown): void {
 /**
  * The app's one client, with the global error toast.
  *
- * `meta: { errorsShownHere: true }` on a mutation says its caller answers every
- * failure, so the toast stays out of the way: a per-call `onError` is invisible
- * from here, and both would otherwise speak (T-3.4.1.15).
+ * `meta: { errorsShownHere: true }` on a mutation says it answers every failure
+ * itself, so the toast stays out of the way: both would otherwise speak
+ * (T-3.4.1.15). That answer goes in the hook's own `onError`. A per-call one on
+ * `mutate` is dropped once its component has unmounted, and nothing would be said.
  */
 export function createQueryClient(): QueryClient {
   return new QueryClient({

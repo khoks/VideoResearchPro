@@ -10,9 +10,12 @@
  * T-3.4.1.15: one toast for a failed draft. The tests under "one toast" use the
  * app's own query client, because the second toast came from its global handler.
  * That handler has no words for a request that got no answer, so it is the one
- * that stays quiet. Mutation checks, run by hand on 2026-11-05: `meta` off
- * `useCreateDraft` fails each row with two toasts; the panel's `pushToast` gone fails
- * each with none, and a generic line lost is what the handler alone would give.
+ * that stays quiet. The toast is the hook's own `onError`, because TanStack drops a
+ * per-call one once the panel has unmounted. Mutation checks, run on 2026-11-05: `meta`
+ * off `useCreateDraft` fails each row with two toasts; the hook's toast gone fails
+ * each with none, and fails "once the reader has left the panel"; its `isDraftStop`
+ * gone fails "which stays on screen"; its `isSessionEnded` gone fails "says nothing of
+ * a 401".
  */
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -307,6 +310,36 @@ describe('SpeakAsMePanel', () => {
     it.each(['names_need_confirmation', 'register_needs_approval', 'ungrounded'])('none for %s, which stays on screen', async (code) => {
       api.draftStatus.mockResolvedValue(ON);
       api.createDraft.mockRejectedValueOnce(refusedWith(code, 'words', { names: ['Priya'], register: 'casual' }));
+      await mount(createQueryClient());
+      act(() => type(host.querySelector('textarea')!, 'Who pays?'));
+      await act(async () => buttons('Draft a reply')[0].click());
+      await flush();
+      expect(useJobStore.getState().toasts).toEqual([]);
+    });
+
+    // TanStack drops a per-call `onError` once its observer has gone, so what is said
+    // here comes from the hook: a draft takes long enough to be left behind.
+    it.each([
+      ['the daily cap', () => refusedWith('daily_cap', 'More tomorrow.', {}, 429), 'More tomorrow.'],
+      ['a server failure with no words', () => plain500, 'Could not draft a reply. Try again.'],
+      ['no answer at all', () => noAnswer, 'Could not draft a reply. Try again.'],
+    ])('still says so for %s once the reader has left the panel', async (_name, error, expected) => {
+      api.draftStatus.mockResolvedValue(ON);
+      let fail: (reason: unknown) => void = () => undefined;
+      api.createDraft.mockReturnValueOnce(new Promise((_, reject) => (fail = reject)));
+      await mount(createQueryClient());
+      act(() => type(host.querySelector('textarea')!, 'Who pays?'));
+      await act(async () => buttons('Draft a reply')[0].click());
+      await flush();
+      act(() => root.unmount());
+      await act(async () => fail(error()));
+      await flush();
+      expect(useJobStore.getState().toasts.map((t) => t.message)).toEqual([expected]);
+    });
+
+    it('says nothing of a 401, whichever request ended the session first', async () => {
+      api.draftStatus.mockResolvedValue(ON);
+      api.createDraft.mockRejectedValueOnce(refusedWith('error', 'Not signed in.', {}, 401));
       await mount(createQueryClient());
       act(() => type(host.querySelector('textarea')!, 'Who pays?'));
       await act(async () => buttons('Draft a reply')[0].click());

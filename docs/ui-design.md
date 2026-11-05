@@ -334,7 +334,7 @@ Driven by `useSystemStatus()` (polls `/api/v1/health` every 60 s).
 
 ### 4.3. Toast queue
 
-Triggered by errors (the React Query caches' global `onError`, in `services/queryClient.ts`), and by success notifications from the action that succeeded. A mutation whose caller answers every failure sets `meta: { errorsShownHere: true }`, or the reader gets two toasts. A 401 shows none: the reader is on the way to the sign-in page. The rules are in `components/primitives/Toast.tsx` and `stores/jobStore.ts`.
+Triggered by errors (the React Query caches' global `onError`, in `services/queryClient.ts`), and by success notifications from the action that succeeded. A mutation that answers every failure itself sets `meta: { errorsShownHere: true }`, or the reader gets two toasts. That answer goes in the hook's own `onError`: TanStack drops a per-call one on `mutate` once its component has unmounted, so a slow action the reader left behind would fail in silence. A 401 shows none: the reader is on the way to the sign-in page. The rules are in `components/primitives/Toast.tsx` and `stores/jobStore.ts`.
 
 ---
 

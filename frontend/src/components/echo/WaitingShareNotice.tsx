@@ -20,6 +20,10 @@ export function WaitingShareNotice() {
   const elsewhere = pathname !== '/' && pathname !== SHARE_REVIEW_PATH;
   const [waiting, setWaiting] = useState(false);
 
+  // What it knew ends where the share is in hand, or the way back would announce
+  // the one the reader just dealt with until the next look answers.
+  if (!elsewhere && waiting) setWaiting(false);
+
   useEffect(() => {
     if (!elsewhere) return;
     let live = true;

@@ -13,12 +13,22 @@
  * as D-140 says; "in another tab" below pins that. `tests/shell.spec.ts` has
  * both in a real browser.
  *
+ * A token can also leave storage with this tab hearing nothing: then every request
+ * goes out bare and comes back 401, and the first of them ends the session. Nothing
+ * says who took the token, so that counts as a sign-out and leaves no page.
+ *
  * Mutation checks, run by hand on 2026-11-05: `setSignedOut(true)` in the expired
  * handler fails "comes back"; `setSignedOut(false)` there fails "a poll refused
  * during a sign-out"; dropping `signingOut.current = true` fails the same one;
  * dropping the store resets fails "takes the Echo thread" and "says nothing else".
  * The old interceptor, put back, fails the four tests in `tests/shell.spec.ts` that
- * go through it (the streaming one has its own path).
+ * go through it (the streaming one has its own path). No `LOST` event fails "at the
+ * next 401"; no `holdsSession` check in its listener fails "a bare 401 on a public
+ * page"; the expired handler not clearing `holdsSession` fails "several requests are
+ * refused at once"; the ref not following `token` fails "a session begun in this tab";
+ * `setSignedOut(false)` there fails "counts as a sign-out"; leaving the stored user
+ * fails "at the next 401"; `e.key === null` not heard fails "a browser-wide clear",
+ * and heard with no session fails "a clear elsewhere".
  */
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -189,6 +199,23 @@ async function storageEvent(newValue: string | null) {
   await flush();
 }
 
+/** `localStorage.clear()` elsewhere reads this way here: no key, no value. */
+async function storageCleared() {
+  localStorage.clear();
+  await act(async () => {
+    window.dispatchEvent(new StorageEvent('storage', { key: null, newValue: null }));
+  });
+  await flush();
+}
+
+/** Requests from whatever is on the page, all landing before React next renders. */
+async function requests(...urls: string[]) {
+  await act(async () => {
+    await Promise.all(urls.map((url) => api.get(url).catch(() => undefined)));
+  });
+  await flush();
+}
+
 beforeEach(() => {
   localStorage.clear();
   sessionStorage.clear();
@@ -263,6 +290,94 @@ describe('a session that expires while a page is open', () => {
     await load({ pathname: '/login', state: { from: { pathname: '//evil.example/x' } } });
     await signIn();
     expect(where()).toBe('/submit');
+  });
+
+  it('keeps the page when several requests are refused at once', async () => {
+    accepted = ['jwt.expired'];
+    await load(DEEP);
+    expect(where()).toBe(DEEP);
+    accepted = [];
+    await requests('/shelves', '/notes', '/library/videos');
+    expect(where()).toBe('/login');
+    expect((router.state.location.state as { from: { pathname: string } }).from.pathname).toBe('/jobs/run-1');
+  });
+});
+
+describe('a token that left storage with nobody here hearing', () => {
+  beforeEach(() => {
+    accepted = ['jwt.live'];
+    localStorage.setItem(TOKEN_KEY, 'jwt.live');
+    localStorage.setItem(USER_KEY, JSON.stringify({ email: 'me@x.com' }));
+  });
+
+  it('ends the session at the next 401, since every request now goes out bare', async () => {
+    await load(DEEP);
+    expect(where()).toBe(DEEP);
+    localStorage.removeItem(TOKEN_KEY);
+    await requests('/shelves');
+    expect(where()).toBe('/login');
+    expect(localStorage.getItem(USER_KEY)).toBeNull();
+    expect(useJobStore.getState().toasts).toEqual([]);
+  });
+
+  it('counts as a sign-out, since nothing says who took it: the next sign-in leaves no page', async () => {
+    await load(DEEP);
+    localStorage.removeItem(TOKEN_KEY);
+    await requests('/shelves');
+    expect(router.state.location.state).toBeNull();
+    await signIn();
+    expect(where()).toBe('/submit');
+  });
+
+  it('forgets what the account loaded, as any session end does', async () => {
+    await load(DEEP, (qc) => qc.setQueryData(['job', 'run-1'], { title: 'their run' }));
+    localStorage.removeItem(TOKEN_KEY);
+    await requests('/shelves');
+    expect(client.getQueryData(['job', 'run-1'])).toBeUndefined();
+  });
+
+  it('hears a browser-wide clear at once, which names no key', async () => {
+    await load(DEEP);
+    await storageCleared();
+    expect(where()).toBe('/login');
+    expect(router.state.location.state).toBeNull();
+  });
+
+  it('does the same for a session begun in this tab', async () => {
+    localStorage.clear();
+    await load(DEEP);
+    await signIn();
+    expect(where()).toBe(DEEP);
+    localStorage.removeItem(TOKEN_KEY);
+    await requests('/shelves');
+    expect(where()).toBe('/login');
+  });
+});
+
+describe('a tab with no session to end', () => {
+  async function goDeep() {
+    await act(async () => {
+      await router.navigate(DEEP);
+    });
+    await flush();
+  }
+
+  it('a bare 401 on a public page leaves the next sign-in its page', async () => {
+    await load('/landing');
+    await requests('/shelves');
+    await goDeep();
+    expect(where()).toBe('/login');
+    expect(router.state.location.state).not.toBeNull();
+    await signIn();
+    expect(where()).toBe(DEEP);
+  });
+
+  it('a clear elsewhere leaves it too: nothing ended here', async () => {
+    await load('/landing');
+    await storageCleared();
+    await goDeep();
+    expect(where()).toBe('/login');
+    expect(router.state.location.state).not.toBeNull();
   });
 });
 

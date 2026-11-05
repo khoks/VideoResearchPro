@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import type { ReactNode } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import api, { AUTH_TOKEN_KEY } from '../services/api';
-import { onSessionExpired } from '../services/sessionExpiry';
+import { onSessionExpired, onSessionLost } from '../services/sessionExpiry';
 import { clearPendingShares } from '../services/shareTarget';
 import { wsClient } from '../services/wsClient';
 import { useEchoPanelStore } from '../stores/echoPanelStore';
@@ -41,11 +41,12 @@ interface AuthContextValue {
   token: string | null;
   isAuthenticated: boolean;
   /**
-   * A session ended while this tab was open, by a sign-out here or by anything
-   * in another tab, and none has begun since. The next sign-in may be someone
-   * else's, so it starts at `/` rather than on the page that was left. A session
-   * the server stopped accepting in this tab does not count: that reader never
-   * left, and gets the page back (T-5.4.22).
+   * A session ended while this tab was open, by a sign-out here, by anything in
+   * another tab, or by a token that left storage with nobody here hearing, and
+   * none has begun since. The next sign-in may be someone else's, so it starts at
+   * `/` rather than on the page that was left. A session the server stopped
+   * accepting in this tab does not count: that reader never left, and gets the
+   * page back (T-5.4.22).
    */
   signedOut: boolean;
   isLoading: boolean;
@@ -95,14 +96,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(false);
   const [signedOut, setSignedOut] = useState(false);
 
+  // Whether this tab holds a session, a step ahead of `token`: a page's refusals
+  // land together, before the render the first of them causes.
+  const holdsSession = useRef(!!token);
+  useEffect(() => {
+    holdsSession.current = !!token;
+  }, [token]);
+
   // Keep state in sync with storage if another tab logs out. A 401 there that
   // drops the token reads the same from here, and is treated the same (D-140):
-  // this tab cannot tell them apart, so it gives up its page.
+  // this tab cannot tell them apart, so it gives up its page. A clear of the whole
+  // of storage takes the token too, and names no key.
   useEffect(() => {
     const onStorage = (e: StorageEvent) => {
-      if (e.key === AUTH_TOKEN_KEY) {
-        setToken(e.newValue);
-        if (!e.newValue) {
+      if (e.key === AUTH_TOKEN_KEY || (e.key === null && holdsSession.current)) {
+        const next = e.key === null ? null : e.newValue;
+        setToken(next);
+        if (!next) {
           setUser(null);
           setSignedOut(true);
         }
@@ -123,8 +133,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(
     () =>
       onSessionExpired(() => {
+        holdsSession.current = false;
         localStorage.removeItem(USER_STORAGE_KEY);
         setSignedOut(signingOut.current);
+        setToken(null);
+        setUser(null);
+      }),
+    [],
+  );
+
+  // A 401 with no token in storage. Most often that is the rest of a burst, or a
+  // page that had no session to begin with, and there is nothing to do. If this
+  // tab still believes it is signed in, the token went without it hearing, and
+  // every request now fails: nothing says who took it, so it counts as a sign-out
+  // (D-140 point 2) and leaves no page.
+  useEffect(
+    () =>
+      onSessionLost(() => {
+        if (!holdsSession.current) return;
+        holdsSession.current = false;
+        localStorage.removeItem(USER_STORAGE_KEY);
+        setSignedOut(true);
         setToken(null);
         setUser(null);
       }),

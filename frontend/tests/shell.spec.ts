@@ -268,6 +268,52 @@ test.describe('a session that expires while a page is open', () => {
   });
 });
 
+test.describe('a token that left storage with this tab not hearing', () => {
+  async function open(page: Page) {
+    await page.addInitScript(() => {
+      if (!window.sessionStorage.getItem('booted')) {
+        window.sessionStorage.setItem('booted', '1');
+        window.localStorage.setItem('videoresearchpro.authToken', 'fixture-token');
+      }
+    });
+    await boot(page);
+    await page.goto(`/jobs/${JOB}`);
+    await expect(page.getByRole('heading', { level: 1 })).toContainText('pratidhvani smoke test');
+  }
+
+  test('a clear in another tab reaches this one, and leaves no page', async ({ page, context }) => {
+    await open(page);
+    const other = await context.newPage();
+    await boot(other);
+    await other.goto('/landing');
+    await other.evaluate(() => window.localStorage.clear());
+
+    await expect(page).toHaveURL(/\/login$/);
+    await signIn(page);
+    await expect(page).toHaveURL(/\/submit$/);
+  });
+
+  test('every request going out bare ends the session at the first 401, and leaves no page', async ({ page }) => {
+    await open(page);
+    // A tab does not hear its own removal, the way a restored page missed a sign-out.
+    await page.evaluate(() => window.localStorage.removeItem('videoresearchpro.authToken'));
+    await page.route('**/api/v1/**', (route) => {
+      const url = new URL(route.request().url());
+      if (route.request().headers().authorization || url.pathname.includes('/auth/') || url.pathname.includes('/health')) {
+        return route.fallback();
+      }
+      return route.fulfill({ status: 401, json: { detail: 'Not authenticated' } });
+    });
+
+    await page.getByPlaceholder('Ask a question about the research…').fill('What does a lagoon cost?');
+    await page.getByRole('button', { name: 'Ask', exact: true }).click();
+    await expect(page).toHaveURL(/\/login$/);
+    await expect(page.getByText('Not authenticated')).toHaveCount(0);
+    await signIn(page);
+    await expect(page).toHaveURL(/\/submit$/);
+  });
+});
+
 test('the tab bar is one stop, and the arrows, Home and End move along it', async ({ page }) => {
   await page.addInitScript(() => window.localStorage.setItem('videoresearchpro.authToken', 'fixture-token'));
   await boot(page);

@@ -25,7 +25,8 @@
  * stripe gone, or `answering` out of `asking`, fails "shows the direct ask running";
  * `disabled={answering}` on the select, or no `disabled` on the depth note, fails
  * "holds what the direct ask carries"; `{!answering && <SuggestionCard` fails "takes
- * the suggestions away".
+ * the suggestions away"; `submitQuestion` toasting a stream's 401 fails "says nothing
+ * of a 401", and returning on any stream error fails "says what any other refusal was".
  */
 import { act, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -35,6 +36,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Job } from '../../types/job';
 import type { QAExchange, QARequest } from '../../types/qa';
+import { useJobStore } from '../../stores/jobStore';
 import { useQACutOffStore } from '../../stores/qaCutOffStore';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -203,6 +205,7 @@ beforeEach(() => {
   job = JOB;
   history = [];
   useQACutOffStore.setState({ answers: {} });
+  useJobStore.setState({ toasts: [] });
   streamStatus = 0;
   clarifyPending = false;
   streaming = false;
@@ -286,6 +289,24 @@ describe('JobDetailPage Q&A: when clarify fails (T-8.13.4.1)', () => {
     mount();
     await startAsk(QUESTION);
     expect(streamed).toHaveLength(1);
+  });
+});
+
+describe('JobDetailPage Q&A: a stream the server refused', () => {
+  // Nothing here wipes the toasts, as it is when a poll's 401 ended the session
+  // first and the effect that clears them has already run (T-5.4.22).
+  it('says nothing of a 401: the reader is on the way to sign in, or already there', async () => {
+    streamStatus = 401;
+    mount();
+    await ask('What does a lagoon cost?');
+    expect(useJobStore.getState().toasts).toEqual([]);
+  });
+
+  it('says what any other refusal was', async () => {
+    streamStatus = 500;
+    mount();
+    await ask('What does a lagoon cost?');
+    expect(useJobStore.getState().toasts.map((t) => t.message)).toEqual(['status 500']);
   });
 });
 

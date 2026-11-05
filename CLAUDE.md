@@ -488,7 +488,7 @@ Copy `.env.example` to `backend/.env` and fill in required keys. The repository 
 | `NOTES_INDEX_ENABLED` | No | `True` | Notes in Q&A retrieval: index writes on every note write, startup backfill, queries. The test suite turns it off |
 | `NOTE_RETRIEVAL_WEIGHT` | No | `1.5` | D-068 re-rank weight for notes, after the raw threshold. Measured before shipping (docs/notes/2026-10-19-s852-note-weight-measurement.md) |
 | **Jobs, reports and knowledge** | | | |
-| `MAX_CONCURRENT_JOBS` | No | `5` | Active jobs ONE user may hold at once, each user counted alone; one more is refused, and only that user's (T-5.2.14). The install's total is not limited: past what the worker can run, a job waits in the queue, whoever's it is. Also a prefork worker's pool size (`--pool=solo` runs one task at a time regardless) |
+| `MAX_CONCURRENT_JOBS` | No | `5` | Active jobs ONE user may hold at once, each user counted alone. That user's next job is refused; nobody else's is affected (T-5.2.14). The install's total is not limited: past what the worker can run, a job waits in the queue, whoever's it is. Also a prefork worker's pool size (`--pool=solo` runs one task at a time regardless) |
 | `DEFAULT_TRANSCRIPT_LANGUAGE` | No | `en` | Language the YouTube connector asks for when nothing says what is spoken |
 | `REPORTS_DIR` | No | `./data/reports` | Where report files live |
 | `REPORT_INTERMEDIATES_ENABLED` | No | `True` | Persist the report pipeline's per-batch map extractions and reduced dataset to `job_report_intermediates` (S-1.14.6), about twice the reduced dataset's size per run. Audit with `backend/scripts/audit_report_intermediates.py` |

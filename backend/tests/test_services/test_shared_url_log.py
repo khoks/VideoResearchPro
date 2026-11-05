@@ -11,8 +11,9 @@ back on the bad-status line (its branch's test, and
 of its type (``test_a_failed_fetch_names_the_host_only``, and
 ``test_a_playwright_failure_names_the_host_only`` on the timeout line);
 dropping ``@shared_url_fetch()`` from ``_get``
-(``test_the_library_request_line_stays_out_of_a_workers_log``) or
-``fetch_image`` (``test_a_shared_image_fetch_is_quiet_too``); dropping the
+(``test_the_library_request_line_stays_out_of_a_workers_log``), ``fetch_image``
+(``test_a_shared_image_fetch_is_quiet_too``) or ``fetch_feed``
+(``test_a_feed_fetch_is_quiet_too``); dropping the
 trafilatura ``setLevel`` (``test_trafilaturas_own_lines_stay_out``); a filter
 that drops httpx's line for everyone
 (``test_every_other_httpx_request_keeps_its_line``).
@@ -35,6 +36,7 @@ from app.config import settings
 from app.services import echo_media
 from app.services.article_extraction import extractor
 from app.services.article_extraction.extractor import extract_text
+from app.sources.article import client as article_client
 from app.sources.article import connector as article_connector
 from app.utils.shared_url_log import host_of, shared_url_fetch
 
@@ -314,6 +316,16 @@ def test_a_shared_image_fetch_is_quiet_too(httpx_lines, site, tmp_path, monkeypa
     monkeypatch.setattr(_Site, "content_type", "image/png")
     path, ctype = echo_media.fetch_image(f"{site}/{PRIVATE_PATH}.png?token={SECRET}", tmp_path, "share")
     assert ctype == "image/png" and path.exists()
+    assert httpx_lines == []
+
+
+def test_a_feed_fetch_is_quiet_too(httpx_lines, site, monkeypatch):
+    """A private feed's address carries its token, and httpx writes the whole
+    of it on every fetch, whether the fetch works or not."""
+    monkeypatch.setattr(_Site, "body", b"<rss version='2.0'><channel><title>Mine</title></channel></rss>")
+    monkeypatch.setattr(_Site, "content_type", "application/rss+xml")
+    feed = article_client.ArticleClient().fetch_feed(f"{site}/{PRIVATE_PATH}.rss?token={SECRET}")
+    assert feed.feed.title == "Mine"
     assert httpx_lines == []
 
 

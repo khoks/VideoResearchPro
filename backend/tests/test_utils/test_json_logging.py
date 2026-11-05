@@ -14,13 +14,23 @@ the call from ``alembic/env.py``
 ``after_setup_logger`` (``test_the_worker_writes_json_lines``); not connecting
 ``after_setup_task_logger`` (the same test); copying a record's ``job_id`` in
 (``test_a_records_extra_fields_stay_out``); ``ensure_ascii=False``
-(``test_a_message_in_any_script_stays_ascii_on_the_wire``).
+(``test_a_message_in_any_script_stays_ascii_on_the_wire``); dropping the
+``route_model_libraries`` call from ``chroma_service`` or ``embedding_service``
+(that route's ``test_a_model_load_writes_json_lines``, and
+``test_every_model_load_routes_the_libraries_first``); dropping the
+``handlers.clear``, the ``propagate``, or ``disable_progress_bar``, or leaving
+``huggingface_hub`` off the list (``test_a_model_load_writes_json_lines``);
+dropping its text guard (``test_text_leaves_the_model_libraries_alone``). A
+worker redirects stderr into the logger, so
+``test_a_model_load_in_a_worker_writes_json_lines`` catches only the missing
+call and the missing ``propagate``.
 """
 from __future__ import annotations
 
 import json
 import logging
 import os
+import re
 import subprocess
 import sys
 from datetime import datetime
@@ -31,7 +41,7 @@ import pytest
 
 from app.config import settings
 from app.utils import json_logging
-from app.utils.json_logging import JsonFormatter, configure_logging
+from app.utils.json_logging import JsonFormatter, configure_logging, route_model_libraries
 
 _BACKEND = Path(__file__).resolve().parents[2]
 _PYTHON = sys.executable
@@ -133,6 +143,29 @@ def test_json_is_read_loosely(monkeypatch, root_handlers):
     assert isinstance(root_handlers.handlers[0].formatter, JsonFormatter)
 
 
+def test_text_leaves_the_model_libraries_alone(monkeypatch):
+    monkeypatch.setattr(settings, "LOG_FORMAT", "text")
+    library = logging.getLogger("transformers")
+    handler = logging.NullHandler()
+    library.addHandler(handler)
+    monkeypatch.setattr(library, "propagate", False)
+    try:
+        route_model_libraries()
+        assert handler in library.handlers
+        assert library.propagate is False
+    finally:
+        library.removeHandler(handler)
+
+
+def test_every_model_load_routes_the_libraries_first():
+    """Two places build a model, and a third should not be able to forget."""
+    sources = {path: path.read_text(encoding="utf-8") for path in (_BACKEND / "app").rglob("*.py")}
+    builders = [path for path, text in sources.items() if re.search(r"SentenceTransformer(EmbeddingFunction)?\(", text)]
+    assert builders
+    for path in builders:
+        assert "route_model_libraries()" in sources[path], path
+
+
 # ---------------------------------------------------------------------------
 # The real processes
 # ---------------------------------------------------------------------------
@@ -209,6 +242,43 @@ logging.getLogger("celery.worker").warning("from the worker")
 """
 
 
+_MODEL_LOAD = """
+import logging
+import uvicorn
+
+config = uvicorn.Config("app.main:app", log_level="info")
+config.load()
+
+from app.services import chroma_service, embedding_service
+
+{load}
+
+logging.getLogger("transformers.modeling_utils").warning("from transformers")
+logging.getLogger("huggingface_hub.file_download").warning("from the hub")
+"""
+
+_WORKER_MODEL_LOAD = """
+import logging
+from app.tasks.celery_app import celery_app
+
+# As a worker runs: at INFO, which draws sentence-transformers' encode bar, with
+# stdout and stderr redirected into the logger.
+celery_app.log.setup(loglevel=logging.INFO, redirect_stdouts=True)
+
+from app.services import chroma_service
+
+chroma_service.get_qa_collection().upsert(ids=["x"], documents=["hello"])
+
+logging.getLogger("transformers.modeling_utils").warning("from transformers")
+logging.getLogger("huggingface_hub.file_download").warning("from the hub")
+"""
+
+_NEEDS_THE_MODEL = pytest.mark.skipif(
+    os.getenv("OFFLINE"),
+    reason="needs multilingual sentence-transformer weights to be downloadable",
+)
+
+
 def _json_lines(lines: list[str]) -> list[dict]:
     return [json.loads(line) for line in lines]
 
@@ -223,6 +293,33 @@ def test_the_api_writes_json_lines(tmp_path):
     assert failed["level"] == "ERROR" and "ValueError: boom" in failed["exception"]
     warned = [e["message"] for e in entries if e["logger"] == "py.warnings"]
     assert any("from a library" in message for message in warned), "other libraries warn on import too"
+
+
+@_NEEDS_THE_MODEL
+@pytest.mark.parametrize(
+    "load",
+    [
+        pytest.param('embedding_service.encode(["hello"])', id="embedding_service"),
+        pytest.param('chroma_service.get_qa_collection().upsert(ids=["x"], documents=["hello"])', id="chroma_service"),
+    ],
+)
+def test_a_model_load_writes_json_lines(tmp_path, load):
+    """The real load, by each of its two routes. ``transformers`` and
+    ``huggingface_hub`` hold stderr handlers of their own, and the weight bar
+    goes straight to stderr, so ``_json_lines`` fails on anything left bare.
+    The hub also propagates, so a line kept twice would count two."""
+    entries = _json_lines(_run(_MODEL_LOAD.format(load=load), tmp_path, "json"))
+    lines = [(e["logger"], e["message"]) for e in entries]
+    assert lines.count(("transformers.modeling_utils", "from transformers")) == 1
+    assert lines.count(("huggingface_hub.file_download", "from the hub")) == 1
+
+
+@_NEEDS_THE_MODEL
+def test_a_model_load_in_a_worker_writes_json_lines(tmp_path):
+    entries = _json_lines(_run(_WORKER_MODEL_LOAD, tmp_path, "json"))
+    lines = [(e["logger"], e["message"]) for e in entries]
+    assert lines.count(("transformers.modeling_utils", "from transformers")) == 1
+    assert lines.count(("huggingface_hub.file_download", "from the hub")) == 1
 
 
 def test_text_leaves_the_api_as_it_was(tmp_path):

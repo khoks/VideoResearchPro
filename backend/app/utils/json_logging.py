@@ -8,7 +8,7 @@ a traceback are escaped by JSON, so one record is always one line.
 ``LOG_FORMAT=text``, the default, changes nothing: ``configure_logging`` returns
 at once and the Celery hooks leave Celery's formatters alone.
 
-Three places set up logging, and each is covered:
+Four places set up logging, and each is covered:
 
 - **The API.** uvicorn configures its own loggers before it imports the app,
   and leaves the root logger bare. ``app/__init__.py`` calls
@@ -22,6 +22,10 @@ Three places set up logging, and each is covered:
   start, after the app has imported, so ``app/tasks/celery_app.py`` calls
   ``use_json_format`` from Celery's ``after_setup_logger`` and
   ``after_setup_task_logger`` signals.
+- **The model libraries.** ``transformers`` and ``huggingface_hub`` give their
+  own loggers a stderr handler when they import, which is long after all of
+  the above. So every place that builds a model calls
+  ``route_model_libraries`` first.
 """
 from __future__ import annotations
 
@@ -36,6 +40,10 @@ logger = logging.getLogger(__name__)
 # The loggers of uvicorn's own config that hold a handler; `uvicorn.error`
 # propagates to `uvicorn`.
 _UVICORN_LOGGERS = ("uvicorn", "uvicorn.access")
+
+# Each holds a stderr handler of its own once imported, so its lines write
+# around the root logger. `transformers` also stops propagating.
+_MODEL_LIBRARY_LOGGERS = ("transformers", "huggingface_hub")
 
 
 class JsonFormatter(logging.Formatter):
@@ -80,3 +88,26 @@ def configure_logging() -> None:
     logging.captureWarnings(True)
     for name in _UVICORN_LOGGERS:
         use_json_format(logging.getLogger(name))
+
+
+def route_model_libraries() -> None:
+    """Under json, send the model libraries' lines through the root logger and
+    turn off their progress bars. A no-op under text.
+
+    Call it before building a model, so the load's own lines are covered: the
+    weight bar, and a load report of several lines, which comes out as one
+    record. ``configure_logging`` cannot do this: these libraries set their
+    loggers up as they import, and importing them there would add seconds to
+    every process that never loads a model.
+    """
+    if not json_logs_enabled():
+        return
+    # Imports huggingface_hub too. Its import is what installs the handlers.
+    from transformers.utils import logging as transformers_logging
+
+    for name in _MODEL_LIBRARY_LOGGERS:
+        library = logging.getLogger(name)
+        library.handlers.clear()
+        library.propagate = True
+    # The hub's download bars go with it.
+    transformers_logging.disable_progress_bar()

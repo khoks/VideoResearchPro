@@ -75,6 +75,9 @@ export interface PersonalContextItem {
   confidence: number;
   captured_at: string;
   expires_at: string | null;
+  /** Who deleting this row would keep out, by name (T-3.2.1.14): the row then
+   * appears under "Kept deleted". Null when nothing brings it back. */
+  kept_deleted_by?: string | null;
 }
 
 /** `source` is fixed to `manual` by the endpoint. Re-posting an existing
@@ -563,6 +566,8 @@ export interface CreateDraftPayload {
   register?: 'intimate' | 'casual' | 'professional' | 'public';
   language?: 'en' | 'hi-Deva' | 'hi-Latn' | 'mixed';
   acknowledge_names?: string[];
+  /** The go-ahead for a first draft in `register` (T-3.4.1.11). */
+  acknowledge_register?: 'intimate' | 'casual' | 'professional' | 'public';
 }
 
 export interface BrainDeleteResponse {

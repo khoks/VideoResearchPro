@@ -755,6 +755,77 @@ def test_a_typed_fact_no_sync_wanted_gets_no_tombstone(unauthenticated_client, d
     assert unauthenticated_client.get(TOMBSTONES, headers=two["ha"]).json()["items"] == []
 
 
+def _derived(client, headers):
+    _connect(client, headers)
+
+
+def _edited(client, headers):
+    _connect(client, headers)
+    _edit_python(client, headers)
+
+
+def _typed_and_turned_a_sync_away(client, headers):
+    _edit_python(client, headers)
+    _connect(client, headers)
+
+
+@pytest.mark.parametrize("setup", [_derived, _edited, _typed_and_turned_a_sync_away])
+def test_the_list_says_who_a_delete_keeps_out_and_the_delete_agrees(unauthenticated_client, db, inline_db, fake, two, setup):
+    """T-3.2.1.14: what the dialog reads is what the delete then does. A row
+    the user wrote says ``manual``, so reading ``source`` said nothing for the
+    last two, which still end up under "Kept deleted"."""
+    setup(unauthenticated_client, two["ha"])
+    rows = unauthenticated_client.get("/api/v1/echo/context", headers=two["ha"]).json()
+    row = next(r for r in rows if r["key"] == "python")
+
+    assert unauthenticated_client.delete("/api/v1/echo/context/skill/python", headers=two["ha"]).status_code == 200
+
+    listed = unauthenticated_client.get(TOMBSTONES, headers=two["ha"]).json()["items"]
+    assert [t["connector_display_name"] for t in listed] == [row["kept_deleted_by"]] == ["Fake service"]
+
+
+def test_the_revoke_dialogs_read_covers_the_expired_rows_the_revoke_tombstones(unauthenticated_client, db, inline_db, fake, two):
+    """T-3.2.1.14: ``revoke_source`` takes expired rows too, and an expired manual
+    row keeps ``wanted_by`` until a source next writes its key, which never comes
+    once that connector is gone. The page's list hides it by default, so the
+    dialog reads ``include_expired=true``, and that read must match the delete."""
+    _connect(unauthenticated_client, two["ha"])
+    _edit_python(unauthenticated_client, two["ha"], expires_at=datetime.now(timezone.utc) - timedelta(days=1))
+
+    listed = unauthenticated_client.get("/api/v1/echo/context?source=manual", headers=two["ha"]).json()
+    assert listed == [], "hidden from the page's default list, which is why the count came out short"
+    scope = unauthenticated_client.get("/api/v1/echo/context?source=manual&include_expired=true", headers=two["ha"]).json()
+    assert [(r["key"], r["kept_deleted_by"]) for r in scope] == [("python", "Fake service")]
+
+    revoked = unauthenticated_client.delete("/api/v1/echo/sources/manual", headers=two["ha"]).json()
+
+    assert revoked["deleted_count"] == len(scope)
+    kept = unauthenticated_client.get(TOMBSTONES, headers=two["ha"]).json()["items"]
+    assert [(t["key"], t["connector_display_name"]) for t in kept] == [("python", "Fake service")]
+
+
+def test_a_row_nothing_wants_says_nothing_and_gets_no_tombstone(unauthenticated_client, db, inline_db, fake, two):
+    _connect(unauthenticated_client, two["ha"])
+    created = unauthenticated_client.post(
+        "/api/v1/echo/context", json={"kind": "hobby", "key": "chess", "value": "weekends"}, headers=two["ha"]
+    ).json()
+    assert created["kept_deleted_by"] is None
+    rows = unauthenticated_client.get("/api/v1/echo/context", headers=two["ha"]).json()
+    assert next(r for r in rows if r["key"] == "chess")["kept_deleted_by"] is None
+
+    assert unauthenticated_client.delete("/api/v1/echo/context/hobby/chess", headers=two["ha"]).status_code == 200
+    assert unauthenticated_client.get(TOMBSTONES, headers=two["ha"]).json()["items"] == []
+
+
+def test_saving_an_edit_says_at_once_who_still_wants_the_key(unauthenticated_client, db, inline_db, fake, two):
+    """The edit's own response carries it, for a dialog opened before the list
+    refetches. The stored name, ``wanted_by``, stays on the server."""
+    _connect(unauthenticated_client, two["ha"])
+    row = _edit_python(unauthenticated_client, two["ha"])
+    assert row["source"] == "manual" and row["kept_deleted_by"] == "Fake service"
+    assert "wanted_by" not in row
+
+
 def test_an_expired_fact_no_longer_holds_its_key(unauthenticated_client, db, inline_db, fake, two):
     """Past its date the row is gone from the list and from retrieval, and the
     user has no way to see what is blocking the connector, so the connector

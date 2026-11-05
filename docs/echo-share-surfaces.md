@@ -15,7 +15,7 @@ Whatever arrives this way is context only: Echo can draw on it but never quotes 
 
 Install Pratidhvani from Chrome (Add to Home screen), and it appears in the Android share sheet. Share a page, some text, an image, a PDF or a recording to it. The app opens, shows what arrived, and asks. One tap on **Add to Echo** puts it in your inbox, and **Discard** drops it unposted.
 
-If you are signed out, the app asks you to sign in first, and the share waits on the phone until you have. A share still waiting after 24 hours is dropped unread. Signing out drops whatever is waiting.
+If you are signed out, the app asks you to sign in first, and the share waits on the phone until you have. A share still waiting after 24 hours is dropped unread. Signing out drops whatever is waiting. If you open the app on any page but its home, such as a link, you stay on that page and a line at the top offers **Review it**; nothing is added until you tap **Add to Echo** there.
 
 **How it works.** The manifest's `share_target` posts a multipart form to `/echo/share-target`. A small service worker, `frontend/public/share-target-sw.js`, answers that one path. It keeps the form in the browser's Cache API on this device and redirects to `/echo/incoming` with nothing in the address. That page reads the form and shows it. On the tap it posts what it showed to `/echo/shares` or `/echo/shares/upload` with your session, and removes it.
 

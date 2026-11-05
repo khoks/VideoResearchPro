@@ -1,4 +1,4 @@
-import type { CSSProperties, ReactNode } from 'react';
+import type { CSSProperties, KeyboardEvent, ReactNode } from 'react';
 import { useColors } from '../../hooks/useTheme';
 import { fonts, fontSize, fontWeight, space } from '../../theme';
 
@@ -9,6 +9,31 @@ export interface TabsProps {
   style?: CSSProperties;
 }
 
+/**
+ * The ARIA tabs keyboard (T-2.2.5): the row is one stop for the Tab key, on the
+ * active tab, and the arrows, Home and End move along it, wrapping. A tab opens
+ * as it gets focus, through its own `onClick`: every panel here swaps in place
+ * and spends nothing, which is when the pattern recommends that. With a modifier
+ * held the key is the browser's: Alt and Left is Back.
+ */
+function moveAlongTabs(e: KeyboardEvent<HTMLDivElement>) {
+  if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+  const tabs = Array.from(e.currentTarget.querySelectorAll<HTMLElement>('[role="tab"]'));
+  const at = tabs.indexOf(e.target as HTMLElement);
+  if (at < 0) return;
+  const target: Record<string, number> = {
+    ArrowRight: (at + 1) % tabs.length,
+    ArrowLeft: (at - 1 + tabs.length) % tabs.length,
+    Home: 0,
+    End: tabs.length - 1,
+  };
+  const next = tabs[target[e.key]];
+  if (!next) return;
+  e.preventDefault();
+  next.focus();
+  next.click();
+}
+
 /** A row of underlined tabs. The active one is the parent's state, as is its panel. */
 export function Tabs({ label, children, style }: TabsProps) {
   const c = useColors();
@@ -16,6 +41,7 @@ export function Tabs({ label, children, style }: TabsProps) {
     <div
       role="tablist"
       aria-label={label}
+      onKeyDown={moveAlongTabs}
       style={{
         display: 'flex',
         gap: space['1'],
@@ -43,6 +69,7 @@ export function Tab({ active, onClick, children, style }: TabProps) {
       type="button"
       role="tab"
       aria-selected={active}
+      tabIndex={active ? 0 : -1}
       onClick={onClick}
       style={{
         background: 'transparent',

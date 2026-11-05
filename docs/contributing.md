@@ -132,7 +132,7 @@ cd backend
 
 - Filename: `<rev>_<snake_case_summary>.py`. Pick a fresh hex prefix; don't reuse one.
 - Every revision must define `upgrade()` **and** `downgrade()`. `downgrade()` may `raise NotImplementedError` for destructive changes, but never leave it empty.
-- Add new tables and columns with `tenant_id INTEGER NOT NULL` (or a TODO comment + migration ticket). Forward-compat with multi-tenancy is non-negotiable — see [docs/saas-roadmap.md](saas-roadmap.md).
+- Add new tables and columns with `tenant_id VARCHAR(36) NOT NULL` (or a TODO comment + migration ticket). Forward-compat with multi-tenancy is non-negotiable — see [docs/saas-roadmap.md](saas-roadmap.md).
 - Index any column you'll filter on. Especially `tenant_id`, `user_id`, `created_at`.
 - Don't drop columns inline with a feature change; do it in a follow-up migration after one release of soft-deprecation.
 

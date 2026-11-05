@@ -49,7 +49,7 @@ Pratidhvani's vision unfolds in three nested rings, each strictly contained by t
 
 The smallest, most concrete circle. **Already largely shipped.**
 
-The user picks sources (YouTube channels and topics, and every source type of Ring 2), curates a discovery list, approves which videos to actually ingest, and then queries the resulting transcript library for citation-grounded answers. Subscriptions auto-pull new content from chosen channels. Knowledge reports extract structured `{topics, concepts, events, facts}` per video. Q&A history accumulates into its own searchable corpus.
+The user picks sources (YouTube channels and topics, and every source type of Ring 2), curates a discovery list, approves which videos to actually ingest, and then queries the resulting transcript library for citation-grounded answers. A channel subscription ingests the channel's uploads once, and **Sync now** pulls what is new; nothing syncs on a schedule yet. Knowledge reports extract structured `{topics, concepts, events, facts}` per video. Q&A history accumulates into its own searchable corpus.
 
 **The product north-star here**: a wiki the user has *built themselves*, source-by-source, opinion-by-opinion. It looks and reads like a research journal, not a database.
 

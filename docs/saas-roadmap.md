@@ -19,6 +19,8 @@ These are the rules every PR is checked against, starting today:
 
 If a PR violates any of these, it's blocking SaaS regardless of how clean the feature is.
 
+**Where the code stands.** These are the target, not today's state. A tenant is one user, so `tenant_id` holds `User.id`, and `users` has no `tenant_id`. `outputs`, `quota_usage`, `user_llm_overrides`, `user_credentials`, `oauth_identities`, `sessions`, `mfa_secrets`, `mfa_step_tickets` and `password_reset_tokens` key on `user_id` with no `tenant_id`, so the SaaS retrofit adds the column there. `with_tenant_scope` is not built: queries filter where they run ([NFR-7.2](requirements.md#nfr-7--forward-compatibility-with-multi-tenancy)).
+
 ---
 
 ## 1. Tenancy model

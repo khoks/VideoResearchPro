@@ -224,8 +224,8 @@
 
 ### NFR-7 — Forward-compatibility with multi-tenancy
 
-- **NFR-7.1.** Every user-scoped table has a `tenant_id` column. Each user is one tenant.
-- **NFR-7.2.** User-scoped queries filter on `tenant_id` where they run; there is no central helper. Reads of `documents` go through `visibility_service.visible_document_ids`.
+- **NFR-7.1.** Job, library, note, Echo and scheduler tables carry `tenant_id`. `outputs`, `quota_usage`, `user_llm_overrides`, `user_credentials`, `oauth_identities`, `sessions`, `mfa_secrets`, `mfa_step_tickets` and `password_reset_tokens` key on `user_id` instead. Each user is one tenant, so both hold `User.id`. Child rows such as `job_documents`, `shelf_jobs` and `output_citations` take their scope from the parent row.
+- **NFR-7.2.** User-scoped queries filter on `tenant_id`, or on `user_id` for the tables NFR-7.1 names, where they run; there is no central helper. Reads of `documents` go through `visibility_service.visible_document_ids`.
 - **NFR-7.3.** Tier quotas are enforced per tenant (`quota_metering_service`, HTTP 429 over the limit).
 
 ### NFR-8 — Security

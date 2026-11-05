@@ -10,22 +10,28 @@ from __future__ import annotations
 
 import ast
 import functools
+import importlib
 import itertools
 import json
 import os
+import pkgutil
 import re
 from pathlib import Path
 
 import pytest
 from fastapi.routing import APIWebSocketRoute
 from pydantic import TypeAdapter
+from sqlalchemy import String
 
+import app.models as app_models
+from app.agents import echo_agent
 from app.config import Settings
+from app.database import Base
 from app.main import app
 from app.models.job_video import JobVideo
 from app.routers.ws import router as ws_router
 from app.schemas.usage import UsageAmounts
-from app.services import llm_routing
+from app.services import llm_routing, scheduler_service
 
 ROOT = Path(__file__).resolve().parents[3]
 TEMPLATE = ROOT / ".env.example"
@@ -405,6 +411,214 @@ def test_ui_pages_says_how_the_session_is_kept() -> None:
     assert "pratidhvani_token" not in _ui_pages()
 
 
+# ── The opening of CLAUDE.md ─────────────────────────────────────────────
+
+#: Each directory under app/sources, and what the overview calls it.
+SOURCE_NAMES = {
+    "video": "YouTube",
+    "podcast": "podcasts",
+    "article": "articles",
+    "reddit": "Reddit",
+    "hn": "Hacker News",
+    "mastodon": "Mastodon",
+    "bluesky": "Bluesky",
+    "twitter": "X threads",
+    "pdf": "PDFs",
+    "paste_url": "pasted pages",
+}
+
+
+def test_the_overview_says_which_sources_ship() -> None:
+    """It is the first thing every session reads. Calling podcasts, threads and
+    PDFs future work invites designing on `video_id`, which D-070 forbids."""
+    shipped = {p.name for p in (ROOT / "backend" / "app" / "sources").iterdir() if (p / "__init__.py").exists()}
+    assert shipped == set(SOURCE_NAMES), "name the new connector in CLAUDE.md's overview and here"
+    text = (ROOT / "CLAUDE.md").read_text(encoding="utf-8")
+    overview = next(x for x in text.splitlines() if x.startswith("**Pratidhvani"))
+    assert "future:" not in overview
+    missing = sorted(name for name in SOURCE_NAMES.values() if name not in overview)
+    assert not missing, f"add to CLAUDE.md's overview: {missing}"
+    assert "docs/source-types.md" in overview
+
+
+# ── Tenancy ──────────────────────────────────────────────────────────────
+
+
+def _tables() -> dict:
+    for module in pkgutil.iter_modules(app_models.__path__):
+        importlib.import_module(f"app.models.{module.name}")
+    return Base.metadata.tables
+
+
+def _doc(path: str) -> str:
+    return (ROOT / path).read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("path, start", [
+    ("docs/requirements.md", "- **NFR-7.1.**"),
+    ("docs/architecture.md", "- Most user-scoped tables carry `tenant_id`"),
+    ("docs/saas-roadmap.md", "**Where the code stands.**"),
+])
+def test_the_tenancy_docs_name_each_table_with_no_tenant_id(path: str, start: str) -> None:
+    """They said every user-scoped table has the column. A tenant-filtered read
+    of `outputs` or `quota_usage` written from that would name a column that
+    is not there, and those tables would miss the SaaS retrofit list."""
+    tables = {name for name, t in _tables().items() if "user_id" in t.c and "tenant_id" not in t.c}
+    assert {"outputs", "quota_usage", "sessions"} <= tables, "the scan found nothing"
+    line = next((x for x in _doc(path).splitlines() if x.startswith(start)), "")
+    missing = sorted(t for t in tables if f"`{t}`" not in line)
+    assert not missing, f"{path} must name them: {missing}"
+
+
+@pytest.mark.parametrize("path", ["docs/requirements.md", "docs/architecture.md"])
+def test_no_doc_says_every_user_scoped_table_has_a_tenant_id(path: str) -> None:
+    text = _doc(path)
+    assert "Every user-scoped table has a `tenant_id` column" not in text
+    assert "Every user-scoped row carries `tenant_id`," not in text
+
+
+def test_the_saas_roadmap_says_the_scope_helper_is_not_built() -> None:
+    """Invariant 2 describes a `with_tenant_scope` helper, and NFR-7.2 says there
+    is none. The invariant can stand as a rule; the code's state goes beside it."""
+    code = (ROOT / "backend" / "app").rglob("*.py")
+    assert not any("with_tenant_scope" in p.read_text(encoding="utf-8") for p in code)
+    note = next((x for x in _doc("docs/saas-roadmap.md").splitlines() if x.startswith("**Where the code stands.**")), "")
+    assert "`with_tenant_scope`" in note
+
+
+def test_contributing_gives_the_real_tenant_id_type() -> None:
+    assert isinstance(_tables()["jobs"].c.tenant_id.type, String)
+    assert "tenant_id INTEGER" not in _doc("docs/contributing.md")
+
+
+# ── Channel sync ─────────────────────────────────────────────────────────
+
+
+def test_no_doc_says_channels_sync_on_their_own() -> None:
+    """Nothing schedules a channel sync: it runs when a subscription starts and
+    on Sync now, so new uploads wait for someone to press it. The day a kind
+    syncs channels, the first assertion fails and the docs may say so."""
+    for module in ("echo_connector_tasks", "echo_tasks", "newsletter_tasks", "saved_search_tasks"):
+        importlib.import_module(f"app.tasks.{module}")
+    kinds = scheduler_service.registered_kinds()
+    assert "saved_search" in kinds and "newsletter" in kinds, "the kinds did not register"
+    assert not [k for k in kinds if "channel" in k or "subscription" in k]
+    logs = {"decisions.md", "initiatives.md"}
+    stale = [p.name for p in (ROOT / "docs").glob("*.md") if p.name not in logs
+             and "auto-pull" in p.read_text(encoding="utf-8").lower()]
+    assert not stale, f"nothing pulls on its own: {stale}"
+    vision = _doc("docs/vision.md")
+    assert "Sync now" in vision[vision.index("### Ring 1"):vision.index("### Ring 2")]
+
+
+# ── Speak as me ──────────────────────────────────────────────────────────
+
+
+def _speak_as_me() -> str:
+    text = _doc("docs/personal-brain.md")
+    return text[text.index("## Domain 4"):text.index("## Domain 5")]
+
+
+def _fence_after(text: str, heading: str) -> str:
+    return text[text.index(heading):].split("```")[1]
+
+
+def test_the_speak_as_me_diagram_shows_the_graph() -> None:
+    """`revise` was missing, so the diagram read as one draft and one check."""
+    nodes = {n for n in echo_agent.build_graph(None).get_graph().nodes if not n.startswith("__")}
+    assert {"draft", "revise", "finalize"} <= nodes
+    diagram = _fence_after(_speak_as_me(), "### Pipeline")
+    missing = sorted(n for n in nodes if n not in diagram)
+    assert not missing, f"add to docs/personal-brain.md's diagram: {missing}"
+    assert "self_critique_against_voice → revise → self_critique_against_voice" in diagram
+
+
+def test_the_speak_as_me_steps_name_real_stores() -> None:
+    section = _speak_as_me()
+    assert "videoresearchpro_global" not in section
+    assert FIELDS["CHROMA_GLOBAL_COLLECTION_NAME"].default in section
+    assert "personal_facts" not in section
+    assert "`personal_context`" in section
+    assert "ECHO_DRAFT_CRITIQUE_ROUNDS" in section and "0-10" not in section
+
+
+def test_the_speak_as_me_output_contract_is_what_finalize_returns() -> None:
+    source = (ROOT / "backend" / "app" / "agents" / "echo_agent.py").read_text(encoding="utf-8")
+    result = source[source.index('"result": {'):source.index("g = StateGraph(DraftState)")]
+    returned = set(re.findall(r'^ +"(\w+)":', result, re.M)) - {"result"}
+    assert {"draft", "citations", "voice_match_score"} <= returned
+    contract = json.loads(_fence_after(_speak_as_me(), "### Output contract").removeprefix("json"))
+    assert set(contract) == returned
+    assert 20 <= contract["voice_match_score"] <= 100, "finalize scales 1-5 to a percentage"
+    assert isinstance(contract["deviation_notes"], list)
+    assert all({"kind", "ref", "label"} <= set(c) for c in contract["citations"])
+
+
+def test_personal_brain_says_what_the_facts_table_is() -> None:
+    """Its header promises an "as built" note wherever the shipped shape differs."""
+    assert "personal_context" in _tables()
+    text = _doc("docs/personal-brain.md")
+    domain = text[text.index("## Domain 1"):text.index("## Domain 2")]
+    assert "**As built" in domain and "`personal_context`" in domain
+    assert "personal_facts" not in _doc("docs/feature-roadmap.md")
+
+
+# ── docs/testing.md ──────────────────────────────────────────────────────
+
+
+def _ci() -> str:
+    return _doc(".github/workflows/ci.yml")
+
+
+def _test_count() -> str:
+    return re.search(r"All backend tests \(([\d,]+\+)", _doc("CLAUDE.md")).group(1)
+
+
+@pytest.mark.parametrize("path", ["README.md", "docs/architecture.md", "docs/contributing.md", "docs/testing.md"])
+def test_every_doc_gives_the_same_test_count(path: str) -> None:
+    """docs/testing.md said 1013 long after the suite passed 4,000."""
+    assert _test_count() in _doc(path)
+
+
+def test_the_test_count_is_what_the_suite_collects(request) -> None:
+    floor = int(_test_count().rstrip("+").replace(",", ""))
+    collected = len(request.session.items)
+    if collected < floor * 0.9:
+        pytest.skip("a partial run: the count is read on a full one")
+    assert floor <= collected < floor + 500, (
+        f"{collected} tests: update {_test_count()} in CLAUDE.md, the README, architecture, contributing and testing"
+    )
+
+
+def test_the_testing_doc_gives_the_suite_its_real_speed() -> None:
+    """A reader told "seconds" takes a 20-minute run for a hung one."""
+    text = _doc("docs/testing.md")
+    for stale in ("seconds, not minutes", "well under a minute", "(a) through (d) takes seconds"):
+        assert stale not in text
+    assert "about 20 minutes" in text[text.index("## 1. Goals"):text.index("## 2. Layout")]
+
+
+def test_the_testing_doc_counts_the_device_suite_as_shipped() -> None:
+    """It called Playwright future work while CI's device job gated every PR."""
+    assert "npm run test:mobile" in _ci()
+    text = _doc("docs/testing.md")
+    non_goals = text[text.index("**Non-goals.**"):text.index("## 2. Layout")]
+    assert "Out of scope today" not in non_goals
+    assert "#56-frontend-suites" in non_goals and "Load tests" in non_goals
+
+
+def test_the_testing_doc_says_what_gates_the_frontend() -> None:
+    assert "eslint" not in _ci().lower() and "npm run lint" not in _ci()
+    assert "plus ESLint" not in _doc("docs/testing.md")
+
+
+def test_the_testing_doc_says_a_run_spends_nothing() -> None:
+    """conftest.py has stubbed the probes since 2026-10-19, and a reader told a
+    run costs a few cents batches reruns for no reason."""
+    assert 'patch("app.main.run_startup_probes"' in _doc("backend/tests/conftest.py")
+    assert "a few cents" not in _doc("docs/testing.md")
+
+
 # ── The README ───────────────────────────────────────────────────────────
 
 
@@ -419,7 +633,7 @@ def test_the_readme_gives_the_real_collection_default() -> None:
 
 def test_the_readme_has_no_stale_test_count() -> None:
     line = next(x for x in _readme().splitlines() if "pytest tests" in x)
-    assert "4,400+" in line
+    assert _test_count() in line
 
 
 def test_the_readme_names_every_agent() -> None:

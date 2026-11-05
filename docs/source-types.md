@@ -403,7 +403,7 @@ search → awaiting_approval → fetch_text → embed → generate_report → co
 
 The only change is `fetch_transcripts` becomes `fetch_text`, which dispatches to the connector for the document's source type.
 
-Subscription jobs (channel auto-pull) generalize to **creator subscriptions**: every source type can have subscribed creators (YouTube channel, podcast show, RSS feed, Substack, X account). The subscription job loops across all subscribed creators, lists new items since `last_synced_at`, and fans them out into the same fetch_text → embed pipeline. No approval step (per current design).
+A subscription job is YouTube-only today: it walks a channel's uploads when the user subscribes and again on **Sync now**, and nothing schedules it. The design generalizes it to **creator subscriptions**: every source type can have subscribed creators (YouTube channel, podcast show, RSS feed, Substack, X account). The subscription job would loop across all subscribed creators, list new items since `last_synced_at`, and fan them out into the same fetch_text → embed pipeline. No approval step (per current design).
 
 ---
 

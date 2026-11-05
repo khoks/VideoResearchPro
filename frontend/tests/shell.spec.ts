@@ -114,6 +114,22 @@ test('a sign-in with no page to return to opens the app', async ({ page }) => {
   await expect(page).toHaveURL(/\/submit$/);
 });
 
+test('signing out leaves no page behind for the next sign-in', async ({ page }) => {
+  await page.addInitScript(() => {
+    if (!window.sessionStorage.getItem('booted')) {
+      window.sessionStorage.setItem('booted', '1');
+      window.localStorage.setItem('videoresearchpro.authToken', 'fixture-token');
+    }
+  });
+  await boot(page);
+  await page.goto(`/jobs/${JOB}`);
+  await expect(page.getByRole('heading', { level: 1 })).toContainText('pratidhvani smoke test');
+  await page.getByRole('button', { name: 'Sign out' }).click();
+  await expect(page).toHaveURL(/\/login$/);
+  await signIn(page);
+  await expect(page).toHaveURL(/\/submit$/);
+});
+
 test('a page that throws lands on the error screen, with a way back and no stack', async ({ page }) => {
   await page.addInitScript(() => window.localStorage.setItem('videoresearchpro.authToken', 'fixture-token'));
   // Text where the page expects a list: rendering it throws.

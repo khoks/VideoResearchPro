@@ -328,6 +328,9 @@ describe('a share made while signed out', () => {
   });
 });
 
+// The race this guards against only shows in a real browser, where the guard's
+// redirect lands after the layout's: `tests/shell.spec.ts` is the check that
+// fails without `signedOutHere`. This one holds the flow together.
 describe('signing out', () => {
   it('leaves no page behind for the next sign-in, perhaps someone else’s', async () => {
     localStorage.setItem(TOKEN_KEY, 'jwt.old');

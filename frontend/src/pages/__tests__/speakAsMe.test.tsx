@@ -9,10 +9,12 @@
  */
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
+import { AxiosError, AxiosHeaders } from 'axios';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DraftStatus, EchoDraft } from '../../services/echoApi';
 import { useJobStore } from '../../stores/jobStore';
+import { globalErrorToastMessage } from '../../utils/apiError';
 import { citationLabel, draftErrorOf, learnedLine, withDisclosure } from '../../utils/echoDrafts';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -94,8 +96,11 @@ async function mount() {
 const buttons = (label: string) =>
   Array.from(document.querySelectorAll('button')).filter((b) => b.textContent?.trim() === label) as HTMLButtonElement[];
 
-function refusedWith(code: string, message: string, extra: object = {}) {
-  return Object.assign(new Error('409'), { response: { status: 409, data: { detail: { code, message, ...extra } } } });
+function refusedWith(code: string, message: string, extra: object = {}, status = 409) {
+  const headers = new AxiosHeaders();
+  return new AxiosError(`Request failed with status code ${status}`, 'ERR_BAD_REQUEST', undefined, undefined, {
+    status, statusText: 'Conflict', headers, config: { headers }, data: { detail: { code, message, ...extra } },
+  });
 }
 
 function choose(el: HTMLSelectElement, value: string) {
@@ -264,6 +269,15 @@ describe('SpeakAsMePanel', () => {
       act(() => buttons('Cancel')[0].click());
       expect(host.querySelector('[data-register-stop]')).toBeNull();
     });
+  });
+
+  it('keeps the stops it shows on screen out of the app’s global error toast, and only those', () => {
+    for (const code of ['names_need_confirmation', 'register_needs_approval', 'ungrounded']) {
+      expect(globalErrorToastMessage(refusedWith(code, 'words'))).toBeNull();
+    }
+    expect(globalErrorToastMessage(refusedWith('install_off', 'Turned off.'))).toBe('Turned off.');
+    expect(globalErrorToastMessage(refusedWith('daily_cap', 'More tomorrow.', {}, 429))).toBe('More tomorrow.');
+    expect(globalErrorToastMessage(refusedWith('ungrounded', 'Not a stop.', {}, 500))).toBe('Not a stop.');
   });
 
   it('shows a refused reply in the server’s words, on screen, with nothing to click past it', async () => {

@@ -2,7 +2,10 @@
 
 The only writer of the table. ``store_events`` is idempotent on
 ``(tenant_id, connector, external_id)``: the same event synced twice is one
-row, updated in place. Every function is scoped to one tenant.
+row, updated in place. That holds for two syncs at once as well (T-3.2.1.13):
+a scheduled sync and "Sync now" can both read an event as new, and the database
+keeps the first insert and ignores the second. Every function is scoped to one
+tenant.
 
 The ``internal`` connector records what the user does inside Pratidhvani
 that is worth knowing about them; today, sharing something to Echo
@@ -17,10 +20,10 @@ import logging
 from datetime import datetime, timezone
 from typing import Iterable
 
-from sqlalchemy import insert
 from sqlalchemy.orm import Session
 
 from app.connectors.base import ActivityEvent as EventIn
+from app.database import insert_if_absent
 from app.models.activity_event import ActivityEvent
 
 logger = logging.getLogger(__name__)
@@ -28,6 +31,7 @@ logger = logging.getLogger(__name__)
 INTERNAL = "internal"
 SHARED_EVENT = "shared_to_pratidhvani"
 _BATCH = 200
+_UNIQUE_KEY = ["tenant_id", "connector", "external_id"]
 
 
 def _naive_utc(dt: datetime) -> datetime:
@@ -76,7 +80,6 @@ def store_events(db: Session, tenant_id: str, connector: str, events: Iterable[E
                     "tenant_id": tenant_id, "user_id": tenant_id, "connector": connector,
                     "external_id": external_id, **fields,
                 })
-                counts["added"] += 1
             elif any(getattr(row, k) != v for k, v in fields.items()):
                 for k, v in fields.items():
                     setattr(row, k, v)
@@ -84,9 +87,12 @@ def store_events(db: Session, tenant_id: str, connector: str, events: Iterable[E
                 counts["updated"] += 1
             else:
                 counts["unchanged"] += 1
-        if new_rows:
-            # One executemany per batch; ORM objects cost several times more.
-            db.execute(insert(ActivityEvent), new_rows)
+        # One executemany per batch; ORM objects cost several times more. A row
+        # another sync stored since the read above is the same event: it counts
+        # as unchanged, not as added twice.
+        added = insert_if_absent(db, ActivityEvent, new_rows, _UNIQUE_KEY)
+        counts["added"] += added
+        counts["unchanged"] += len(new_rows) - added
         db.commit()
         batch.clear()
 

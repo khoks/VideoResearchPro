@@ -490,9 +490,13 @@ def test_a_fact_deleted_from_an_import_stays_deleted_when_the_export_is_imported
 
     first = _run(unauthenticated_client, two["ha"], *apple_health())
     assert first["counts"]["facts"] == 3
+    rows = unauthenticated_client.get("/api/v1/echo/context", headers=two["ha"]).json()
+    said = next(r for r in rows if r["key"] == "steps")["kept_deleted_by"]
     assert unauthenticated_client.delete("/api/v1/echo/context/daily_routine/steps", headers=two["ha"]).status_code == 200
     [tomb] = db.query(EchoFactTombstone).filter_by(tenant_id=two["a"].id).all()
     assert (tomb.connector, tomb.kind, tomb.key) == ("apple_health_export", "daily_routine", "steps")
+    listed = unauthenticated_client.get("/api/v1/echo/fact-tombstones", headers=two["ha"]).json()["items"]
+    assert [t["connector_display_name"] for t in listed] == [said], "the dialog named who the delete keeps out"
 
     again = _run(unauthenticated_client, two["ha"], *apple_health())
     assert again["counts"]["facts"] == 2 and again["counts"]["facts_kept_deleted"] == 1

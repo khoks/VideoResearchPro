@@ -6,7 +6,7 @@ import { SignalsPanel } from '../components/echo/SignalsPanel';
 import { SpeakAsMePanel } from '../components/echo/SpeakAsMePanel';
 import { ActivityTimeline } from '../components/echo/ActivityTimeline';
 import { ConnectorsPanel } from '../components/echo/ConnectorsPanel';
-import { FactTombstones, isDerivedSource, keptDeletedNote } from '../components/echo/FactTombstones';
+import { FactTombstones, keptDeletedNote, RevokeSummary, useRevokeScope } from '../components/echo/FactTombstones';
 import { ReadinessDomains } from '../components/echo/ReadinessDomains';
 import {
   useDeleteContext,
@@ -95,6 +95,7 @@ export function EchoPage() {
   const record = useRecordContext();
   const del = useDeleteContext();
   const revoke = useRevokeSource();
+  const revokeScope = useRevokeScope(revoking?.source ?? null);
 
   const forbidden = isForbidden(status.error) || isForbidden(context.error);
   const allRows = useMemo(() => context.data ?? [], [context.data]);
@@ -413,7 +414,7 @@ export function EchoPage() {
       >
         <p style={{ margin: 0, fontFamily: fonts.body, lineHeight: lineHeight.normal }}>
           “{deleting?.key}” under {deleting ? kindLabel(deleting.kind) : ''} will be deleted.
-          {keptDeletedNote(deleting?.source) ? ` ${keptDeletedNote(deleting?.source)}` : ''}
+          {keptDeletedNote(deleting) ? ` ${keptDeletedNote(deleting)}` : ''}
         </p>
       </Modal>
 
@@ -426,19 +427,14 @@ export function EchoPage() {
             <Button variant="secondary" onClick={() => setRevoking(null)}>
               Cancel
             </Button>
-            <Button variant="danger" loading={revoke.isPending} onClick={confirmRevoke}>
+            <Button variant="danger" loading={revoke.isPending || revokeScope.isLoading} onClick={confirmRevoke}>
               Revoke and delete
             </Button>
           </>
         }
       >
         <p style={{ margin: 0, fontFamily: fonts.body, lineHeight: lineHeight.normal }}>
-          Every entry attributed to <strong>{revoking?.source}</strong> ({revoking?.count}) will be
-          deleted. This is the opt-out path for a connector; for manual entries it clears
-          everything you typed under that source.
-          {isDerivedSource(revoking?.source)
-            ? ' A connected connector keeps running, but its syncs and re-imports skip these facts from now on (see "Kept deleted"). To stop it, disconnect it above.'
-            : ''}
+          {revoking && <RevokeSummary source={revoking.source} listed={allRows} />}
         </p>
       </Modal>
     </div>

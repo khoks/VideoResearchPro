@@ -12,6 +12,8 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import tempfile
+from contextlib import contextmanager
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
@@ -19,7 +21,7 @@ import feedparser
 import httpx
 import pytest
 
-from app.services import youtube_service
+from app.services import source_failure, youtube_service
 from app.sources import registry
 from app.sources.podcast import client as podcast_client_mod
 from app.sources.podcast import connector as podcast_connector_mod
@@ -318,12 +320,14 @@ def test_search_isolates_per_show_feed_failures(podcast, fake_client):
     assert out[0].creator_name == "Good Show"
 
 
-def test_search_returns_empty_when_itunes_fails(podcast, fake_client):
+def test_search_lets_an_itunes_failure_through(podcast, fake_client):
+    """An empty list means nothing was found, so a failure stays raised for
+    the dispatcher to report (T-1.5.14.1)."""
     fake_client.itunes_search.side_effect = RuntimeError("upstream 503")
     with patch.object(
         podcast_connector_mod.podcast_client, "get_client", return_value=fake_client
-    ):
-        assert podcast.search("anything") == []
+    ), pytest.raises(RuntimeError):
+        podcast.search("anything")
 
 
 def test_search_candidate_carries_duration_and_published_at(podcast, fake_client):
@@ -562,7 +566,7 @@ def test_fetch_text_falls_through_to_whisper_when_no_transcript(podcast, fake_cl
         ],
     }
     fake_client.fetch_feed.return_value = fake_feed
-    fake_client.fetch_audio.return_value = b"fake-mp3-bytes"
+    fake_client.fetch_audio_to_file.side_effect = _writes(b"fake-mp3-bytes")
 
     # Mock the Whisper round-trip. We patch at the function-import
     # boundary inside the connector module so the test doesn't have
@@ -593,6 +597,17 @@ def test_fetch_text_falls_through_to_whisper_when_no_transcript(podcast, fake_cl
     mock_whisper.assert_called_once()
 
 
+def _writes(data: bytes):
+    """A ``fetch_audio_to_file`` that delivers ``data`` to the path it is given."""
+
+    def fetch(url, path):
+        with open(path, "wb") as f:
+            f.write(data)
+        return len(data)
+
+    return fetch
+
+
 def _segment(text: str, start: float, end: float) -> SimpleNamespace:
     """A segment as the OpenAI SDK returns it: read by attribute."""
     return SimpleNamespace(text=text, start=start, end=end)
@@ -618,7 +633,7 @@ def long_episode(fake_client, tmp_path, monkeypatch):
             }
         ],
     }
-    fake_client.fetch_audio.return_value = b"x" * 9
+    fake_client.fetch_audio_to_file.side_effect = _writes(b"x" * 9)
     chunks = [tmp_path / "chunk0.mp3", tmp_path / "chunk1.mp3"]
     for chunk in chunks:
         chunk.write_bytes(b"x")
@@ -673,7 +688,7 @@ def test_fetch_text_splits_an_episode_past_the_whisper_upload_cap(podcast, long_
 
 
 def test_fetch_text_leaves_audio_at_the_cap_in_one_request(podcast, fake_client, long_episode):
-    fake_client.fetch_audio.return_value = b"x" * 8
+    fake_client.fetch_audio_to_file.side_effect = _writes(b"x" * 8)
     answer = Mock(segments=[{"start": 0.0, "end": 3.0, "text": "Short episode."}])
     with (
         patch.object(youtube_service, "_transcribe_in_chunks") as in_chunks,
@@ -735,7 +750,7 @@ def test_a_real_mp3_splits_under_the_cap_and_covers_the_episode(podcast, fake_cl
             }
         ],
     }
-    fake_client.fetch_audio.return_value = audio.read_bytes()
+    fake_client.fetch_audio_to_file.side_effect = _writes(audio.read_bytes())
     sizes: list[int] = []
 
     def whisper(client, path, label, tag, size_mb):
@@ -782,7 +797,7 @@ def test_fetch_text_never_whispers_when_whisper_is_not_allowed(podcast, fake_cli
 
     assert out is None
     mock_whisper.assert_not_called()
-    fake_client.fetch_audio.assert_not_called()
+    fake_client.fetch_audio_to_file.assert_not_called()
 
 
 def test_fetch_text_returns_none_when_openai_key_unset_and_no_transcript(
@@ -992,11 +1007,318 @@ def test_client_fetch_feed_returns_parsed_dict():
     assert len(feed["entries"]) == 1
 
 
-def test_client_fetch_audio_returns_bytes():
-    api_resp = Mock(status_code=200)
-    api_resp.content = b"audio-bytes"
-    api_resp.raise_for_status = Mock()
-    with patch.object(podcast_client_mod.httpx, "get", return_value=api_resp):
-        c = PodcastClient()
-        out = c.fetch_audio("https://cdn.example.com/x.mp3")
-    assert out == b"audio-bytes"
+@contextmanager
+def _streamed(chunks, *, fail: Exception | None = None):
+    """What ``httpx.stream`` yields: chunks arrive one at a time, and a
+    connection can drop after any of them."""
+
+    def iter_bytes(chunk_size=None):
+        yield from chunks
+        if fail is not None:
+            raise fail
+
+    yield Mock(raise_for_status=Mock(), iter_bytes=iter_bytes)
+
+
+def test_client_streams_audio_to_the_file_it_is_given(tmp_path):
+    """T-1.7.1.2: to disk a chunk at a time, not one 150 MB ``resp.content``."""
+    dest = tmp_path / "ep.mp3"
+    with patch.object(
+        podcast_client_mod.httpx, "stream", return_value=_streamed([b"audio-", b"bytes"])
+    ) as stream:
+        written = PodcastClient().fetch_audio_to_file("https://cdn.example.com/x.mp3", str(dest))
+
+    assert written == 11
+    assert dest.read_bytes() == b"audio-bytes"
+    assert stream.call_args.args == ("GET", "https://cdn.example.com/x.mp3")
+    assert stream.call_args.kwargs["follow_redirects"] is True
+
+
+def test_client_stops_a_download_that_never_ends(tmp_path, monkeypatch):
+    monkeypatch.setattr(podcast_client_mod, "AUDIO_MAX_BYTES", 5)
+    with patch.object(
+        podcast_client_mod.httpx, "stream", return_value=_streamed([b"1234", b"5678", b"never reached"])
+    ), pytest.raises(podcast_client_mod.AudioTooLargeError):
+        PodcastClient().fetch_audio_to_file("https://cdn.example.com/x.mp3", str(tmp_path / "ep.mp3"))
+    assert (tmp_path / "ep.mp3").read_bytes() == b"1234", "the chunk past the limit is not written"
+
+
+@pytest.fixture
+def audio_dirs(tmp_path, monkeypatch, fake_client):
+    """Point temp files at one directory, so a test can see what is left, and
+    give the connector an episode with no transcript. Yields that directory."""
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    monkeypatch.setattr(tempfile, "tempdir", str(scratch))
+    fake_client.fetch_feed.return_value = {
+        "feed": {"title": "The Test Show"},
+        "entries": [
+            {
+                "id": "https://testshow.example.com/ep1",
+                "title": "Episode 1: Hello",
+                "link": "https://testshow.example.com/ep1",
+                "enclosures": [{"href": "https://cdn.testshow.example.com/ep1.mp3"}],
+            }
+        ],
+    }
+    monkeypatch.setattr(podcast_connector_mod.settings, "OPENAI_API_KEY", "sk-fake")
+    with patch.object(
+        podcast_connector_mod.podcast_client, "get_client", return_value=fake_client
+    ):
+        yield scratch
+
+
+def test_the_temporary_audio_is_gone_after_a_transcription(podcast, fake_client, audio_dirs):
+    fake_client.fetch_audio_to_file.side_effect = _writes(b"mp3")
+    seen: list[str] = []
+
+    def whisper(client, path, label, tag, size_mb):
+        seen.append(path)
+        assert os.path.exists(path), "the audio is on disk while Whisper reads it"
+        return Mock(segments=[{"start": 0.0, "end": 3.0, "text": "Hello."}])
+
+    with patch.object(youtube_service, "_whisper_transcribe_with_retry", side_effect=whisper):
+        out = podcast.fetch_text(_candidate_for_ep1(), job_id="j1")
+
+    assert out is not None and seen and seen[0].endswith(".mp3")
+    assert list(audio_dirs.iterdir()) == []
+
+
+def test_a_download_that_drops_leaves_no_partial_file(podcast, fake_client, audio_dirs):
+    def dropped(url, path):
+        with open(path, "wb") as f:
+            f.write(b"half an episode")
+        raise httpx.ReadError("connection reset")
+
+    fake_client.fetch_audio_to_file.side_effect = dropped
+    with patch.object(youtube_service, "_whisper_transcribe_with_retry") as whisper:
+        assert podcast.fetch_text(_candidate_for_ep1(), job_id="j1") is None
+    whisper.assert_not_called()
+    assert list(audio_dirs.iterdir()) == []
+
+
+def test_a_full_disk_loses_the_episode_and_not_the_run(podcast, fake_client, audio_dirs):
+    fake_client.fetch_audio_to_file.side_effect = OSError("no space left on device")
+    assert podcast.fetch_text(_candidate_for_ep1(), job_id="j1") is None
+
+
+def test_an_empty_download_is_not_sent_to_whisper(podcast, fake_client, audio_dirs):
+    fake_client.fetch_audio_to_file.side_effect = _writes(b"")
+    with patch.object(youtube_service, "_whisper_transcribe_with_retry") as whisper:
+        assert podcast.fetch_text(_candidate_for_ep1(), job_id="j1") is None
+    whisper.assert_not_called()
+
+
+def test_a_whisper_failure_leaves_no_audio(podcast, fake_client, audio_dirs):
+    fake_client.fetch_audio_to_file.side_effect = _writes(b"mp3")
+    with patch.object(
+        youtube_service, "_whisper_transcribe_with_retry", side_effect=RuntimeError("refused")
+    ):
+        assert podcast.fetch_text(_candidate_for_ep1(), job_id="j1") is None
+    assert list(audio_dirs.iterdir()) == []
+
+
+def test_an_exception_past_the_handlers_still_leaves_no_audio(podcast, fake_client, audio_dirs):
+    """A task cancelled mid-transcription, say."""
+    fake_client.fetch_audio_to_file.side_effect = _writes(b"mp3")
+    with patch.object(
+        youtube_service, "_whisper_transcribe_with_retry", side_effect=KeyboardInterrupt
+    ), pytest.raises(KeyboardInterrupt):
+        podcast.fetch_text(_candidate_for_ep1(), job_id="j1")
+    assert list(audio_dirs.iterdir()) == []
+
+
+def test_a_split_episode_leaves_neither_audio_nor_chunks(podcast, fake_client, audio_dirs, monkeypatch):
+    """The chunks are written next to the audio, in the same directory."""
+    fake_client.fetch_audio_to_file.side_effect = _writes(b"x" * 9)
+    monkeypatch.setattr(youtube_service, "WHISPER_MAX_FILE_BYTES", 8)
+
+    def split(path, tmpdir, tag):
+        chunk = os.path.join(tmpdir, "chunk_000.mp3")
+        with open(chunk, "wb") as f:
+            f.write(b"x")
+        return [(chunk, 0.0), (chunk, 100.0)]
+
+    monkeypatch.setattr(youtube_service, "_split_audio_for_whisper", split)
+    answers = [_whisper_says(_segment("Opening.", 0.0, 90.0), duration=110.0), RuntimeError("refused")]
+    with patch.object(youtube_service, "_whisper_transcribe_with_retry", side_effect=answers):
+        assert podcast.fetch_text(_candidate_for_ep1(), job_id="j1") is None
+    assert list(audio_dirs.iterdir()) == []
+
+
+# ---------------------------------------------------------------------------
+# Which episodes a show contributes (T-1.7.1.3)
+# ---------------------------------------------------------------------------
+def _episode(n: int, title: str, summary: str = "") -> dict:
+    return {"id": f"ep-{n}", "title": title, "summary": summary, "enclosures": [{"href": f"https://x/{n}.mp3"}]}
+
+
+def _titles(entries: list[dict]) -> list[str]:
+    return [e["title"] for e in entries]
+
+
+def test_a_show_with_no_match_contributes_its_newest_as_before():
+    entries = [_episode(i, f"Unrelated {i}") for i in range(8)]
+    chosen = podcast_connector_mod._select_entries(entries, "nuclear power", 5)
+    assert chosen == entries[:5]
+
+
+def test_episodes_on_the_topic_come_before_the_newest():
+    entries = [
+        _episode(0, "Newest, about gardening"),
+        _episode(1, "Also new, about taxes"),
+        _episode(2, "Why nuclear power came back"),
+        _episode(3, "Older, about sailing"),
+        _episode(4, "The history of nuclear power plants"),
+    ]
+    chosen = podcast_connector_mod._select_entries(entries, "nuclear power", 3)
+    assert _titles(chosen) == [
+        "Why nuclear power came back",
+        "The history of nuclear power plants",
+        "Newest, about gardening",
+    ], "a show with too few matches fills up from its newest"
+
+
+def test_an_old_match_is_found_anywhere_in_the_feed():
+    entries = [_episode(i, f"Unrelated {i}") for i in range(200)] + [_episode(200, "Nuclear power, 2009")]
+    chosen = podcast_connector_mod._select_entries(entries, "nuclear power", 2)
+    assert _titles(chosen) == ["Nuclear power, 2009", "Unrelated 0"]
+
+
+def test_the_title_outranks_a_mention_in_the_description():
+    entries = [
+        _episode(0, "An interview", "We talk about nuclear power and much else."),
+        _episode(1, "Nuclear power"),
+    ]
+    chosen = podcast_connector_mod._select_entries(entries, "nuclear power", 2)
+    assert _titles(chosen) == ["Nuclear power", "An interview"]
+
+
+def test_a_description_counts_when_the_title_says_nothing():
+    entries = [
+        _episode(0, "Episode 12"),
+        _episode(1, "Episode 11", "Rare earth magnets and who makes them."),
+    ]
+    chosen = podcast_connector_mod._select_entries(entries, "rare earth magnets", 1)
+    assert _titles(chosen) == ["Episode 11"]
+
+
+def test_one_word_of_the_topic_is_not_a_match():
+    """Boardroom power is not nuclear power, and it should not displace the
+    show's newest."""
+    entries = [_episode(0, "This week"), _episode(1, "Power in the boardroom")]
+    chosen = podcast_connector_mod._select_entries(entries, "nuclear power", 1)
+    assert _titles(chosen) == ["This week"]
+
+
+def test_most_of_a_long_topic_is_enough():
+    entries = [_episode(0, "This week"), _episode(1, "The fall of the Roman Empire")]
+    chosen = podcast_connector_mod._select_entries(
+        entries, "Why did the Roman Empire fall and what can we learn from it today?", 1
+    )
+    assert _titles(chosen) == ["The fall of the Roman Empire"]
+
+
+def test_a_plural_in_the_feed_matches_the_singular_in_the_topic():
+    entries = [_episode(0, "This week"), _episode(1, "Nuclear power plants")]
+    chosen = podcast_connector_mod._select_entries(entries, "nuclear power plant", 1)
+    assert _titles(chosen) == ["Nuclear power plants"]
+
+
+def test_search_prefers_episodes_on_the_topic_and_fetches_no_audio(podcast, fake_client):
+    """At ``search()``: each show in turn, its episodes on the topic first."""
+    fake_client.itunes_search.return_value = {
+        "results": [
+            {"collectionName": "A", "feedUrl": "https://a.example.com/f.rss"},
+            {"collectionName": "B", "feedUrl": "https://b.example.com/f.rss"},
+        ]
+    }
+    feeds = {
+        "https://a.example.com/f.rss": {"entries": [_episode(0, "Taxes"), _episode(1, "Nuclear power")]},
+        "https://b.example.com/f.rss": {"entries": [_episode(2, "Sailing"), _episode(3, "Gardening")]},
+    }
+    fake_client.fetch_feed.side_effect = lambda url: feeds[url]
+    with patch.object(
+        podcast_connector_mod.podcast_client, "get_client", return_value=fake_client
+    ):
+        out = podcast.search("nuclear power", limit=3)
+
+    assert [c.title for c in out] == ["Nuclear power", "Sailing", "Taxes"]
+    fake_client.fetch_audio_to_file.assert_not_called()
+
+
+def test_one_feed_failing_only_costs_that_show(podcast, fake_client):
+    fake_client.itunes_search.return_value = {
+        "results": [
+            {"collectionName": "A", "feedUrl": "https://a.example.com/f.rss"},
+            {"collectionName": "B", "feedUrl": "https://b.example.com/f.rss"},
+        ]
+    }
+
+    def feed(url):
+        if "a.example" in url:
+            raise httpx.ConnectError("down")
+        return {"entries": [_episode(1, "Kept")]}
+
+    fake_client.fetch_feed.side_effect = feed
+    with patch.object(
+        podcast_connector_mod.podcast_client, "get_client", return_value=fake_client
+    ):
+        assert [c.title for c in podcast.search("anything")] == ["Kept"]
+
+
+def test_every_feed_failing_is_a_failure_not_an_empty_answer(podcast, fake_client):
+    fake_client.itunes_search.return_value = {
+        "results": [{"collectionName": "A", "feedUrl": "https://a.example.com/f.rss"}]
+    }
+    down = httpx.ConnectError("down")
+    fake_client.fetch_feed.side_effect = down
+    with patch.object(
+        podcast_connector_mod.podcast_client, "get_client", return_value=fake_client
+    ), pytest.raises(source_failure.SearchFailed) as caught:
+        podcast.search("anything")
+    assert caught.value.__cause__ is down
+
+
+def test_a_feed_host_refusing_never_reads_as_the_service_refusing(podcast, fake_client):
+    """Each feed is a different host, and iTunes has already answered."""
+    fake_client.itunes_search.return_value = {
+        "results": [{"collectionName": "A", "feedUrl": "https://a.example.com/f.rss"}]
+    }
+    fake_client.fetch_feed.side_effect = httpx.HTTPStatusError(
+        "403",
+        request=httpx.Request("GET", "https://a.example.com/f.rss"),
+        response=httpx.Response(403),
+    )
+    with patch.object(
+        podcast_connector_mod.podcast_client, "get_client", return_value=fake_client
+    ), pytest.raises(source_failure.SearchFailed) as caught:
+        podcast.search("anything")
+    assert source_failure.classify(caught.value) == source_failure.SourceFailure("failed", 403)
+
+
+def test_itunes_refusing_stays_a_refusal(podcast, fake_client):
+    fake_client.itunes_search.side_effect = httpx.HTTPStatusError(
+        "403",
+        request=httpx.Request("GET", "https://itunes.apple.com/search"),
+        response=httpx.Response(403),
+    )
+    with patch.object(
+        podcast_connector_mod.podcast_client, "get_client", return_value=fake_client
+    ), pytest.raises(httpx.HTTPStatusError) as caught:
+        podcast.search("anything")
+    assert source_failure.classify(caught.value).kind == "refused"
+
+
+def test_a_sentence_itunes_cannot_answer_falls_back_to_its_words(podcast, fake_client):
+    fake_client.itunes_search.side_effect = lambda q, limit: (
+        {"results": [{"collectionName": "A", "feedUrl": "https://a.example.com/f.rss"}]}
+        if q == "tariffs small businesses"
+        else {"results": []}
+    )
+    fake_client.fetch_feed.return_value = {"entries": [_episode(1, "An episode")]}
+    with patch.object(
+        podcast_connector_mod.podcast_client, "get_client", return_value=fake_client
+    ):
+        out = podcast.search("What is the impact of tariffs on small businesses?")
+    assert [c.title for c in out] == ["An episode"]

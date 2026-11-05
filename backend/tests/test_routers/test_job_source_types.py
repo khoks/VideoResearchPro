@@ -334,7 +334,8 @@ def test_channel_runs_refuse_other_source_types_but_accept_youtube(client, db):
 def test_health_reports_a_flag_for_every_credential_gated_type(client, unconfigured, monkeypatch):
     caps = client.get("/api/v1/health").json()["capabilities"]
     for source_type, cap in job_source_types.CAPABILITY_FOR_SOURCE_TYPE.items():
-        assert caps[cap] is False, source_type
+        needs_a_credential = source_type in ("reddit_post", "article", "tweet")
+        assert caps[cap] is not needs_a_credential, source_type
 
     from app.config import settings
 

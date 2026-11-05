@@ -23,11 +23,21 @@ from app.models.job_video import JobVideo
 from app.sources import registry
 from app.sources.base import BaseConnector
 from app.sources.types import Candidate, ExtractedText
+from app.services import job_source_types
 from app.tasks.job_tasks import (
-    _dispatch_and_store_non_video_sources,
     _resolve_source_types,
+    _search_non_video_sources,
+    _store_non_video_candidates,
     execute_topic_job,
 )
+
+
+def _dispatch_and_store(db, job, source_types: list[str], total: int) -> int:
+    """The non-video half of a run: search each source, then store what its
+    share allows."""
+    shares = job_source_types.share_limits(total, source_types)
+    dispatched = _search_non_video_sources(job, source_types, shares)
+    return _store_non_video_candidates(db, job, dispatched, shares)
 
 
 # ---------------------------------------------------------------------------
@@ -187,7 +197,7 @@ def test_resolve_source_types_falls_back_on_empty_array(db):
 
 
 # ---------------------------------------------------------------------------
-# _dispatch_and_store_non_video_sources — direct unit test
+# The non-video search and store helpers — direct unit test
 # ---------------------------------------------------------------------------
 def test_dispatch_and_store_persists_reddit_candidates(db, clean_registry):
     fake = _FakeRedditConnector(
@@ -197,9 +207,7 @@ def test_dispatch_and_store_persists_reddit_candidates(db, clean_registry):
 
     job = _make_topic_job(db, source_types=["reddit_post"])
 
-    stored = _dispatch_and_store_non_video_sources(
-        db, job, source_types=["reddit_post"], limit_per_type=5
-    )
+    stored = _dispatch_and_store(db, job, ["reddit_post"], 5)
 
     assert stored == 3
     docs = (
@@ -227,9 +235,7 @@ def test_dispatch_and_store_handles_mixed_source_types(db, clean_registry):
 
     job = _make_topic_job(db, source_types=["reddit_post", "hn_story"])
 
-    stored = _dispatch_and_store_non_video_sources(
-        db, job, source_types=["reddit_post", "hn_story"], limit_per_type=5
-    )
+    stored = _dispatch_and_store(db, job, ["reddit_post", "hn_story"], 10)
 
     assert stored == 3
     by_type = {
@@ -246,9 +252,7 @@ def test_dispatch_and_store_skips_video_in_source_types(db, clean_registry):
 
     job = _make_topic_job(db, source_types=["video", "reddit_post"])
 
-    stored = _dispatch_and_store_non_video_sources(
-        db, job, source_types=["video", "reddit_post"], limit_per_type=5
-    )
+    stored = _dispatch_and_store(db, job, ["video", "reddit_post"], 10)
 
     assert stored == 1
     docs = db.query(Document).all()
@@ -259,9 +263,7 @@ def test_dispatch_and_store_skips_video_in_source_types(db, clean_registry):
 def test_dispatch_and_store_returns_zero_when_only_video(db, clean_registry):
     job = _make_topic_job(db, source_types=["video"])
 
-    stored = _dispatch_and_store_non_video_sources(
-        db, job, source_types=["video"], limit_per_type=5
-    )
+    stored = _dispatch_and_store(db, job, ["video"], 5)
 
     assert stored == 0
     assert db.query(Document).count() == 0

@@ -1,6 +1,8 @@
 import { useColors } from '../../hooks/useTheme';
 import { fonts, fontSize, fontWeight, lineHeight, radius, space } from '../../theme';
+import type { SourceHold } from '../../stores/systemStatusStore';
 import {
+  heldSourcesNote,
   isDefaultSourceTypes,
   offeredSourceTypes,
   sourceTypeLabel,
@@ -17,6 +19,8 @@ export interface SourceTypePickerProps {
   capabilities: Record<string, boolean> | null;
   /** The run's `num_videos`, shared across the chosen sources. */
   numVideos: number;
+  /** Sources that refused this install, from `/health` (T-1.5.14.1). */
+  holds?: Record<string, SourceHold>;
 }
 
 /**
@@ -26,9 +30,10 @@ export interface SourceTypePickerProps {
  * or template that carried a source the install no longer has shows it struck
  * through, to be removed before submitting, never silently dropped. The run's
  * `num_videos` is shared across the chosen sources (the plan cap bounds the
- * whole run), and the note says how it splits.
+ * whole run), and the note says how it splits. A source that refused this
+ * install drops out, and a second note says why, so it never just vanishes.
  */
-export function SourceTypePicker({ selected, onChange, capabilities, numVideos }: SourceTypePickerProps) {
+export function SourceTypePicker({ selected, onChange, capabilities, numVideos, holds = {} }: SourceTypePickerProps) {
   const c = useColors();
   const offered = offeredSourceTypes(capabilities);
   const unavailable = unavailableSourceTypes(selected, capabilities);
@@ -77,7 +82,7 @@ export function SourceTypePicker({ selected, onChange, capabilities, numVideos }
       parts.push(
         `The ${numVideos} results you set below are shared across these sources: ${selected
           .map((v) => `${sourceTypeLabel(v)} ${shares[v] ?? 0}`)
-          .join(', ')}.`,
+          .join(', ')}. A source that comes back short passes its share to the others.`,
       );
     }
     if (!youtube) {
@@ -86,6 +91,7 @@ export function SourceTypePicker({ selected, onChange, capabilities, numVideos }
     note = parts.length > 0 ? parts.join(' ') : null;
   }
   const alert = unavailable.length > 0 || selected.length === 0 || tooFew;
+  const heldNote = heldSourcesNote(holds);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: space['2'] }}>
@@ -119,6 +125,20 @@ export function SourceTypePicker({ selected, onChange, capabilities, numVideos }
           }}
         >
           {note}
+        </p>
+      )}
+      {heldNote && (
+        <p
+          data-testid="source-type-held-note"
+          style={{
+            margin: 0,
+            fontFamily: fonts.ui,
+            fontSize: fontSize.sm,
+            lineHeight: lineHeight.snug,
+            color: c.textSecondary,
+          }}
+        >
+          {heldNote}
         </p>
       )}
     </div>

@@ -44,12 +44,24 @@ export interface Job {
   /** E-8.6: the template version this run started from, if any. */
   template_id: string | null;
   template_version: number | null;
+  /**
+   * S-1.5.14: what the run has to say about its sources and limits.
+   * Optional for responses from a server older than the field.
+   */
+  run_notes?: RunNote[];
   progress_pct: number;
   progress_message: string | null;
   error_message: string | null;
   video_count: number;
   transcript_count: number;
   has_report: boolean;
+}
+
+/** A sentence the server wrote for the reader; `kind` is for telling them apart. */
+export interface RunNote {
+  kind: string;
+  text: string;
+  source_type?: string;
 }
 
 export type OutputLength = 'auto' | 'brief' | 'standard' | 'deep';

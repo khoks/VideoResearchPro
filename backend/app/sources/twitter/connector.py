@@ -120,10 +120,10 @@ class TwitterConnector(_PasteTweetConnector):
     ) -> list[Candidate]:
         """Recent-search via Twitter API v2.
 
-        Returns ``[]`` when:
-        - `query` is empty.
-        - No bearer token configured (operator hasn't opted in).
-        - The HTTP call fails (rate limit, 5xx, network error).
+        Returns ``[]`` when `query` is empty or no bearer token is configured
+        (the operator hasn't opted in). A failed call stays raised, so the
+        dispatcher can tell a refusal or a rate limit from "nothing found"
+        (T-1.5.14.1).
         """
         if not query.strip():
             return []
@@ -133,17 +133,7 @@ class TwitterConnector(_PasteTweetConnector):
                 "returning empty (paste-mode for individual tweets still works)"
             )
             return []
-        try:
-            payload = twitter_client.get_client().search_recent(
-                query, limit=limit
-            )
-        except Exception as e:
-            logger.warning(
-                "TwitterConnector.search: API call failed for %r: %s",
-                query,
-                e,
-            )
-            return []
+        payload = twitter_client.get_client().search_recent(query, limit=limit)
         users_by_id = _expansions_users(payload)
         tweets = (
             payload.get("data") if isinstance(payload, dict) else None

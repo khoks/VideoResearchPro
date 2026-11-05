@@ -3,6 +3,7 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SourceTypePicker } from '../SourceTypePicker';
+import type { SourceHold } from '../../../stores/systemStatusStore';
 import type { SourceType } from '../../../utils/jobForm';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -10,11 +11,22 @@ import type { SourceType } from '../../../utils/jobForm';
 let host: HTMLDivElement;
 let root: Root;
 
-function mount(selected: SourceType[], capabilities: Record<string, boolean> | null, numVideos = 10) {
+function mount(
+  selected: SourceType[],
+  capabilities: Record<string, boolean> | null,
+  numVideos = 10,
+  holds?: Record<string, SourceHold>,
+) {
   const onChange = vi.fn();
   act(() =>
     root.render(
-      <SourceTypePicker selected={selected} onChange={onChange} capabilities={capabilities} numVideos={numVideos} />,
+      <SourceTypePicker
+        selected={selected}
+        onChange={onChange}
+        capabilities={capabilities}
+        numVideos={numVideos}
+        holds={holds}
+      />,
     ),
   );
   const chips = Array.from(host.querySelectorAll<HTMLButtonElement>('button[data-source-type]'));
@@ -46,6 +58,31 @@ describe('SourceTypePicker', () => {
     expect(chip('video')?.getAttribute('aria-pressed')).toBe('true');
     expect(chip('hn_story')?.getAttribute('aria-pressed')).toBe('false');
     expect(host.querySelector('[data-testid="source-type-note"]')).toBeNull();
+  });
+
+  it('stops offering a keyless source once /health says it cannot be searched', () => {
+    expect(mount(['video'], null).chip('bluesky_post')).toBeDefined();
+    expect(mount(['video'], { bluesky_search_enabled: true }).chip('bluesky_post')).toBeDefined();
+    expect(mount(['video'], { bluesky_search_enabled: false }).chip('bluesky_post')).toBeUndefined();
+  });
+
+  it('says why a source that refused this install is gone, on the default form too', () => {
+    const until = '2026-11-05T12:00:00+00:00';
+    mount(['video'], { bluesky_search_enabled: false }, 10, { bluesky_post: { status: 403, until } });
+    expect(host.querySelector('[data-testid="source-type-held-note"]')?.textContent).toBe(
+      'Bluesky refused its last search from this install, so it is not offered for now.',
+    );
+  });
+
+  it('has no such note when nothing is on hold', () => {
+    mount(['video'], {});
+    expect(host.querySelector('[data-testid="source-type-held-note"]')).toBeNull();
+  });
+
+  it('strikes through a carried source that a blank base URL took away', () => {
+    const { chip } = mount(['video', 'mastodon_post'], { mastodon_search_enabled: false });
+    expect(chip('mastodon_post')?.style.textDecoration).toBe('line-through');
+    expect(host.querySelector('[data-testid="source-type-note"]')?.textContent).toContain('not set up');
   });
 
   it('hides X / Twitter until /health reports tweet search on', () => {

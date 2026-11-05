@@ -80,6 +80,12 @@ class Job(Base):
     # Subscription-job metadata: JSON array of {channel_id, name} for resolved channels
     channel_list_resolved: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # What the run has to tell its reader (S-1.5.14): a source that was
+    # unavailable or found nothing, a share given to the others, a Whisper
+    # limit reached. JSON array, written by `run_notes`; NULL when there is
+    # nothing to say, which is every run where each source filled its share.
+    run_notes_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     # Results
     chroma_collection_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
     report_path: Mapped[str | None] = mapped_column(String(500), nullable=True)

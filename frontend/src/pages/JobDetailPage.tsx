@@ -48,6 +48,7 @@ import { sourceTypeLabel, windowLabel } from '../utils/jobForm';
 import { useJobStore } from '../stores/jobStore';
 import { wsClient } from '../services/wsClient';
 import { ReportPeekModal } from '../components/jobs/ReportPeekModal';
+import { RunNotes } from '../components/jobs/RunNotes';
 import { VideoKnowledgeDrawer } from './VideoKnowledgePage';
 import { videoToApprovalProps, type Video } from '../types/video';
 import type { QAExchange } from '../types/qa';
@@ -215,6 +216,7 @@ export function JobDetailPage() {
             Error: {job.error_message}
           </p>
         )}
+        <RunNotes job={job} />
       </Card>
 
       <SaveTemplateModal

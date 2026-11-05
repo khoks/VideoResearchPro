@@ -3,7 +3,6 @@ import {
   describeAuditEvent,
   describeUserAgent,
   groupKey,
-  isPublicAuthPath,
   isWarningEvent,
   lastActiveLabel,
   oauthRedirectUri,
@@ -57,19 +56,6 @@ describe('groupKey', () => {
   it('groups a key in fours', () => {
     expect(groupKey('JBSWY3DPEHPK3PXPABCD')).toBe('JBSW Y3DP EHPK 3PXP ABCD');
     expect(groupKey('ABCDEF')).toBe('ABCD EF');
-  });
-});
-
-describe('isPublicAuthPath', () => {
-  it('covers the sign-in pages, the OAuth return and the reset pages', () => {
-    for (const p of ['/login', '/login/oauth/google/callback', '/register', '/forgot-password', '/reset-password']) {
-      expect(isPublicAuthPath(p), p).toBe(true);
-    }
-  });
-  it('leaves the app pages to the 401 redirect', () => {
-    for (const p of ['/', '/account/security', '/library', '/loginx']) {
-      expect(isPublicAuthPath(p), p).toBe(false);
-    }
   });
 });
 

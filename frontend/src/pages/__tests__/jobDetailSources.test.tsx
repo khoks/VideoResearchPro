@@ -3,6 +3,11 @@
  * carried `source_types` since S-1.5.13, and the page ignored it, so a run
  * over Reddit and Hacker News read like any other. Checked on the page the
  * router mounts. Removing the row from `JobParamsCard` fails these.
+ *
+ * T-1.5.13.7: on a run over other sources the count is the whole run's budget, not
+ * a number of videos, so its label says so; a YouTube-only run keeps its wording.
+ * Mutation check, run by hand on 2026-11-05: the label fixed at "Number of videos"
+ * fails "calls the budget results".
  */
 import { act, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -109,6 +114,32 @@ function sourcesRow(): string | null {
   const dt = Array.from(host.querySelectorAll('dt')).find((d) => d.textContent === 'Sources');
   return dt?.nextElementSibling?.textContent ?? null;
 }
+
+describe("a run's count", () => {
+  const labels = () => Array.from(host.querySelectorAll('dt')).map((d) => d.textContent);
+
+  it('calls the budget results on a mixed run', () => {
+    mount({ num_videos: 12, source_types: ['video', 'reddit_post', 'hn_story'] });
+    expect(labels()).toContain('Number of results');
+    expect(labels()).not.toContain('Number of videos');
+  });
+
+  it('calls it results on a run over one other source', () => {
+    mount({ num_videos: 12, source_types: ['podcast_episode'] });
+    expect(labels()).toContain('Number of results');
+  });
+
+  it('leaves a YouTube-only run alone', () => {
+    mount({ num_videos: 12, source_types: ['video'] });
+    expect(labels()).toContain('Number of videos');
+    expect(labels()).not.toContain('Number of results');
+  });
+
+  it('leaves alone a response that does not name its sources', () => {
+    mount({ num_videos: 12, source_types: undefined });
+    expect(labels()).toContain('Number of videos');
+  });
+});
 
 describe('the sources a run searched', () => {
   it('are named with the words the submit form uses', () => {

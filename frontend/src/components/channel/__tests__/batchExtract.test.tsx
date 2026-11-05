@@ -6,6 +6,13 @@
  *
  * Mutation check, run by hand on 2026-11-04: `runBatch` calling
  * `knowledgeApi.extract(id)` again fails the depth test.
+ *
+ * T-1.15.3.10: the select starts from the account's default depth, under D-145's
+ * rule: it stands in where the control is on screen, a choice on the page wins, and
+ * the server is never asked to apply it. The real `usePreferredDepth` reads the
+ * query `AppLayout` keeps alive. Mutation checks, run by hand on 2026-11-05: a
+ * start of null in place of `usePreferredDepth()` fails "starts from" and "arrives
+ * after"; `useDepthChoice` reading a pick of Auto as no pick fails "Auto picked".
  */
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -25,6 +32,7 @@ vi.mock('../../../hooks/useChannelIntelligence', () => ({
 }));
 
 import { BatchExtract } from '../BatchExtract';
+import { ME_QUERY_KEY } from '../../../hooks/useMe';
 
 const DOCS = [
   { id: 'd1', title: 'First', url: '' },
@@ -42,8 +50,12 @@ async function flush() {
   }
 }
 
-function mount() {
+let client: QueryClient;
+
+function mount(preferred?: string | null) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  client = qc;
+  if (preferred !== undefined) qc.setQueryData(ME_QUERY_KEY, { id: 'u1', email: 'a@x', tier: 'pro', preferred_output_length: preferred });
   act(() =>
     root.render(
       <QueryClientProvider client={qc}>
@@ -86,6 +98,58 @@ beforeEach(() => {
 afterEach(() => {
   act(() => root.unmount());
   host.remove();
+});
+
+describe("BatchExtract: the account's default depth (T-1.15.3.10)", () => {
+  it('starts from it, shown where the batch is confirmed, and sends it', async () => {
+    mount('brief');
+    openConfirm();
+    expect(depthSelect()!.value).toBe('brief');
+    await start();
+    expect(postMock.mock.calls).toEqual([
+      ['/videos/d1/extract-knowledge', null, { params: { output_length: 'brief' } }],
+      ['/videos/d2/extract-knowledge', null, { params: { output_length: 'brief' } }],
+    ]);
+  });
+
+  it('takes a preference that arrives after the first render', async () => {
+    mount();
+    openConfirm();
+    expect(depthSelect()!.value).toBe('');
+    await act(async () => client.setQueryData(ME_QUERY_KEY, { id: 'u1', email: 'a@x', tier: 'pro', preferred_output_length: 'deep' }));
+    await flush();
+    expect(depthSelect()!.value).toBe('deep');
+  });
+
+  it('lets a depth picked on the page win', async () => {
+    mount('brief');
+    openConfirm();
+    pick('deep');
+    await start();
+    expect(postMock.mock.calls[0]).toEqual(['/videos/d1/extract-knowledge', null, { params: { output_length: 'deep' } }]);
+  });
+
+  it('Auto picked on the page wins too, and sends none', async () => {
+    mount('brief');
+    openConfirm();
+    pick('');
+    await start();
+    expect(postMock.mock.calls[0]).toEqual(['/videos/d1/extract-knowledge', null, { params: undefined }]);
+  });
+
+  it('a preference of Auto is the same request as no preference', async () => {
+    mount('auto');
+    openConfirm();
+    expect(depthSelect()!.value).toBe('');
+    await start();
+    expect(postMock.mock.calls[0]).toEqual(['/videos/d1/extract-knowledge', null, { params: undefined }]);
+  });
+
+  it('spends nothing until Start', () => {
+    mount('deep');
+    openConfirm();
+    expect(postMock).not.toHaveBeenCalled();
+  });
 });
 
 describe('BatchExtract: one depth for the batch', () => {

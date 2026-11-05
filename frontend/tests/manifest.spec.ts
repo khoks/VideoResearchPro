@@ -425,6 +425,32 @@ test.describe('share target', () => {
       expect(await pendingCount(page)).toBe(0);
     });
 
+    test('a deep link keeps its page, and the waiting share is one tap away (T-3.7.6.3)', async ({ page }) => {
+      const stub = await stubApi(page);
+      await page.goto('/login');
+      await workerActive(page);
+      await shareSignedOut(page, stub, { text: SECRET });
+
+      // The token arrives by itself and the app opens on a page of its own, as
+      // after a sign-in with a page to go back to, so the gate at `/` never runs.
+      await page.evaluate((token) => window.localStorage.setItem('videoresearchpro.authToken', token), FIXTURE_TOKEN);
+      await page.goto('/echo/inbox');
+      const review = page.getByRole('link', { name: 'Review it' });
+      await expect(review).toBeVisible(LOAD);
+      await expect(page).toHaveURL(/\/echo\/inbox$/);
+      expect((await review.boundingBox())!.height, 'a finger can hit it').toBeGreaterThanOrEqual(44);
+      expect(stub.posted, 'nothing leaves without the tap').toEqual([]);
+      expect(await pendingCount(page)).toBe(1);
+
+      await review.click();
+      await expect(page).toHaveURL(/\/echo\/incoming$/);
+      await expect(review).toHaveCount(0);
+      expect(stub.posted).toEqual([]);
+      await expectAdded(page);
+      expect(stub.posted).toEqual([{ text: SECRET, surface: 'os_share' }]);
+      await expect(review).toHaveCount(0);
+    });
+
     test('signing out leaves nothing for the next person on this browser', async ({ page }) => {
       const stub = await stubApi(page);
       await signIn(page);

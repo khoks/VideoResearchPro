@@ -12,8 +12,10 @@ tests patch that attribute on the imported module to inject a
 from datetime import datetime, timezone
 from unittest.mock import Mock, patch
 
+import httpx
 import pytest
 
+from app.services import source_failure
 from app.sources import registry
 from app.sources.reddit import client as reddit_client_mod
 from app.sources.reddit import connector as rd_connector_mod
@@ -141,6 +143,51 @@ def test_search_subreddit_prefix_calls_search_subreddit(rd, fake_client):
     fake_client.search_subreddit.assert_called_once_with("economics", "tariffs in 2026", limit=10)
     fake_client.search.assert_not_called()
     assert out[0].source_id == "reddit:sub1"
+
+
+def _status_error(status: int) -> httpx.HTTPStatusError:
+    request = httpx.Request("GET", f"{REDDIT_API_BASE}/r/somewhere/search")
+    return httpx.HTTPStatusError(str(status), request=request, response=httpx.Response(status))
+
+
+def test_a_subreddit_that_refuses_never_reads_as_reddit_refusing(rd, fake_client):
+    """A private or quarantined subreddit answers 403, and that is about the
+    subreddit the topic named: a refusal would hold Reddit for every tenant."""
+    fake_client.search_subreddit.side_effect = _status_error(403)
+    with patch.object(rd_connector_mod.reddit_client, "get_client", return_value=fake_client), \
+         pytest.raises(source_failure.SearchFailed) as caught:
+        rd.search("subreddit:someprivatesub climate")
+
+    assert source_failure.classify(caught.value) == source_failure.SourceFailure("failed", 403)
+
+
+@pytest.mark.parametrize(
+    "raised, kind",
+    [
+        (_status_error(401), "refused"),
+        (_status_error(429), "rate_limited"),
+        (RedditAuthError("Reddit OAuth token fetch failed"), "failed"),
+    ],
+    ids=["token_rejected", "rate_limited", "token_fetch_failed"],
+)
+def test_a_scoped_search_keeps_what_is_about_the_install(rd, fake_client, raised, kind):
+    """Credentials and pacing are the same whatever subreddit was named."""
+    fake_client.search_subreddit.side_effect = raised
+    with patch.object(rd_connector_mod.reddit_client, "get_client", return_value=fake_client), \
+         pytest.raises(type(raised)) as caught:
+        rd.search("subreddit:economics tariffs")
+
+    assert caught.value is raised
+    assert source_failure.classify(caught.value).kind == kind
+
+
+def test_a_site_wide_403_stays_a_refusal(rd, fake_client):
+    fake_client.search.side_effect = _status_error(403)
+    with patch.object(rd_connector_mod.reddit_client, "get_client", return_value=fake_client), \
+         pytest.raises(httpx.HTTPStatusError) as caught:
+        rd.search("tariffs")
+
+    assert source_failure.classify(caught.value).kind == "refused"
 
 
 def test_search_returns_empty_when_no_children(rd, fake_client):

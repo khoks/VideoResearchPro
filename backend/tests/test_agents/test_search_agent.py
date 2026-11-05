@@ -7,8 +7,12 @@ import json
 from unittest.mock import MagicMock, patch
 
 import pytest
+from googleapiclient.errors import HttpError
+from httplib2 import Response
 
 from app.agents import search_agent
+from app.services import source_failure
+from app.services.quota_service import QuotaExceededError
 
 
 @pytest.fixture(autouse=True)
@@ -595,6 +599,94 @@ def test_run_search_agent_end_to_end(fake_videos):
     assert mock_search.called
     # LLM invoked twice (plan + curation)
     assert mock_get_llm.call_count == 2
+
+
+def test_a_refusal_comes_out_of_the_whole_graph_as_itself(fake_videos):
+    """T-1.5.14.1: the run tells a spent quota from an empty result by its
+    type, so it has to survive LangGraph. The job's handler catches this
+    exception and no other."""
+    with patch.object(search_agent, "get_llm_for") as mock_get_llm, \
+         patch.object(search_agent.youtube_service, "search_videos", side_effect=QuotaExceededError()):
+        mock_get_llm.side_effect = [_fake_llm_returning(_plan_payload(["q1", "q2"]))]
+
+        with pytest.raises(QuotaExceededError):
+            search_agent.run_search_agent(topic="quantum computing", num_videos=2)
+
+
+def _http_500() -> HttpError:
+    return HttpError(Response({"status": 500}), b"{}", uri="https://www.googleapis.com/youtube/v3/search")
+
+
+def test_an_http_failure_comes_out_of_the_whole_graph_as_itself():
+    """The status decides what the run says about it."""
+    with patch.object(search_agent, "get_llm_for") as mock_get_llm, \
+         patch.object(search_agent.youtube_service, "search_videos", side_effect=_http_500()):
+        mock_get_llm.side_effect = [_fake_llm_returning(_plan_payload(["q1", "q2"]))]
+
+        with pytest.raises(HttpError):
+            search_agent.run_search_agent(topic="quantum computing", num_videos=2)
+
+
+def test_a_failure_with_no_answer_behind_it_comes_out_as_a_failed_search():
+    """A timeout is what a broad query raises when YouTube is out of reach.
+    The job's handler knows it by this type, and tells it from the agent's own
+    model failing."""
+    timeout = TimeoutError("timed out")
+    with patch.object(search_agent, "get_llm_for") as mock_get_llm, \
+         patch.object(search_agent.youtube_service, "search_videos", side_effect=timeout):
+        mock_get_llm.side_effect = [_fake_llm_returning(_plan_payload(["q1", "q2"]))]
+
+        with pytest.raises(source_failure.SearchFailed) as caught:
+            search_agent.run_search_agent(topic="quantum computing", num_videos=2)
+
+    assert caught.value.__cause__ is timeout
+
+
+@pytest.mark.parametrize(
+    "raised",
+    [_http_500(), TimeoutError("timed out"), QuotaExceededError()],
+    ids=lambda e: type(e).__name__,
+)
+def test_a_failed_broad_search_still_walks_the_preferred_channels(fake_videos, raised):
+    """search.list failing says nothing about the uploads playlists, and the
+    videos of a channel the user named reach the ranker."""
+    details = {
+        "v2": {
+            "video_id": "v2",
+            "title": fake_videos[1]["title"],
+            "channel_name": "ChB",
+            "channel_id": "UC2",
+            "duration_seconds": 1800,
+            "published_at": "2024-01-01T00:00:00Z",
+        }
+    }
+    with patch.object(search_agent, "get_llm_for") as mock_get_llm, \
+         patch.object(search_agent.youtube_service, "resolve_channel_id", return_value="UC2"), \
+         patch.object(search_agent.youtube_service, "search_videos", side_effect=raised), \
+         patch.object(search_agent.youtube_service, "get_channel_videos", return_value=["v2"]), \
+         patch.object(search_agent.youtube_service, "get_video_details", return_value=details), \
+         patch.object(search_agent.youtube_service, "get_channel_subscribers", return_value={}):
+        mock_get_llm.side_effect = [
+            _fake_llm_returning(_plan_payload(["q1", "q2"], ["quantum"])),
+            _fake_llm_returning(json.dumps(["v2"])),
+        ]
+
+        curated, _queries, _unresolved = search_agent.run_search_agent(
+            topic="quantum", num_videos=2, preferred_channels=["@named"]
+        )
+
+    assert [v["video_id"] for v in curated] == ["v2"]
+
+
+def test_a_failed_broad_search_stays_raised_when_the_channels_had_nothing():
+    with patch.object(search_agent, "get_llm_for") as mock_get_llm, \
+         patch.object(search_agent.youtube_service, "resolve_channel_id", return_value="UC2"), \
+         patch.object(search_agent.youtube_service, "search_videos", side_effect=_http_500()), \
+         patch.object(search_agent.youtube_service, "get_channel_videos", return_value=[]):
+        mock_get_llm.side_effect = [_fake_llm_returning(_plan_payload(["q1", "q2"]))]
+
+        with pytest.raises(HttpError):
+            search_agent.run_search_agent(topic="quantum", num_videos=2, preferred_channels=["@named"])
 
 
 def test_run_search_agent_resolves_preferred_channels(fake_videos):

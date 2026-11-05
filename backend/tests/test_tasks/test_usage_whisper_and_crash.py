@@ -73,6 +73,17 @@ def _fake_download(video_id, tmpdir, tag, prefer_smallest=False):
     return path
 
 
+def _writes(data: bytes):
+    """A ``fetch_audio_to_file`` that delivers ``data`` to the path it is given."""
+
+    def fetch(url, path):
+        with open(path, "wb") as f:
+            f.write(data)
+        return len(data)
+
+    return fetch
+
+
 def _split_into(monkeypatch, tmp_path, count: int, step: float = 285.0) -> None:
     """Every download is over the upload limit and splits into ``count`` chunks."""
     chunks = [tmp_path / f"chunk{i}.m4a" for i in range(count)]
@@ -343,7 +354,7 @@ def test_a_job_charges_podcast_audio_to_its_owner_as_reading_a_source(no_caption
     monkeypatch.setattr(connector.settings, "OPENAI_API_KEY", "sk-test")
     monkeypatch.setattr(connector.podcast_client, "get_client", lambda: SimpleNamespace(
         fetch_feed=lambda url: {"feed": {}, "entries": [entry] if url == feed_url else []},
-        fetch_audio=lambda url: b"mp3 bytes",
+        fetch_audio_to_file=_writes(b"mp3 bytes"),
     ))
     whisper_api.seconds = 1800.0
     doc = Document(source_type="podcast_episode", source_id="podcast:ep-1", title="Tariffs",
@@ -376,7 +387,7 @@ def test_a_job_reads_a_long_episode_whole_and_charges_every_chunk(no_captions, d
     monkeypatch.setattr(connector.settings, "OPENAI_API_KEY", "sk-test")
     monkeypatch.setattr(connector.podcast_client, "get_client", lambda: SimpleNamespace(
         fetch_feed=lambda url: {"feed": {}, "entries": [entry] if url == feed_url else []},
-        fetch_audio=lambda url: b"far too many mp3 bytes",
+        fetch_audio_to_file=_writes(b"far too many mp3 bytes"),
     ))
     _split_into(monkeypatch, tmp_path, 3)
     whisper_api.seconds = 300.0

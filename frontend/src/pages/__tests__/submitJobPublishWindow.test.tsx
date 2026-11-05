@@ -29,6 +29,7 @@ vi.mock('../../hooks/useJobTemplates', () => ({
 }));
 
 import { SubmitJobPage } from '../SubmitJobPage';
+import { useSystemStatusStore } from '../../stores/systemStatusStore';
 import { summariseParameters } from '../TemplatesPage';
 import type { JobTemplate, TemplateParameters } from '../../services/jobTemplatesApi';
 
@@ -334,5 +335,27 @@ describe('the template summary', () => {
     expect(summariseParameters({ ...BASE, source_types: ['video'] })).toBe('10 videos');
     expect(summariseParameters(WEEKLY.parameters)).toBe('10 videos · prefers the last 7 days');
     expect(summariseParameters({ ...BASE, published_after_days: 1 })).toBe('10 videos · prefers the last day');
+  });
+});
+
+describe('a source that refused this install (T-1.5.14.1)', () => {
+  afterEach(() => useSystemStatusStore.setState({ capabilities: null, sourceHolds: {} }));
+
+  it('is off the form, and the form says why', async () => {
+    useSystemStatusStore.setState({
+      capabilities: { bluesky_search_enabled: false },
+      sourceHolds: { bluesky_post: { status: 403, until: '2026-11-05T12:00:00+00:00' } },
+    });
+    await mount();
+    expect(host.querySelector('button[data-source-type="bluesky_post"]')).toBeNull();
+    expect(host.querySelector('[data-testid="source-type-held-note"]')?.textContent).toContain(
+      'Bluesky refused its last search',
+    );
+  });
+
+  it('stays on offer while /health has not answered', async () => {
+    useSystemStatusStore.setState({ capabilities: null, sourceHolds: {} });
+    await mount();
+    expect(host.querySelector('button[data-source-type="bluesky_post"]')).not.toBeNull();
   });
 });

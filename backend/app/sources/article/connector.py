@@ -121,7 +121,9 @@ class ArticleConnector(_PasteArticleConnector):
         - `query` is empty.
         - No Brave API key is configured (operator hasn't opted in).
         - Brave returns no web results.
-        - The HTTP call raises (network error, 5xx, rate limit, etc.).
+
+        A failed call stays raised, so the dispatcher can tell a refusal or
+        a rate limit from "nothing found" (T-1.5.14.1).
 
         The `[]` return on no-key is a deliberate design choice (per
         D-035-style "graceful empty" rather than NotImplementedError):
@@ -138,15 +140,7 @@ class ArticleConnector(_PasteArticleConnector):
                 "returning empty (configure to enable web-search discovery)"
             )
             return []
-        try:
-            payload = article_client.get_client().brave_search(query, limit=limit)
-        except Exception as e:
-            logger.warning(
-                "ArticleConnector.search: Brave call failed for %r: %s",
-                query,
-                e,
-            )
-            return []
+        payload = article_client.get_client().brave_search(query, limit=limit)
         web = payload.get("web") if isinstance(payload, dict) else None
         results = (
             web.get("results") if isinstance(web, dict) else None

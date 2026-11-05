@@ -27,6 +27,7 @@ from typing import Iterator
 from app.config import settings
 from app.services.social_classify import classify
 from app.sources import registry
+from app.sources._topic_terms import topic_queries
 from app.sources.base import BaseConnector
 from app.sources.hn import client as hn_client
 from app.sources.hn import flatten as hn_flatten
@@ -156,10 +157,16 @@ class HNConnector(BaseConnector):
         limit: int = 10,
     ) -> list[Candidate]:
         # `instructions` is interpreted upstream by the search agent when
-        # planning query reformulations. The connector just runs each query.
+        # planning query reformulations. Algolia matches every word, so a
+        # whole sentence finds nothing: the topic's carrying words follow it
+        # (T-1.5.14.2). A failure stays raised, so the dispatcher can tell it
+        # from an empty answer (T-1.5.14.1).
         client = hn_client.get_client()
-        payload = client.search(query, limit=limit)
-        return [_hit_to_candidate(h) for h in _hits(payload)]
+        for attempt in topic_queries(query):
+            hits = _hits(client.search(attempt, limit=limit))
+            if hits:
+                return [_hit_to_candidate(h) for h in hits]
+        return []
 
     def list_creator_items(
         self,

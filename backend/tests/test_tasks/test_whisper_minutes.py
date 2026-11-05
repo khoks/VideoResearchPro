@@ -163,8 +163,8 @@ def test_the_cap_stops_before_the_next_transcription_once_spent(db, podcasts, ta
     assert db.get(Job, job_id).status == "completed"
     note = next(n for n in _notes(db, job_id) if n["kind"] == "whisper_minutes_spent")
     assert note["text"] == (
-        "Whisper stopped after 12 minutes of audio, the limit is 10 "
-        "(WHISPER_MAX_MINUTES_PER_JOB). 2 sources could not be read."
+        "Whisper stopped after 12 minutes of audio, past the 10-minute limit "
+        "(WHISPER_MAX_MINUTES_PER_JOB), so 2 sources could not be read."
     )
 
 

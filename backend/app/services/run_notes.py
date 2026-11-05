@@ -100,8 +100,8 @@ def whisper_minutes_spent(used_seconds: float, cap_minutes: int, skipped: int) -
     return {
         "kind": WHISPER_MINUTES_SPENT,
         "text": (
-            f"Whisper stopped after {round(used_seconds / 60)} minutes of audio, "
-            f"the limit is {cap_minutes} (WHISPER_MAX_MINUTES_PER_JOB). "
+            f"Whisper stopped after {round(used_seconds / 60)} minutes of audio, past "
+            f"the {cap_minutes}-minute limit (WHISPER_MAX_MINUTES_PER_JOB), so "
             f"{skipped} {'source' if skipped == 1 else 'sources'} could not be read."
         ),
     }

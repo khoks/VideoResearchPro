@@ -130,6 +130,7 @@ The protected routes share `<AppLayout>`: a left sidebar, and a top bar with a d
 | Channels pre-filled | T-8.10.1.7: the first run reads one of the channels chosen in the wizard, so an empty Channels list is filled with the ones no run has named yet (`channels_not_yet_run`), once per browser, and the helper text says where they came from until the reader edits the list. The offer is made, and spent, only when the Channels form is on screen, so a reader who stays on Topic keeps it. Never over a draft (any setting changed, on any tab), a cloned run or a template. |
 | Submitting | **Begin research** shows a spinner. |
 | Validation error | The form's error box (`role="alert"`), from `formToJobCreate`; on Topic also a chosen source this install has not set up ("… is not set up on this install; remove it from the sources to submit."). |
+| Source on hold | T-1.5.14.1: a source that refused its last search (`/health` `source_holds`) is not offered, and a line under the picker says so ("Bluesky refused its last search from this install, so it is not offered for now."). |
 | Topic search down | While `topic_job` is unavailable on the Topic tab, a warning above the buttons says topic research depends on the search model, and **Begin research** is disabled with the reason as its tooltip. Channels and Subscription still work. |
 | Document cap (T-5.2.10) | A full library refuses a run that would add sources (429, `detail.resource === 'documents'`). The form's error box shows the cap in words, in place of the generic toast. |
 | Success | Goes to `/jobs/{id}` for the new job. |
@@ -164,6 +165,7 @@ Sections (rendered conditionally on `job.status` and `job.job_type`):
 | Section | When shown | Notes |
 |---------|------------|-------|
 | **Header** | always | Title, type and date, status pill, **Add to shelf**, **Duplicate · Re-run**, **Save as template** (S-8.6.1), then **Cancel** while the run is active or **Delete** once it has ended. Shelf chips under the meta line (S-8.1.2). Under them, always, the progress bar and message, and the error when there is one. |
+| **Run notes** | inside the header card, when the run has any (`job.run_notes`, S-1.5.14) | "About this run's sources": a source that was unavailable or found nothing, a share given to the others, a YouTube top-up the day's quota could not take, the Whisper minute limit. A failed run's error already names what was unavailable, so that note is left out there. |
 | **Job parameters** | always | The run's recipe: topic or channels, instructions, depth, durations, publish window and the rest. |
 | **Sync progress** | subscription runs while extracting or building the index | Counts for a run with no approval step. |
 | **Search results / Approval** | status == `awaiting_approval` (topic and channel runs) | Table of candidate videos with checkboxes, **Approve & continue (N candidates)**. Auto-populates when WS reports the status change. A failed approval says so inline. |

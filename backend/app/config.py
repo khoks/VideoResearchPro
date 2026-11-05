@@ -136,11 +136,11 @@ class Settings(BaseSettings):
     # -------------------------------------------------------------------
     # Bluesky connector (public AT-Protocol XRPC)
     # -------------------------------------------------------------------
-    # Bluesky exposes its public read API without auth at:
-    #   GET https://public.api.bsky.app/xrpc/app.bsky.feed.searchPosts
-    #   GET https://public.api.bsky.app/xrpc/app.bsky.feed.getPostThread
-    #   GET https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile
-    #   GET https://public.api.bsky.app/xrpc/app.bsky.feed.getAuthorFeed
+    # Bluesky answers these read endpoints without auth:
+    #   GET https://api.bsky.app/xrpc/app.bsky.feed.searchPosts
+    #   GET https://api.bsky.app/xrpc/app.bsky.feed.getPostThread
+    #   GET https://api.bsky.app/xrpc/app.bsky.actor.getProfile
+    #   GET https://api.bsky.app/xrpc/app.bsky.feed.getAuthorFeed
     # No app password is needed for ingest today; if Bluesky tightens
     # rate limits we can swap to an authenticated PDS endpoint by
     # adding a token-fetching path. Operators running a private

@@ -85,8 +85,7 @@ export function offeredSourceTypes(capabilities: Record<string, boolean> | null)
 
 /**
  * Why a source is not on offer although it is set up: it refused this install
- * (T-1.5.14.1). Null when nothing is on hold. Says when it will be tried again
- * only in words, because `until` moves if a run refuses it again.
+ * (T-1.5.14.1). Null when nothing is on hold.
  */
 export function heldSourcesNote(holds: Record<string, SourceHold>): string | null {
   const held = Object.keys(holds);

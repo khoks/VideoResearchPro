@@ -16,6 +16,9 @@ import {
   type UpdateSignalPayload,
   type UploadShareFields,
 } from '../services/echoApi';
+import { useJobStore } from '../stores/jobStore';
+import { isSessionEnded } from '../utils/apiError';
+import { draftErrorOf, isDraftStop } from '../utils/echoDrafts';
 
 const STATUS_KEY = ['echo', 'status'] as const;
 const CONTEXT_KEY = ['echo', 'context'] as const;
@@ -351,6 +354,15 @@ export function useCreateDraft() {
   return useMutation({
     mutationFn: (payload: CreateDraftPayload) => echoApi.createDraft(payload),
     onSettled: () => qc.invalidateQueries({ queryKey: DRAFTS_KEY }),
+    // Here, not on the panel's `mutate` call: TanStack drops a per-call callback
+    // once its component has gone, and a draft runs long enough to be left behind.
+    // These words beat the global toast's for a request that got no answer at all,
+    // so that one stays quiet (T-3.4.1.15). The panel shows the stops itself.
+    onError: (err) => {
+      const e = draftErrorOf(err);
+      if (!isDraftStop(e) && !isSessionEnded(err)) useJobStore.getState().pushToast('error', e.message);
+    },
+    meta: { errorsShownHere: true },
   });
 }
 

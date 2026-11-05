@@ -7,6 +7,7 @@ import { useTierCapabilities } from '../hooks/useTierCapabilities';
 import { QuickShare } from '../components/echo/QuickShare';
 import { EchoDropZone } from '../components/echo/EchoDropZone';
 import { EchoBubble, EchoHeaderButton, EchoPanelHost } from '../components/echo/EchoPanel';
+import { WaitingShareNotice } from '../components/echo/WaitingShareNotice';
 import { useShelves } from '../hooks/useShelves';
 import { ShelfDot } from '../components/shelves/ShelfDot';
 import { SystemStatusBanner } from '../components/common/SystemStatusBanner';
@@ -224,6 +225,7 @@ export function AppLayout() {
           </div>
         )}
         <SystemStatusBanner onRetry={() => { void refetchSystemStatus(); }} />
+        <WaitingShareNotice />
         <main style={{ flex: 1, padding: `${space['6']} ${space['6']} ${space['8']}` }}>
           <Outlet />
         </main>

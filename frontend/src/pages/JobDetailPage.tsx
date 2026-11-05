@@ -43,8 +43,8 @@ import { fonts, fontSize, fontWeight, lineHeight, measure, radius, space } from 
 import { formatDuration, formatDate, statusTone } from '../utils/formatters';
 import { buildClarifyContext, CLARIFY_ANSWER_MAX_CHARS } from '../utils/clarifyContext';
 import { depthLabel, depthOf, withDepth, type Depth } from '../utils/depth';
-import { apiErrorMessage } from '../utils/apiError';
-import { sourceTypeLabel, windowLabel } from '../utils/jobForm';
+import { apiErrorMessage, isSessionEnded } from '../utils/apiError';
+import { isDefaultSourceTypes, sourceTypeLabel, windowLabel } from '../utils/jobForm';
 import { useJobStore } from '../stores/jobStore';
 import { wsClient } from '../services/wsClient';
 import { ReportPeekModal } from '../components/jobs/ReportPeekModal';
@@ -443,7 +443,12 @@ export function JobParamsCard({ job }: { job: Job }) {
   if (job.source_types && job.source_types.length > 0) {
     rows.push(['Sources', job.source_types.map(sourceTypeLabel).join(', ')]);
   }
-  if (job.num_videos != null) rows.push(['Number of videos', String(job.num_videos)]);
+  if (job.num_videos != null) {
+    // On a run over other sources the figure is the whole run's budget (T-1.5.13.7),
+    // and it reads as the submit form's field did.
+    const videosOnly = !job.source_types?.length || isDefaultSourceTypes(job.source_types);
+    rows.push([videosOnly ? 'Number of videos' : 'Number of results', String(job.num_videos)]);
+  }
   if (job.min_duration_minutes != null) rows.push(['Min duration', `${job.min_duration_minutes} min`]);
   if (job.max_duration_minutes != null) rows.push(['Max duration', `${job.max_duration_minutes} min`]);
   if (job.published_after_days != null) {
@@ -885,9 +890,22 @@ function QASection({ jobId, jobDepth }: { jobId: string; jobDepth?: string | nul
     ? QA_STREAM_STAGE_LABELS[streamStage]
     : 'Analyzing transcripts and composing answer…';
 
-  const askInputDisabled = clarifyQuestion.isPending || !qaAvailable;
+  // A failed clarify asks from the render that started it (T-8.13.4.1), so what
+  // that ask carries is held, not only the question: the page must show what it
+  // sends. Nothing can change the question either, or clarify's reply would land
+  // on a different one: the suggestions and the cut-off offer go while this runs.
+  const asking = clarifyQuestion.isPending || answering;
+  const askInputDisabled = asking || !qaAvailable;
   const askButtonDisabled = askInputDisabled || !question.trim();
   const clarifyButtonsDisabled = answering || !qaAvailable;
+
+  const mounted = useRef(false);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   const resetToAsk = () => {
     setStep('ask');
@@ -930,6 +948,9 @@ function QASection({ jobId, jobDepth }: { jobId: string; jobDepth?: string | nul
           return false;
         }
       }
+      // Not the global toast's to filter: this one is `fetch`, and the session may
+      // have ended on another request, with the toasts already cleared (T-5.4.22).
+      if (err instanceof QAStreamHttpError && err.status === 401) return false;
       pushToast('error', err instanceof Error ? err.message : 'Q&A request failed.');
       return false;
     }
@@ -938,7 +959,17 @@ function QASection({ jobId, jobDepth }: { jobId: string; jobDepth?: string | nul
   const handleAsk = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!question.trim() || !qaAvailable) return;
-    const result = await clarifyQuestion.mutateAsync({ question });
+    let result;
+    try {
+      result = await clarifyQuestion.mutateAsync({ question });
+    } catch (err) {
+      // T-8.13.4.1: clarifying is optional (D-132). The global mutation cache
+      // already toasted the failure, and an outage in this step must not stop an
+      // ask that does not need it. A page the reader has left asks nothing, nor
+      // does a session that just ended.
+      if (mounted.current && !isSessionEnded(err)) await handleSkipAndAsk();
+      return;
+    }
     setInterpretation(result.interpretation);
     setClarifications(result.clarifications);
     setClarificationAnswers(new Array(result.clarifications.length).fill(''));
@@ -1013,7 +1044,7 @@ function QASection({ jobId, jobDepth }: { jobId: string; jobDepth?: string | nul
                 ? `Default: the depth this run was asked for (${depthLabel(runDepth).toLowerCase()}).`
                 : 'Default: sized to how much this run gathered.'
             }
-            disabled={answering}
+            disabled={asking}
           />
         </label>
       </div>
@@ -1033,7 +1064,7 @@ function QASection({ jobId, jobDepth }: { jobId: string; jobDepth?: string | nul
             </p>
           )}
           <DockedComposer>
-          <ComposerDepthNote depth={depth} onClear={() => setDepth(null)} />
+          <ComposerDepthNote depth={depth} onClear={() => setDepth(null)} disabled={asking} />
           <form onSubmit={handleAsk} style={{ display: 'flex', gap: space['2'], marginBottom: space['3'] }}>
             <div style={{ flex: 1 }}>
               <Input
@@ -1048,7 +1079,7 @@ function QASection({ jobId, jobDepth }: { jobId: string; jobDepth?: string | nul
             <Button
               type="submit"
               disabled={askButtonDisabled}
-              loading={clarifyQuestion.isPending}
+              loading={asking}
               title={!qaAvailable ? FEATURE_UNAVAILABLE_MSG : undefined}
             >
               Ask
@@ -1056,7 +1087,8 @@ function QASection({ jobId, jobDepth }: { jobId: string; jobDepth?: string | nul
           </form>
           </DockedComposer>
           {clarifyQuestion.isPending && <InfoStripe text="Generating clarifying questions…" />}
-          {!answering && (
+          {answering && <InfoStripe text={answeringLabel} />}
+          {!asking && (
             <SuggestionCard
               context={`job:${jobId}`}
               enabled={qaAvailable}
@@ -1210,7 +1242,7 @@ function QASection({ jobId, jobDepth }: { jobId: string; jobDepth?: string | nul
               key={qa.id}
               qa={qa}
               runDepth={runDepth}
-              onAskAgain={qaAvailable && !answering && !clarifyQuestion.isPending ? askAtDeep : undefined}
+              onAskAgain={qaAvailable && !asking ? askAtDeep : undefined}
             />
           ))}
         </QAThread>

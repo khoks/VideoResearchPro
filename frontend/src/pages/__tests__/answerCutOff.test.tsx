@@ -74,6 +74,7 @@ import { LibraryQAPage } from '../LibraryQAPage';
 import { ShelfQAPanel } from '../../components/shelves/ShelfQAPanel';
 import { AnswerCutOffNote } from '../../components/qa/AnswerCutOffNote';
 import { useAskQuestion, useAskQuestionStreaming } from '../../hooks/useQA';
+import { AUTH_TOKEN_KEY, onSessionExpired } from '../../services/sessionExpiry';
 import { useQACutOffStore } from '../../stores/qaCutOffStore';
 
 const QUESTION = 'What changed in rates?';
@@ -378,6 +379,18 @@ describe('job Q&A hooks', () => {
     stubStream(exchange({ answer_cut_off: true }));
     await render(<Runner run={(ask) => ask({ question: QUESTION })} />);
     expect(useQACutOffStore.getState().answers).toEqual({ q1: null });
+  });
+
+  it('a 401 on the stream ends the session as one through the client does (T-5.4.22)', async () => {
+    streamingRun = true;
+    localStorage.setItem(AUTH_TOKEN_KEY, 'jwt.live');
+    const ended = vi.fn();
+    const stop = onSessionExpired(ended);
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('', { status: 401 })));
+    await render(<Runner run={(ask) => ask({ question: QUESTION }).catch(() => undefined)} />);
+    stop();
+    expect(ended).toHaveBeenCalledTimes(1);
+    expect(localStorage.getItem(AUTH_TOKEN_KEY)).toBeNull();
   });
 
   it('neither says anything of a finished answer', async () => {

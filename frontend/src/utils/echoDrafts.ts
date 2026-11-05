@@ -38,6 +38,13 @@ export type DraftError =
   | { code: 'names_need_confirmation'; names: string[]; message: string }
   | { code: string; names: string[]; message: string };
 
+/** The refusals the panel keeps on screen, with what to do next (T-3.4.1.11). */
+const DRAFT_STOPS = new Set(['names_need_confirmation', 'register_needs_approval', 'ungrounded']);
+
+export function isDraftStop(e: DraftError): boolean {
+  return DRAFT_STOPS.has(e.code);
+}
+
 /** The API's 409 / 429 detail, or a generic failure. */
 export function draftErrorOf(err: unknown): DraftError {
   const detail = (err as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail;

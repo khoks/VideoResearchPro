@@ -6,6 +6,16 @@
  * Echo page mounts it for tiers with the feature. T-3.4.1.11: a first draft in
  * a register waits for a go-ahead, and a reply with nothing behind it is refused
  * on screen, in the server's words.
+ *
+ * T-3.4.1.15: one toast for a failed draft. The tests under "one toast" use the
+ * app's own query client, because the second toast came from its global handler.
+ * That handler has no words for a request that got no answer, so it is the one
+ * that stays quiet. The toast is the hook's own `onError`, because TanStack drops a
+ * per-call one once the panel has unmounted. Mutation checks, run on 2026-11-05: `meta`
+ * off `useCreateDraft` fails each row with two toasts; the hook's toast gone fails
+ * each with none, and fails "once the reader has left the panel"; its `isDraftStop`
+ * gone fails "which stays on screen"; its `isSessionEnded` gone fails "says nothing of
+ * a 401".
  */
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -14,7 +24,6 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DraftStatus, EchoDraft } from '../../services/echoApi';
 import { useJobStore } from '../../stores/jobStore';
-import { globalErrorToastMessage } from '../../utils/apiError';
 import { citationLabel, draftErrorOf, learnedLine, withDisclosure } from '../../utils/echoDrafts';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -47,6 +56,7 @@ vi.mock('../../services/echoApi', () => ({
 
 import { SpeakAsMePanel } from '../../components/echo/SpeakAsMePanel';
 import http from '../../services/api';
+import { createQueryClient } from '../../services/queryClient';
 import { stubNewTabs } from '../../services/__tests__/newTab';
 
 const GATE = { status: 'not_run' as const, run_at: null, pairs: 0, picked_own_share: null, notes_total: 3, notes_needed: 40 };
@@ -87,8 +97,7 @@ async function flush() {
   }
 }
 
-async function mount() {
-  const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+async function mount(qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })) {
   act(() => root.render(<QueryClientProvider client={qc}><SpeakAsMePanel /></QueryClientProvider>));
   await flush();
 }
@@ -271,13 +280,82 @@ describe('SpeakAsMePanel', () => {
     });
   });
 
-  it('keeps the stops it shows on screen out of the app’s global error toast, and only those', () => {
-    for (const code of ['names_need_confirmation', 'register_needs_approval', 'ungrounded']) {
-      expect(globalErrorToastMessage(refusedWith(code, 'words'))).toBeNull();
-    }
-    expect(globalErrorToastMessage(refusedWith('install_off', 'Turned off.'))).toBe('Turned off.');
-    expect(globalErrorToastMessage(refusedWith('daily_cap', 'More tomorrow.', {}, 429))).toBe('More tomorrow.');
-    expect(globalErrorToastMessage(refusedWith('ungrounded', 'Not a stop.', {}, 500))).toBe('Not a stop.');
+  describe('one toast', () => {
+    const noAnswer = Object.assign(new Error('Network Error'), { isAxiosError: true });
+    const plain500 = new AxiosError('Request failed with status code 500', 'ERR_BAD_RESPONSE', undefined, undefined, {
+      status: 500, statusText: 'Server Error', headers: new AxiosHeaders(), config: { headers: new AxiosHeaders() }, data: 'Internal Server Error',
+    });
+    const words = (detail: string) =>
+      new AxiosError('Request failed with status code 403', 'ERR_BAD_REQUEST', undefined, undefined, {
+        status: 403, statusText: 'Forbidden', headers: new AxiosHeaders(), config: { headers: new AxiosHeaders() }, data: { detail },
+      });
+
+    it.each([
+      ['the daily cap', () => refusedWith('daily_cap', 'More tomorrow.', {}, 429), 'More tomorrow.'],
+      ['a gate that shut', () => refusedWith('install_off', 'Turned off.'), 'Turned off.'],
+      ['a refusal the panel has no box for', () => refusedWith('something_new', 'New words.'), 'New words.'],
+      ['a refusal in plain words', () => words('Echo needs the Studio plan.'), 'Echo needs the Studio plan.'],
+      ['a server failure with no words', () => plain500, 'Could not draft a reply. Try again.'],
+      ['no answer at all', () => noAnswer, 'Could not draft a reply. Try again.'],
+    ])('for %s, in the panel’s words', async (_name, error, expected) => {
+      api.draftStatus.mockResolvedValue(ON);
+      api.createDraft.mockRejectedValueOnce(error());
+      await mount(createQueryClient());
+      act(() => type(host.querySelector('textarea')!, 'Who pays?'));
+      await act(async () => buttons('Draft a reply')[0].click());
+      await flush();
+      expect(useJobStore.getState().toasts.map((t) => t.message)).toEqual([expected]);
+    });
+
+    it.each(['names_need_confirmation', 'register_needs_approval', 'ungrounded'])('none for %s, which stays on screen', async (code) => {
+      api.draftStatus.mockResolvedValue(ON);
+      api.createDraft.mockRejectedValueOnce(refusedWith(code, 'words', { names: ['Priya'], register: 'casual' }));
+      await mount(createQueryClient());
+      act(() => type(host.querySelector('textarea')!, 'Who pays?'));
+      await act(async () => buttons('Draft a reply')[0].click());
+      await flush();
+      expect(useJobStore.getState().toasts).toEqual([]);
+    });
+
+    // TanStack drops a per-call `onError` once its observer has gone, so what is said
+    // here comes from the hook: a draft takes long enough to be left behind.
+    it.each([
+      ['the daily cap', () => refusedWith('daily_cap', 'More tomorrow.', {}, 429), 'More tomorrow.'],
+      ['a server failure with no words', () => plain500, 'Could not draft a reply. Try again.'],
+      ['no answer at all', () => noAnswer, 'Could not draft a reply. Try again.'],
+    ])('still says so for %s once the reader has left the panel', async (_name, error, expected) => {
+      api.draftStatus.mockResolvedValue(ON);
+      let fail: (reason: unknown) => void = () => undefined;
+      api.createDraft.mockReturnValueOnce(new Promise((_, reject) => (fail = reject)));
+      await mount(createQueryClient());
+      act(() => type(host.querySelector('textarea')!, 'Who pays?'));
+      await act(async () => buttons('Draft a reply')[0].click());
+      await flush();
+      act(() => root.unmount());
+      await act(async () => fail(error()));
+      await flush();
+      expect(useJobStore.getState().toasts.map((t) => t.message)).toEqual([expected]);
+    });
+
+    it('says nothing of a 401, whichever request ended the session first', async () => {
+      api.draftStatus.mockResolvedValue(ON);
+      api.createDraft.mockRejectedValueOnce(refusedWith('error', 'Not signed in.', {}, 401));
+      await mount(createQueryClient());
+      act(() => type(host.querySelector('textarea')!, 'Who pays?'));
+      await act(async () => buttons('Draft a reply')[0].click());
+      await flush();
+      expect(useJobStore.getState().toasts).toEqual([]);
+    });
+
+    it('leaves the global toast on for this page’s other failures', async () => {
+      api.draftStatus.mockResolvedValue(ON);
+      api.listDrafts.mockResolvedValueOnce({ items: [DRAFT] });
+      api.deleteDraft.mockRejectedValueOnce(words('That draft is gone.'));
+      await mount(createQueryClient());
+      await act(async () => buttons('Delete')[0].click());
+      await flush();
+      expect(useJobStore.getState().toasts.map((t) => t.message)).toEqual(['That draft is gone.']);
+    });
   });
 
   it('shows a refused reply in the server’s words, on screen, with nothing to click past it', async () => {

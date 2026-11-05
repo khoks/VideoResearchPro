@@ -5,13 +5,14 @@ import { knowledgeApi } from '../../services/knowledgeApi';
 import { remainingQuota } from '../../services/quotaApi';
 import type { DocumentRef } from '../../services/channelIntelligenceApi';
 import { useQuota, intelligenceKey } from '../../hooks/useChannelIntelligence';
+import { useDepthChoice } from '../../hooks/useDepthChoice';
 import { useFeatureAvailable } from '../../hooks/useFeatureAvailable';
+import { usePreferredDepth } from '../../hooks/useMe';
 import { planBatch, runBatch, type BatchProgress } from '../../utils/batchExtract';
 import { DepthSelect } from '../common/DepthSelect';
 import { Button } from '../primitives';
 import { useColors } from '../../hooks/useTheme';
 import { fonts, fontSize, fontWeight, radius, space } from '../../theme';
-import type { Depth } from '../../utils/depth';
 
 const RESOURCE = 'knowledge_extractions';
 
@@ -24,7 +25,9 @@ const RESOURCE = 'knowledge_extractions';
  * it after the current document.
  *
  * T-1.15.3.7: one depth for the whole batch, chosen where it is confirmed.
- * Auto sends none, so each request is the one the page sent before.
+ * Auto sends none, so each request is the one the page sent before. It starts
+ * from the account's default depth (T-1.15.3.10), which stands in only here,
+ * where the select is on screen before anything is spent (D-145).
  */
 export function BatchExtract({ channelId, extractable }: { channelId: string; extractable: DocumentRef[] }) {
   const c = useColors();
@@ -34,7 +37,7 @@ export function BatchExtract({ channelId, extractable }: { channelId: string; ex
   const [confirming, setConfirming] = useState(false);
   const [progress, setProgress] = useState<BatchProgress | null>(null);
   const [running, setRunning] = useState(false);
-  const [depth, setDepth] = useState<Depth | null>(null);
+  const { depth, pick: setDepth } = useDepthChoice(usePreferredDepth());
   const stopRef = useRef(false);
 
   useEffect(() => () => {

@@ -405,7 +405,7 @@ def test_every_routed_page_has_a_section_in_ui_pages() -> None:
 def test_ui_pages_says_how_the_session_is_kept() -> None:
     """The key name, because a doc naming the wrong one sends a reader to rename
     a key that is not there; renaming the real ones signs every browser out."""
-    source = (ROOT / "frontend" / "src" / "services" / "api.ts").read_text(encoding="utf-8")
+    source = (ROOT / "frontend" / "src" / "services" / "sessionExpiry.ts").read_text(encoding="utf-8")
     key = re.search(r"AUTH_TOKEN_KEY = '([^']+)'", source).group(1)
     assert key in _ui_pages()
     assert "pratidhvani_token" not in _ui_pages()

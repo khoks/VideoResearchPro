@@ -16,14 +16,27 @@
  * "leaves a run's own depth alone"; the card not passing `runDepth` fails "a run
  * asked for at Deep"; the offer not reading clarify's pending state fails "holds the
  * offer".
+ *
+ * T-8.13.4.1: a failed clarify is a direct ask, as on the library page (S-8.13.3).
+ * T-8.13.4.2: the suggestions go while clarify runs. Mutation checks, run by hand on
+ * 2026-11-05: rethrowing from `handleAsk`'s catch fails "goes straight to the
+ * answer"; removing `mounted.current` fails "asks nothing for a reader who has left";
+ * removing `isSessionEnded` fails "asks nothing once the session has ended"; the
+ * stripe gone, or `answering` out of `asking`, fails "shows the direct ask running";
+ * `disabled={answering}` on the select, or no `disabled` on the depth note, fails
+ * "holds what the direct ask carries"; `{!answering && <SuggestionCard` fails "takes
+ * the suggestions away"; `submitQuestion` toasting a stream's 401 fails "says nothing
+ * of a 401", and returning on any stream error fails "says what any other refusal was".
  */
 import { act, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
+import { AxiosError, AxiosHeaders } from 'axios';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Job } from '../../types/job';
 import type { QAExchange, QARequest } from '../../types/qa';
+import { useJobStore } from '../../stores/jobStore';
 import { useQACutOffStore } from '../../stores/qaCutOffStore';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -32,6 +45,7 @@ let job: Job;
 let history: QAExchange[] = [];
 let streamStatus = 0; // 0: the stream answers; otherwise it fails with this HTTP status
 let clarifyPending = false;
+let streaming = false;
 const streamed: QARequest[] = [];
 const posted: QARequest[] = [];
 const clarify = vi.fn(async () => ({ interpretation: 'You mean tidal storage costs.', clarifications: [] }));
@@ -71,7 +85,7 @@ vi.mock('../../hooks/useQA', () => ({
       streamed.push(data);
     },
     stage: null,
-    isStreaming: false,
+    isStreaming: streaming,
   }),
   useClarifyQuestion: () => ({ mutateAsync: clarify, isPending: clarifyPending }),
   QAStreamHttpError: StreamError,
@@ -191,8 +205,10 @@ beforeEach(() => {
   job = JOB;
   history = [];
   useQACutOffStore.setState({ answers: {} });
+  useJobStore.setState({ toasts: [] });
   streamStatus = 0;
   clarifyPending = false;
+  streaming = false;
   streamed.length = 0;
   posted.length = 0;
   clarify.mockClear();
@@ -204,6 +220,125 @@ beforeEach(() => {
 afterEach(() => {
   act(() => root.unmount());
   host.remove();
+});
+
+describe('JobDetailPage Q&A: when clarify fails (T-8.13.4.1)', () => {
+  const QUESTION = 'What does a lagoon cost?';
+  const input = () => host.querySelector<HTMLInputElement>('input[placeholder="Ask a question about the research…"]')!;
+  const refused = (status: number) => {
+    const headers = new AxiosHeaders();
+    return new AxiosError('refused', 'ERR_BAD_REQUEST', undefined, undefined, {
+      status, statusText: '', headers, config: { headers }, data: { detail: 'no' },
+    });
+  };
+
+  beforeEach(() => {
+    clarify.mockRejectedValueOnce(new Error('clarify is down'));
+  });
+  afterEach(() => {
+    clarify.mockReset();
+  });
+
+  it('goes straight to the answer with no context, and clears the composer', async () => {
+    mount();
+    await startAsk(QUESTION);
+    expect(streamed).toEqual([{ question: QUESTION }]);
+    expect(buttonLabelled('Skip clarifications')).toBeUndefined();
+    expect(input().value).toBe('');
+  });
+
+  it('sends what the panel shows: the depth goes with it', async () => {
+    mount('brief');
+    await startAsk(QUESTION);
+    expect(streamed).toEqual([{ question: QUESTION, output_length: 'brief' }]);
+  });
+
+  it('keeps the question when the direct ask fails too', async () => {
+    streamStatus = 500;
+    mount();
+    await startAsk(QUESTION);
+    expect(streamed).toEqual([]);
+    expect(input().value).toBe(QUESTION);
+    expect(input().disabled).toBe(false);
+  });
+
+  it('asks nothing for a reader who has left the page', async () => {
+    let fail: (reason: Error) => void = () => undefined;
+    clarify.mockReset();
+    clarify.mockReturnValueOnce(new Promise((_, reject) => (fail = reject)));
+    mount();
+    await startAsk(QUESTION);
+    act(() => root.unmount());
+    await act(async () => fail(new Error('clarify is down')));
+    await flush();
+    expect(streamed).toEqual([]);
+    root = createRoot(host);
+  });
+
+  it('asks nothing once the session has ended: the reader is on the way to sign in', async () => {
+    clarify.mockReset();
+    clarify.mockRejectedValueOnce(refused(401));
+    mount();
+    await startAsk(QUESTION);
+    expect(streamed).toEqual([]);
+  });
+
+  it('still asks when clarify was refused for any other reason', async () => {
+    clarify.mockReset();
+    clarify.mockRejectedValueOnce(refused(429));
+    mount();
+    await startAsk(QUESTION);
+    expect(streamed).toHaveLength(1);
+  });
+});
+
+describe('JobDetailPage Q&A: a stream the server refused', () => {
+  // Nothing here wipes the toasts, as it is when a poll's 401 ended the session
+  // first and the effect that clears them has already run (T-5.4.22).
+  it('says nothing of a 401: the reader is on the way to sign in, or already there', async () => {
+    streamStatus = 401;
+    mount();
+    await ask('What does a lagoon cost?');
+    expect(useJobStore.getState().toasts).toEqual([]);
+  });
+
+  it('says what any other refusal was', async () => {
+    streamStatus = 500;
+    mount();
+    await ask('What does a lagoon cost?');
+    expect(useJobStore.getState().toasts.map((t) => t.message)).toEqual(['status 500']);
+  });
+});
+
+describe('JobDetailPage Q&A: while a question is on its way', () => {
+  const input = () => host.querySelector<HTMLInputElement>('input[placeholder="Ask a question about the research…"]')!;
+  const suggestion = () => host.querySelector('[data-testid="suggestion"]');
+
+  it('takes the suggestions away while clarify runs (T-8.13.4.2)', () => {
+    mount();
+    expect(suggestion()).not.toBeNull();
+    clarifyPending = true;
+    mount();
+    expect(suggestion()).toBeNull();
+  });
+
+  it('holds what the direct ask carries while clarify runs, so it sends what the page shows', () => {
+    clarifyPending = true;
+    mount('brief');
+    expect(depthSelect()!.disabled).toBe(true);
+    const clear = Array.from(composer()!.querySelectorAll('button')).find((b) => b.textContent?.trim() === 'Clear')!;
+    expect(clear.disabled).toBe(true);
+    expect(input().disabled).toBe(true);
+  });
+
+  it('shows the direct ask running, and takes no second question meanwhile', () => {
+    streaming = true;
+    mount();
+    expect(host.textContent).toContain('Analyzing transcripts and composing answer…');
+    expect(input().disabled).toBe(true);
+    expect(depthSelect()!.disabled).toBe(true);
+    expect(suggestion()).toBeNull();
+  });
 });
 
 describe('JobDetailPage Q&A: a cut-off answer (T-1.15.4.5)', () => {

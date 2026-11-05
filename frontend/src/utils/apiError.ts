@@ -39,14 +39,13 @@ export function isDocumentCapRefusal(err: unknown): boolean {
   return !!detail && typeof detail === 'object' && (detail as { resource?: unknown }).resource === 'documents';
 }
 
-/** The stops "Speak as me" shows in the panel, with what to do next. */
-const DRAFT_STOPS = new Set(['names_need_confirmation', 'register_needs_approval', 'ungrounded']);
-
-/** A 409 from `POST /echo/draft` that the panel answers on screen (T-3.4.1.11). */
-export function isDraftStop(err: unknown): boolean {
-  if (!isAxiosError(err) || err.response?.status !== 409) return false;
-  const detail: unknown = err.response?.data?.detail;
-  return !!detail && typeof detail === 'object' && DRAFT_STOPS.has((detail as { code?: string }).code ?? '');
+/**
+ * A 401. The API client has dealt with it and the route guard is taking the
+ * reader to the sign-in page (T-5.4.22), so there is nothing to say and nothing
+ * to try next.
+ */
+export function isSessionEnded(err: unknown): boolean {
+  return isAxiosError(err) && err.response?.status === 401;
 }
 
 const UNEXPECTED = 'An unexpected error occurred.';
@@ -55,10 +54,11 @@ const UNEXPECTED = 'An unexpected error occurred.';
  * What the global query / mutation error toast says: the server's own
  * message when the response carries one (it used to show axios's
  * "Request failed with status code 429"), else the error's text. Null for a
- * document-cap refusal or a draft stop, which their pages already show inline.
+ * document-cap refusal, which its pages already show inline, and for a session
+ * that ended, where the reader is already on the way out.
  */
 export function globalErrorToastMessage(err: unknown): string | null {
-  if (isDocumentCapRefusal(err) || isDraftStop(err)) return null;
+  if (isDocumentCapRefusal(err) || isSessionEnded(err)) return null;
   if (!err) return UNEXPECTED;
   if (typeof err === 'string') return err;
   return apiErrorMessage(err, err instanceof Error && err.message ? err.message : UNEXPECTED);

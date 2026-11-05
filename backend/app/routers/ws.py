@@ -2,7 +2,7 @@ import json
 import logging
 from typing import NamedTuple
 
-from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect, status
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
 from starlette.websockets import WebSocketState
 
 from app.services import auth_service
@@ -10,6 +10,14 @@ from app.websocket.manager import manager
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+# The one subprotocol this socket speaks (T-5.4.23). The WebSocket API can set
+# no header on a handshake, but it can offer subprotocols, so a client offers
+# this one and then its token: `new WebSocket(url, ['bearer', token])`. A JWT's
+# characters are all legal there under RFC 6455. The answer names only this
+# one: a browser fails a handshake whose answer names none of what it offered,
+# and the token is never sent back.
+BEARER_SUBPROTOCOL = "bearer"
 
 
 class _SocketSession(NamedTuple):
@@ -73,6 +81,19 @@ def _owns_job(tenant_id: str, job_id: str, session_factory=None) -> bool:
             db.close()
 
 
+def _offered_token(subprotocols: list[str]) -> str | None:
+    """The token in a handshake's offered subprotocols, or None.
+
+    Exactly ``bearer`` then the token, and nothing else counts. One header
+    value can hold both: uvicorn's sans-IO protocol hands the header over
+    unsplit, so it is split here.
+    """
+    offered = [name.strip() for value in subprotocols for name in value.split(",")]
+    if len(offered) == 2 and offered[0] == BEARER_SUBPROTOCOL and offered[1]:
+        return offered[1]
+    return None
+
+
 def _authenticate(token: str, session_factory=None) -> _SocketSession | None:
     """The session ``token`` signs in as, or None.
 
@@ -114,20 +135,19 @@ def _authenticate(token: str, session_factory=None) -> _SocketSession | None:
 
 
 @router.websocket("/ws/jobs")
-async def job_progress_ws(websocket: WebSocket, token: str | None = Query(default=None)):
+async def job_progress_ws(websocket: WebSocket):
     """
     Multiplexed WebSocket for job progress updates.
 
     Auth:
-        Requires a valid JWT passed as ?token=... query parameter, from a
-        session that is not revoked. Connection is closed with code 1008
-        (policy violation) if missing/invalid, and with 1008 again when the
-        session is revoked later (T-5.4.19): at once over Redis pub/sub, or
-        within a minute if that message is lost (websocket/manager.py). The
-        token expiring closes it the same way, within a minute (T-5.4.21).
-        This is the one route that still reads a token from the URL (T-8.8.1.5,
-        D-085 addendum): the browser WebSocket API cannot set an Authorization
-        header on the handshake. Every HTTP route is header-only.
+        Requires a valid JWT, offered as the subprotocol after ``bearer``
+        (T-5.4.23), from a session that is not revoked. A URL is never read:
+        ``?token=`` is refused like no token at all. Connection is closed with
+        code 1008 (policy violation) if missing/invalid, and with 1008 again
+        when the session is revoked later (T-5.4.19): at once over Redis
+        pub/sub, or within a minute if that message is lost
+        (websocket/manager.py). The token expiring closes it the same way,
+        within a minute (T-5.4.21).
 
     Client messages:
         {"action": "subscribe", "job_id": "abc-123"}
@@ -142,7 +162,8 @@ async def job_progress_ws(websocket: WebSocket, token: str | None = Query(defaul
             notification for the token's user; the bell refetches its list
         "pong"
     """
-    if not token:
+    token = _offered_token(websocket.scope.get("subprotocols") or [])
+    if token is None:
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Missing token")
         return
 
@@ -155,7 +176,13 @@ async def job_progress_ws(websocket: WebSocket, token: str | None = Query(defaul
         return
     tenant_id = session.tenant_id
 
-    await manager.connect(websocket, tenant_id=tenant_id, jti=session.jti, expires_at=session.expires_at)
+    await manager.connect(
+        websocket,
+        subprotocol=BEARER_SUBPROTOCOL,
+        tenant_id=tenant_id,
+        jti=session.jti,
+        expires_at=session.expires_at,
+    )
     try:
         while True:
             raw = await websocket.receive_text()

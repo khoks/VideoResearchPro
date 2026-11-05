@@ -172,8 +172,8 @@ def test_a_socket_hears_its_own_users_notifications_only(unauthenticated_client,
     me = _token(test_user.id)
     them = _token(other.id)
     with (
-        unauthenticated_client.websocket_connect(f"/ws/jobs?token={me}") as mine,
-        unauthenticated_client.websocket_connect(f"/ws/jobs?token={them}") as theirs,
+        unauthenticated_client.websocket_connect("/ws/jobs", subprotocols=["bearer", me]) as mine,
+        unauthenticated_client.websocket_connect("/ws/jobs", subprotocols=["bearer", them]) as theirs,
     ):
         # Naming another user in the message changes nothing: the token decides.
         mine.send_text(json.dumps({"action": "subscribe", "topic": "notifications", "tenant_id": other.id}))
@@ -200,7 +200,7 @@ def test_a_socket_hears_its_own_users_notifications_only(unauthenticated_client,
 
 
 def test_a_socket_that_never_asked_hears_nothing(unauthenticated_client, test_user, live_manager):
-    with unauthenticated_client.websocket_connect(f"/ws/jobs?token={_token(test_user.id)}") as ws:
+    with unauthenticated_client.websocket_connect("/ws/jobs", subprotocols=["bearer", _token(test_user.id)]) as ws:
         ws.send_text(json.dumps({"action": "subscribe", "topic": "something-else"}))
         ws.send_text("[1, 2]")
         assert _sync(ws) == "pong"
@@ -215,14 +215,14 @@ def test_a_revoked_session_never_reaches_the_bell(unauthenticated_client, db, te
     for the rest of its lifetime."""
     token, _ = auth_service.create_access_token(test_user.id, db=db)
     subscribe = json.dumps({"action": "subscribe", "topic": "notifications"})
-    with unauthenticated_client.websocket_connect(f"/ws/jobs?token={token}") as ws:
+    with unauthenticated_client.websocket_connect("/ws/jobs", subprotocols=["bearer", token]) as ws:
         ws.send_text(subscribe)
         assert _sync(ws) == "pong", "a live session opens a socket"
         assert set(live_manager._user_connections) == {test_user.id}
 
     assert auth_service.revoke_session(db, auth_service.decode_access_token(token)["jti"], test_user.id) is True
     with pytest.raises(WebSocketDisconnect) as refused:
-        with unauthenticated_client.websocket_connect(f"/ws/jobs?token={token}") as ws:
+        with unauthenticated_client.websocket_connect("/ws/jobs", subprotocols=["bearer", token]) as ws:
             ws.send_text(subscribe)
     assert refused.value.code == 1008
     assert live_manager._user_connections == {}

@@ -41,6 +41,7 @@ from app.services.llm_routing import (
     warn_if_not_vision_capable,
 )
 from app.services.llm_service import ProbeResult, probe_config
+from app.utils.log_redaction import provider_error_text
 
 logger = logging.getLogger(__name__)
 
@@ -358,7 +359,7 @@ async def run_startup_probes(
         except Exception as e:
             logger.exception("Unexpected probe failure for %s", cfg.as_label())
             return ProbeResult(
-                config=cfg, ok=False, latency_ms=0, error=str(e)[:300]
+                config=cfg, ok=False, latency_ms=0, error=provider_error_text(e)[:300]
             )
 
     keys = list(targets.keys())

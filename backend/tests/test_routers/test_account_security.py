@@ -294,7 +294,7 @@ def test_the_ticket_does_not_open_the_progress_socket(unauthenticated_client, db
     ticket, _secret = _password_ticket(unauthenticated_client, db, "ticket-ws@x.com")
 
     with pytest.raises(WebSocketDisconnect) as exc:
-        with unauthenticated_client.websocket_connect(f"/ws/jobs?token={ticket}"):
+        with unauthenticated_client.websocket_connect("/ws/jobs", subprotocols=["bearer", ticket]):
             pass
     assert exc.value.code == 1008
     assert fake.connected == 0

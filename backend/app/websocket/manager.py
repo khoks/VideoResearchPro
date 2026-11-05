@@ -92,14 +92,16 @@ class ConnectionManager:
         self,
         websocket: WebSocket,
         *,
+        subprotocol: str | None = None,
         tenant_id: str | None = None,
         jti: str | None = None,
         expires_at: float | None = None,
     ) -> None:
         """Accept a WebSocket connection and start Redis listener if needed.
-        ``tenant_id`` and ``jti`` name the session its token authenticated,
-        and ``expires_at`` is that token's ``exp``."""
-        await websocket.accept()
+        ``subprotocol`` is the one the handshake's answer names, ``tenant_id``
+        and ``jti`` name the session its token authenticated, and
+        ``expires_at`` is that token's ``exp``."""
+        await websocket.accept(subprotocol=subprotocol)
         self._global_connections.add(websocket)
         if tenant_id and jti:
             self._sessions[websocket] = (tenant_id, jti)

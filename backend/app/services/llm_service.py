@@ -46,6 +46,7 @@ from app.services.llm_routing import (
     resolve_config,
     resolve_route,
 )
+from app.utils.log_redaction import provider_error_text
 
 logger = logging.getLogger(__name__)
 
@@ -858,10 +859,11 @@ class ProbeResult:
     within the timeout. ``ok=False`` means it either raised, timed out,
     or returned empty.
 
-    ``error`` is provider text and can carry the key (an OpenAI 401 quotes
-    part of it). ``status_code`` is the same answer as a number, for anything
-    that must not repeat that text: the HTTP status of a provider's error, 200
-    for an empty answer, None when no answer came back (``_provider_status``).
+    ``error`` is provider text, less what could carry a key (an OpenAI 401
+    quotes part of it), because it reaches a log line and ``/health/llm``.
+    ``status_code`` is the same answer as a number, for anything that must not
+    repeat that text: the HTTP status of a provider's error, 200 for an empty
+    answer, None when no answer came back (``_provider_status``).
     """
 
     config: UseCaseConfig
@@ -963,7 +965,7 @@ def probe_config(
         )
     except Exception as e:
         return ProbeResult(
-            config=cfg, ok=False, latency_ms=0, error=f"build: {e}"
+            config=cfg, ok=False, latency_ms=0, error=f"build: {provider_error_text(e)}"
         )
     # langchain clients don't uniformly expose a timeout kwarg on .invoke;
     # we rely on the provider SDK's default (usually 60s) and trust the
@@ -987,7 +989,7 @@ def probe_config(
     except Exception as e:
         elapsed_ms = int((time.monotonic() - start) * 1000)
         return ProbeResult(
-            config=cfg, ok=False, latency_ms=elapsed_ms, error=str(e)[:300],
+            config=cfg, ok=False, latency_ms=elapsed_ms, error=provider_error_text(e)[:300],
             status_code=_provider_status(e),
         )
     elapsed_ms = int((time.monotonic() - start) * 1000)
@@ -1042,9 +1044,9 @@ def check_api_key(provider: str, api_key: str) -> KeyCheck:
       said so.
 
     One of three words is all that leaves here. The probe's ``error`` is
-    provider text, which can quote the key, so it is neither returned nor
-    logged. The call is not metered: it is on the user's own key, and like
-    every probe it builds its own client.
+    provider text, so it is neither returned nor logged. The call is not
+    metered: it is on the user's own key, and like every probe it builds its
+    own client.
     """
     cfg = UseCaseConfig(provider, KEY_CHECK_MODELS[provider], "off")
     pool = ThreadPoolExecutor(max_workers=1)

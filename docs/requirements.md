@@ -159,7 +159,7 @@
 - **FR-16.1.** A single multiplexed WebSocket at `/ws/jobs` streams progress for any subscribed job.
 - **FR-16.2.** Clients subscribe and unsubscribe per `job_id` via JSON action messages.
 - **FR-16.3.** Celery workers publish progress to Redis pub/sub channel `job_progress:{job_id}` at every phase boundary.
-- **FR-16.4.** WS authenticates via `?token=` query string (browsers cannot set Authorization headers on WS).
+- **FR-16.4.** WS authenticates by the token offered as a subprotocol after `bearer` (browsers cannot set Authorization headers on WS, and a URL ends up in logs). `?token=` is refused.
 - **FR-16.5.** Heartbeats every 30 seconds.
 - **FR-16.6.** The frontend's `useJobProgress` hook drives React Query cache updates off WS messages.
 
@@ -211,7 +211,7 @@
 
 ### NFR-5 — Observability
 
-- **NFR-5.1.** Logs go through stdlib `logging`: plain text by default, and with `LOG_FORMAT=json` one JSON object per line (`time`, `level`, `logger`, `message`, `exception`) from the API and the worker.
+- **NFR-5.1.** Logs go through stdlib `logging`: plain text by default, and with `LOG_FORMAT=json` one JSON object per line (`time`, `level`, `logger`, `message`, `exception`) from the API, the worker and beat. Their start banners are printed, not logged, so under `json` they are off. Two exceptions: a worker told to stop writes its shutdown notices (`worker: Warm shutdown (MainProcess)`) straight to the stream from its signal handler, where logging is not safe; and under `uvicorn --reload` or `--workers`, which the launchers do not pass, a parent process that never imports the app writes a few start lines as text.
 - **NFR-5.2.** Celery task logs include `job_id` in every record.
 - **NFR-5.3.** YouTube API calls are tracked in `api_quota_log` with cost units.
 - **NFR-5.4.** LLM startup probes record `latency_ms` per `(provider, model)` pair on the `LLMStatus` singleton.

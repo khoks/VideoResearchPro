@@ -517,7 +517,7 @@ def live(db, monkeypatch):
 
 
 def _open(client, token: str):
-    return client.websocket_connect(f"/ws/jobs?token={token}")
+    return client.websocket_connect("/ws/jobs", subprotocols=["bearer", token])
 
 
 def _pong(ws) -> None:
@@ -698,7 +698,7 @@ class _Socket:
         self.closed: tuple[int, str] | None = None
         self.fail = fail
 
-    async def accept(self):
+    async def accept(self, subprotocol=None):
         pass
 
     async def close(self, code, reason):

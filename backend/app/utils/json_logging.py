@@ -5,8 +5,8 @@ has one, ``exception``. Nothing else: a record's ``extra`` fields stay out, so
 this format can show nothing the text format does not. Newlines in a message or
 a traceback are escaped by JSON, so one record is always one line.
 
-``LOG_FORMAT=text``, the default, changes nothing: ``configure_logging`` returns
-at once and the Celery hooks leave Celery's formatters alone.
+``LOG_FORMAT=text``, the default, changes nothing: ``configure_logging`` touches
+no handler and the Celery hooks leave Celery's formatters alone.
 
 Four places set up logging, and each is covered:
 
@@ -21,7 +21,8 @@ Four places set up logging, and each is covered:
 - **Celery.** The worker and beat replace the root logger's handlers when they
   start, after the app has imported, so ``app/tasks/celery_app.py`` calls
   ``use_json_format`` from Celery's ``after_setup_logger`` and
-  ``after_setup_task_logger`` signals.
+  ``after_setup_task_logger`` signals. Their start banners are printed, not
+  logged, so under json that file turns them off.
 - **The model libraries.** ``transformers`` and ``huggingface_hub`` give their
   own loggers a stderr handler when they import, which is long after all of
   the above. So every place that builds a model calls
@@ -33,7 +34,7 @@ import json
 import logging
 from datetime import datetime, timezone
 
-from app.config import settings
+from app.config import held_warnings, settings
 
 logger = logging.getLogger(__name__)
 
@@ -75,19 +76,21 @@ def use_json_format(target: logging.Logger) -> None:
 
 def configure_logging() -> None:
     """The API's logging under ``LOG_FORMAT``: a no-op unless it says json. A
-    value that is neither is a warning and reads as text, never fatal."""
-    if not json_logs_enabled():
-        if settings.LOG_FORMAT.strip().lower() != "text":
-            logger.warning("LOG_FORMAT=%r is neither text nor json; using text", settings.LOG_FORMAT)
-        return
-    handler = logging.StreamHandler()
-    root = logging.getLogger()
-    root.handlers[:] = [handler]
-    use_json_format(root)
-    # A library's DeprecationWarning would otherwise be a bare line on stderr.
-    logging.captureWarnings(True)
-    for name in _UVICORN_LOGGERS:
-        use_json_format(logging.getLogger(name))
+    value that is neither is a warning and reads as text, never fatal. Either
+    way it then says what settings held back while they loaded."""
+    if json_logs_enabled():
+        handler = logging.StreamHandler()
+        root = logging.getLogger()
+        root.handlers[:] = [handler]
+        use_json_format(root)
+        # A library's DeprecationWarning would otherwise be a bare line on stderr.
+        logging.captureWarnings(True)
+        for name in _UVICORN_LOGGERS:
+            use_json_format(logging.getLogger(name))
+    elif settings.LOG_FORMAT.strip().lower() != "text":
+        logger.warning("LOG_FORMAT=%r is neither text nor json; using text", settings.LOG_FORMAT)
+    while held_warnings:
+        logging.getLogger("app.config").warning(held_warnings.pop(0))
 
 
 def route_model_libraries() -> None:

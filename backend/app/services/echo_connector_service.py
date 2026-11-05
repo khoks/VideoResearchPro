@@ -22,6 +22,9 @@ module owns the rest, per tenant:
    (T-3.2.2.5); a 401 on a call made through ``SyncContext.call`` renews once
    and retries that call once. One reader of a grant spends its refresh token
    at a time, and the others use the result (T-3.2.1.12, ``_await_refresh``).
+   Two syncs of a grant may run at once (a schedule and "Sync now"), and both
+   finish: events and facts are stored by inserts the database decides, so
+   neither fails on the other's row (T-3.2.1.13).
    Fail-soft: a provider error marks the grant ``error`` with the reason; only
    what a sync cannot get past asks the user to reconnect: a provider refusing
    the refresh token or a token it just issued, an auth error on a grant that

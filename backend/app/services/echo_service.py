@@ -27,6 +27,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from app.database import insert_if_absent
 from app.models.personal_context import PersonalContext
 from app.models.user import User
 
@@ -92,7 +93,9 @@ def record_context(
     ``value`` is JSON-encoded if not already a string. ``confidence``
     is clamped to [0.0, 1.0]. Re-recording the same (user_id, kind,
     key) updates the row's value + captured_at + expires_at +
-    confidence; never duplicates.
+    confidence; never duplicates, even when two writers meet: two syncs of
+    one connector both derive the same new fact (T-3.2.1.13). Then the
+    second updates the row the first stored, unless the user wrote it.
     """
     from app.services import echo_fact_tombstones
 
@@ -106,46 +109,39 @@ def record_context(
 
     encoded = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
 
-    existing = (
-        db.query(PersonalContext)
-        .filter(
-            PersonalContext.user_id == user_id,
-            PersonalContext.kind == kind,
-            PersonalContext.key == key,
+    existing = get_context(db, user_id, kind, key)
+    if existing is None:
+        stored = insert_if_absent(
+            db,
+            PersonalContext,
+            [{
+                "user_id": user_id, "tenant_id": user_id, "kind": kind, "key": key, "value": encoded,
+                "source": source, "confidence": confidence, "expires_at": expires_at,
+            }],
+            ["user_id", "kind", "key"],
         )
-        .first()
-    )
-    now = datetime.now(timezone.utc)
-    if existing is not None:
-        if source != MANUAL_SOURCE:
-            existing.wanted_by = None  # the source column says who wrote it now
-        elif existing.source != MANUAL_SOURCE:
-            existing.wanted_by = echo_fact_tombstones.connector_of_source(db, user_id, existing.source)
-        existing.value = encoded
-        existing.source = source
-        existing.confidence = confidence
-        existing.captured_at = now
-        existing.expires_at = expires_at
         db.commit()
-        db.refresh(existing)
-        _sync_vectors(db, user_id)
-        return existing
+        existing = get_context(db, user_id, kind, key)
+        if stored:
+            _sync_vectors(db, user_id)
+            return existing
+        if existing.source == MANUAL_SOURCE and source != MANUAL_SOURCE:
+            return existing  # the user got there first, and their words outrank a guess
 
-    row = PersonalContext(
-        user_id=user_id,
-        tenant_id=user_id,
-        kind=kind,
-        key=key,
-        value=encoded,
-        source=source,
-        confidence=confidence,
-        expires_at=expires_at,
-    )
-    db.add(row)
+    now = datetime.now(timezone.utc)
+    if source != MANUAL_SOURCE:
+        existing.wanted_by = None  # the source column says who wrote it now
+    elif existing.source != MANUAL_SOURCE:
+        existing.wanted_by = echo_fact_tombstones.connector_of_source(db, user_id, existing.source)
+    existing.value = encoded
+    existing.source = source
+    existing.confidence = confidence
+    existing.captured_at = now
+    existing.expires_at = expires_at
     db.commit()
-    db.refresh(row)
+    db.refresh(existing)
     _sync_vectors(db, user_id)
-    return row
+    return existing
 
 
 def record_derived_context(

@@ -48,7 +48,7 @@ The frontend is a single-page app under `frontend/src/`. Routing is `react-route
 | `/account/system` | `SystemStatusPage` | protected | LLM probes, scheduler and YouTube quota; restart for operators |
 | `*` | (redirect → `/`) | — | 404 → home |
 
-Protected routes are wrapped in `<ProtectedRoute>` which redirects unauthenticated visitors to `/login`. Public-only routes (`/login`, `/register`, the OAuth callback) are wrapped in `<PublicOnlyRoute>` which redirects authenticated users to `/`, where the gate decides between the wizard and `/submit`. `/landing` and `/pricing` sit in `MarketingLayout`, and the two password pages stand alone, so all four open signed in or out.
+Protected routes are wrapped in `<ProtectedRoute>` which redirects unauthenticated visitors to `/login` and keeps the page they wanted in `location.state.from`. Public-only routes (`/login`, `/register`, the OAuth callback) are wrapped in `<PublicOnlyRoute>`, which sends authenticated users to that page, or to `/`, where the gate decides between the wizard and `/submit`. `/landing` and `/pricing` sit in `MarketingLayout`, and the two password pages stand alone, so all four open signed in or out.
 
 Pages an account opens now and then are lazy routes, each its own chunk: the three readers, the library map, the four Echo pages, Author Studio, Subscription, AI models and System status (T-8.8.4.1, T-8.8.4.5). The other pages are in the main chunk, and they load the Markdown renderer on demand through `components/common/Markdown`, showing the plain text first.
 
@@ -61,7 +61,7 @@ The protected routes share `<AppLayout>`: a left sidebar, and a top bar with a d
 ## Page-by-page
 
 ### `LoginPage` — `/login`
-**Purpose.** Sign in. Calls `POST /api/v1/auth/login`, stores the JWT in the auth context, redirects to `from.pathname` (or `/`, which the onboarding gate resolves). An account with two-step verification gets a five-minute ticket instead of a token, and the page becomes the second step.
+**Purpose.** Sign in. Calls `POST /api/v1/auth/login`, stores the JWT in the auth context. `PublicOnlyRoute` then goes to the protected page that sent the reader here, with its query and fragment, or to `/`, which the onboarding gate resolves. The marketing pages' **Sign in** carries no page, so the gate decides there too. That guard is the only redirect a sign-in makes. A sign-out, in this tab or another, leaves no page behind and empties the query cache, so the next account starts at `/` with nothing of the last one's. An account with two-step verification gets a five-minute ticket instead of a token, and the page becomes the second step.
 
 | State | What renders |
 |-------|--------------|
@@ -71,7 +71,7 @@ The protected routes share `<AppLayout>`: a left sidebar, and a top bar with a d
 | Two-step (T-5.4.6) | `MfaCodeStep`: a code from the authenticator app, or a recovery code behind a switch, to `POST /auth/login/mfa`. A ticket takes five codes (T-5.4.13). When it runs out or times out, the step says so and sends the reader back to the first step. |
 
 ### `RegisterPage` — `/register`
-**Purpose.** Account creation. Calls `POST /api/v1/auth/register`, immediately follows with a login call to capture the JWT (the register response carries the user, not a token; until 2026-10-19 the context stored the missing token and every new account landed signed out on `/login`). Then goes to `/`, so a new account opens the wizard. `/pricing` links here with `?intent=<tier>`, which nothing reads yet.
+**Purpose.** Account creation. Calls `POST /api/v1/auth/register`, immediately follows with a login call to capture the JWT (the register response carries the user, not a token; until 2026-10-19 the context stored the missing token and every new account landed signed out on `/login`). Then goes to `/`, so a new account opens the wizard. Every new account starts on Free: a plan is the operator's to change (D-111), so `/pricing` links here with no plan in the address.
 
 | State | What renders |
 |-------|--------------|
@@ -80,7 +80,7 @@ The protected routes share `<AppLayout>`: a left sidebar, and a top bar with a d
 | Refused | The same place, with the server's `detail`: "Email already registered", a password that cannot be stored, or the refusal of an address listed in `ADMIN_EMAILS` (D-111). |
 
 ### `OAuthCallbackPage` — `/login/oauth/:provider/callback`
-**Purpose.** Where Google or GitHub sends the browser back (T-5.4.5). Reads `code` and `state`, drops them from the address bar at once, and hands them to the server once. Then goes to `/`, or to `MfaCodeStep` for an account with two-step verification.
+**Purpose.** Where Google or GitHub sends the browser back (T-5.4.5). Reads `code` and `state`, drops them from the address bar at once, and hands them to the server once. Then goes to the page that sent the reader to sign in, or to `/`, or to `MfaCodeStep` for an account with two-step verification. The page waits in this tab's `sessionStorage` during the trip to the provider, and goes back into the router state before the code is exchanged.
 
 | State | What renders |
 |-------|--------------|
@@ -95,10 +95,10 @@ The protected routes share `<AppLayout>`: a left sidebar, and a top bar with a d
 **Purpose.** The code, a new password and its confirmation, to `POST /auth/password-reset/confirm`. The code is pasted, never read from the address bar: a secret in a URL lands in history, logs and Referer headers. A used, expired or mistyped code gets its own sentence, and any other refusal shows the server's words (a password that cannot be stored leaves the code good, T-5.4.18). On success: "Your new password works now", that every session was signed out, and **Sign in**.
 
 ### `LandingPage` — `/landing`
-**Purpose.** The landing page inside the app, in `MarketingLayout`: a top bar with **How it works** and **Pricing**, **Sign in** and a sign-up link, or **Open app** for a signed-in reader, and a footer. Linked from the sign-in and register pages. The separate Astro site in `marketing/` is a different build, deployed on its own.
+**Purpose.** The landing page inside the app, in `MarketingLayout`: a top bar with **How it works** and **Pricing**, **Sign in** and a sign-up link, or **Open app** for a signed-in reader, which goes to `/` so the onboarding gate decides, and a footer. Linked from the sign-in and register pages. The separate Astro site in `marketing/` is a different build, deployed on its own.
 
 ### `PricingPage` — `/pricing`
-**Purpose.** The three plans, from the same `TIER_DESCRIPTORS` as the Subscription page. Signed out, a card goes to `/register?intent=<tier>`. Signed in, the current plan is marked and the others go to `/account/subscription`, the only place a plan changes.
+**Purpose.** The three plans, from the same `TIER_DESCRIPTORS` as the Subscription page. Signed out, every card goes to `/register`, and the paid ones read **Start on Free**, because a sign-up cannot choose a plan (D-111). Signed in, the current plan is marked and the others go to `/account/subscription`, the only place a plan changes.
 
 ### `WelcomePage` — `/welcome`
 **Purpose.** The first-run wizard (S-8.10.1, plan [m10-onboarding](plans/m10-onboarding.md)): a task flow with real actions, not an overlay tour. Its state lives on the user row (`GET` / `PATCH /auth/me/onboarding`), so it resumes at the same step on any device. `/` sends an account here while `should_onboard` is true: no runs yet, or the wizard already started, and neither finished nor skipped. Accounts that had runs before the wizard shipped are not sent. **Skip for now** is always in the header (it records the dismissal and goes to `/submit`); after a skip or a finish it reads **Close** and the page stays reachable from the palette's **Getting started** action. A `Stepper` (ordered list, `aria-current="step"`) lets the reader go back to a finished step without losing what they entered.
@@ -164,7 +164,7 @@ Sections (rendered conditionally on `job.status` and `job.job_type`):
 | Section | When shown | Notes |
 |---------|------------|-------|
 | **Header** | always | Title, type and date, status pill, **Add to shelf**, **Duplicate · Re-run**, **Save as template** (S-8.6.1), then **Cancel** while the run is active or **Delete** once it has ended. Shelf chips under the meta line (S-8.1.2). Under them, always, the progress bar and message, and the error when there is one. |
-| **Job parameters** | always | The run's recipe: topic or channels, instructions, depth, durations, publish window and the rest. |
+| **Job parameters** | always | The run's recipe: topic or channels, instructions, the sources it searched, depth, durations, publish window and the rest. |
 | **Sync progress** | subscription runs while extracting or building the index | Counts for a run with no approval step. |
 | **Search results / Approval** | status == `awaiting_approval` (topic and channel runs) | Table of candidate videos with checkboxes, **Approve & continue (N candidates)**. Auto-populates when WS reports the status change. A failed approval says so inline. |
 | **Your notes on this run** | always, once the job loads | Section-variant notes panel (M5 / S-8.5.1): the user's own Markdown on the run, newest first, with add / edit / delete. |
@@ -191,7 +191,7 @@ What the reader does to the report's own markup:
 | `h2` / `h3` | Stable ids (unicode-aware slugs, deduped), collected into the sticky outline; `tabIndex=-1` so outline jumps move focus. A body `h1` is demoted to `h2` or dropped when it repeats the title. |
 | `<a href="…&t=SECONDS">` | Citation chip (mono, pill) opening the source at the timestamp. Pre-S-1.14.9 reports carry bare `href="&t=123"` anchors with no video URL; those render as a non-link timestamp chip rather than a dead link. An anchor the browser repaired out of a truncated tag is never linked. |
 | `<table>` | Wrapped in a horizontal scroll region (WCAG 1.4.10). |
-| First substantial paragraph | Drop cap: `::first-letter` float everywhere, `initial-letter` where supported. |
+| First substantial paragraph | Drop cap: `::first-letter` float everywhere, `initial-letter` where supported. A Markdown paragraph that is all emphasis, such as a book's "About this edition" note, is passed over. |
 | The processing note (`<p class="processing-note">`, or a paragraph opening `<strong>Processing note:</strong>` in older reports) | Lifted out of the body and shown under the statistics tiles as a labelled note (`role="note"`), before the text it qualifies (T-8.8.4.4). It says what the pipeline dropped, trimmed or repaired, including a section closed after being cut off mid-markup (S-1.14.17). |
 | `<style>`, `<script>`, event handlers, `style=` attributes, embeds, forms, SVG, MathML | Removed by the sanitiser. |
 
@@ -246,7 +246,7 @@ Result-state logic is pure and lives in `frontend/src/utils/ingestResults.ts`; t
 |---------|-------|
 | **Breadcrumb** | "← Channels" → `/library?tab=channels`. |
 | **Header** | Eyebrow "Channel", name, subscribers · volumes on your shelf · last synced. Actions: Subscribe / Subscribed (per tenant, [D-065](decisions.md#d-065--channel-subscriptions-become-per-tenant-transliteration-reversed-2026-07-31)), Sync now (the dispatched sync job is watched until it ends, then counts and the list refresh), "YouTube →" when the channel has a public URL. |
-| **Trust weight** | Sunken card (`data-slot="trust-weight"`): a badge (`1.0 · neutral`, otherwise promoted / demoted), a 0.0–2.0 slider in steps of 0.1 that holds a draft, **Save** (`PUT /channels/{id}/weight`, disabled until the draft differs) and **Reset** to 1.0. A failed save shows an inline alert. The copy states the measured trade-off ([D-068](decisions.md#d-068--curated-source-ranking-v1-per-tenant-trust-weight-re-ranks-retrieval-perspective-banding-deferred-2026-10-18), T-7.1.1.5): raising a weight also narrows answers toward the channel, and near 0 a channel appears only when little else matches. |
+| **Trust weight** | Sunken card (`data-slot="trust-weight"`): a badge (`1.0 · neutral`, otherwise promoted / demoted), a 0.0–2.0 slider in steps of 0.1 that holds a draft, **Save** (`PUT /channels/{id}/weight`, disabled until the draft differs) and **Reset** to 1.0. A failed save shows an inline alert. The copy states the measured trade-off ([D-068](decisions.md#d-068--curated-source-ranking-v1-per-tenant-trust-weight-re-ranks-retrieval-perspective-banding-deferred-2026-10-18), T-7.1.1.5): raising a weight also narrows answers toward the channel, and near 0 a channel drops out of answers on any topic the library covers broadly ([D-112](decisions.md#d-112--the-remaining-rulings-of-2026-10-25-map-batching-public-sharing-the-code-mixing-threshold-and-the-quick-calls-2026-10-25)). |
 | **Documents** | Heading with the visible count, filter card (search titles, transcript status, sort), the rows (`channelLink={false}` so they do not link back to the page), pager at 50 per page. |
 | **Documents / Intelligence tabs** | Below the trust-weight slot; the tab is in `?tab=intelligence` so it can be linked (S-8.7.3). **Documents** is the filtered list above. **Intelligence** reads `GET /channels/{id}/intelligence` over the documents of the channel the reader can see: a "Read … over N documents" line with **Refresh**; a **coverage** card (share of documents with a knowledge report, a meter, how many lack a transcript) with **Extract knowledge for N documents**; **Publishing** (monthly columns, keyboard-readable with ←/→, Show as table); **Length** (six duration buckets and the median); **Topics** and **Concepts** (ranked bars; each row opens to its example documents, linked to the source); **Words it keeps using** (a text keyword cloud, alphabetical, sized by weight); **Your questions about it** (the reader's job and library answers that cite the channel, linked); **Stance and sentiment** (stacked monthly columns with a legend where social classification exists, otherwise the reason); **Concept map** (S-8.9.2: **Show the concept map** loads the library map scoped to this channel, topics and questions only, in place; **Open in the library map** goes to `/library/graph?channel_id=`). Each panel shows the aggregate's `notes` when it is empty or partial. |
 | **Extract knowledge for N documents** | Plans at most the reader's remaining monthly knowledge extractions (`GET /auth/quota`), confirms ("This makes N knowledge reports, one after another, about a minute each, and uses N of your … Keep this page open"), then runs the existing `POST /videos/{id}/extract-knowledge` one document at a time with a progress bar, the current title and **Stop after this one**. Stops at the first quota refusal; skips no-transcript / already-done; summarises made / skipped / failed; refreshes the aggregate. Disabled while the knowledge LLM is down. |
@@ -600,7 +600,7 @@ The **Library** group holds All sources, Ask the library and **Library map** (`/
 - YouTube quota raises no banner. `/account/system` shows today's usage, and the submit form shows an estimate of the one run.
 
 ### Error boundaries
-- The lazy routes carry `RouteLoadError` as their `errorElement`: "This page could not be loaded" with **Reload**, inside the app layout, so a chunk that failed after a restart or a redeploy does not end in a stack trace. It also catches a render error in those pages. The eager pages have no boundary of their own and fall to React Router's default.
+- The lazy routes carry `RouteLoadError` as their `errorElement`: "This page could not be loaded" with **Reload**, inside the app layout, so a chunk that failed after a restart or a redeploy does not end in a stack trace. It also catches a render error in those pages. Every other route sits under `RouteError`, the root route's `errorElement`: "This page slipped off the shelf." with **Back to your library** and **Reload**, in place of the whole page, and nothing from the error on screen (it goes to the console).
 - The React Query caches send every failed query and mutation to the toast queue, except a document-cap refusal, which the page shows where the action started.
 
 ### Notes (inline, M5)

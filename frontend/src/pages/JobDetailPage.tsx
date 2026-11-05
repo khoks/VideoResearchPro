@@ -44,7 +44,7 @@ import { formatDuration, formatDate, statusTone } from '../utils/formatters';
 import { buildClarifyContext, CLARIFY_ANSWER_MAX_CHARS } from '../utils/clarifyContext';
 import { depthLabel, depthOf, withDepth, type Depth } from '../utils/depth';
 import { apiErrorMessage } from '../utils/apiError';
-import { windowLabel } from '../utils/jobForm';
+import { sourceTypeLabel, windowLabel } from '../utils/jobForm';
 import { useJobStore } from '../stores/jobStore';
 import { wsClient } from '../services/wsClient';
 import { ReportPeekModal } from '../components/jobs/ReportPeekModal';
@@ -437,6 +437,9 @@ export function JobParamsCard({ job }: { job: Job }) {
   if (job.topic) rows.push(['Topic', job.topic]);
   if (job.search_instructions) {
     rows.push(['Search instructions', <span style={{ whiteSpace: 'pre-wrap' }}>{job.search_instructions}</span>]);
+  }
+  if (job.source_types && job.source_types.length > 0) {
+    rows.push(['Sources', job.source_types.map(sourceTypeLabel).join(', ')]);
   }
   if (job.num_videos != null) rows.push(['Number of videos', String(job.num_videos)]);
   if (job.min_duration_minutes != null) rows.push(['Min duration', `${job.min_duration_minutes} min`]);

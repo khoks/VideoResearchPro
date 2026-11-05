@@ -141,6 +141,7 @@ def _oauth_configured(monkeypatch):
     monkeypatch.setattr(settings, "OAUTH_GOOGLE_CLIENT_SECRET", "google-secret")
     monkeypatch.setattr(settings, "OAUTH_GITHUB_CLIENT_ID", "github-client-id")
     monkeypatch.setattr(settings, "OAUTH_GITHUB_CLIENT_SECRET", "github-secret")
+    monkeypatch.setattr(settings, "OAUTH_ALLOWED_REDIRECT_ORIGINS", "https://app.example.com")
 
 
 def _oauth_sign_in(client, db, monkeypatch, provider: str, userinfo: dict, emails: list | None = None):

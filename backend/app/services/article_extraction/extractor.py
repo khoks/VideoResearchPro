@@ -14,8 +14,15 @@ import httpx
 import trafilatura
 
 from app.config import settings
+from app.utils.shared_url_log import host_of, shared_url_fetch
 
 logger = logging.getLogger(__name__)
+
+# T-3.7.2.9: every log line below names the URL's host and no more. trafilatura
+# quotes the whole URL in its own lines ("discarding data: ...", "empty HTML
+# tree: ..."), at ERROR among others, on the loggers under this one. What they
+# report is covered by the lines here.
+logging.getLogger("trafilatura").setLevel(logging.CRITICAL)
 
 # Words below this threshold are treated as a likely failure mode
 # (navigation page, paywall stub, error page, near-empty SPA shell).
@@ -80,6 +87,7 @@ class ExtractionResult:
     extra: dict[str, Any] = field(default_factory=dict)
 
 
+@shared_url_fetch()
 def _get(url: str, guard: UrlGuard | None) -> httpx.Response:
     if guard is None:
         return httpx.get(
@@ -114,14 +122,14 @@ def _fetch_html(url: str, guard: UrlGuard | None = None) -> str | None:
     try:
         resp = _get(url, guard)
     except (httpx.HTTPError, httpx.InvalidURL) as e:
-        logger.warning("article-extraction fetch failed for %s: %s", url, e)
+        logger.warning("article-extraction fetch failed for %s: %s", host_of(url), type(e).__name__)
         return None
 
     if resp.status_code >= 400:
         logger.warning(
             "article-extraction fetch returned %s for %s",
             resp.status_code,
-            url,
+            host_of(url),
         )
         return None
     return resp.text
@@ -173,8 +181,8 @@ def _trafilatura_extract(url: str, html: str) -> ExtractionResult | None:
         # extraction failure rather than crashing the orchestrator.
         logger.warning(
             "trafilatura raised on %s: %s",
-            url,
-            e,
+            host_of(url),
+            type(e).__name__,
         )
         return None
     if not raw:
@@ -186,7 +194,7 @@ def _trafilatura_extract(url: str, html: str) -> ExtractionResult | None:
     except json.JSONDecodeError:
         logger.warning(
             "trafilatura returned non-JSON for %s; skipping",
-            url,
+            host_of(url),
         )
         return None
     if not isinstance(payload, dict):
@@ -244,7 +252,7 @@ def _playwright_fallback(url: str) -> ExtractionResult | None:
             "Playwright fallback disabled (ARTICLE_PLAYWRIGHT_ENABLED=False) "
             "for %s; returning None. To enable, install "
             "`backend/requirements-spa.txt` + `playwright install chromium`.",
-            url,
+            host_of(url),
         )
         return None
 
@@ -262,7 +270,7 @@ def _playwright_fallback(url: str) -> ExtractionResult | None:
             "Playwright fallback enabled but `playwright` package isn't "
             "installed for %s; returning None. Run `pip install -r "
             "backend/requirements-spa.txt`.",
-            url,
+            host_of(url),
         )
         return None
 
@@ -290,15 +298,15 @@ def _playwright_fallback(url: str) -> ExtractionResult | None:
         logger.info(
             "Playwright fallback timed out (%ds) for %s: %s",
             settings.ARTICLE_PLAYWRIGHT_TIMEOUT_SEC,
-            url,
-            e,
+            host_of(url),
+            type(e).__name__,
         )
         return None
     except PlaywrightError as e:
         logger.info(
             "Playwright fallback Playwright-error for %s: %s",
-            url,
-            e,
+            host_of(url),
+            type(e).__name__,
         )
         return None
     except Exception as e:
@@ -308,8 +316,8 @@ def _playwright_fallback(url: str) -> ExtractionResult | None:
         # corrupt). Log + None.
         logger.info(
             "Playwright fallback unexpected error for %s: %s",
-            url,
-            e,
+            host_of(url),
+            type(e).__name__,
         )
         return None
 
@@ -352,7 +360,7 @@ def extract_text(url: str, *, guard: UrlGuard | None = None) -> ExtractionResult
         :class:`ExtractionResult` on success, ``None`` on failure.
     """
     if not url or not isinstance(url, str):
-        logger.warning("extract_text: invalid url %r", url)
+        logger.warning("extract_text: no url to fetch (%s)", type(url).__name__)
         return None
 
     html = _fetch_html(url, guard)
@@ -384,7 +392,7 @@ def extract_text(url: str, *, guard: UrlGuard | None = None) -> ExtractionResult
             "extract_text: trafilatura yielded only %d words for %s "
             "(below MIN_WORD_COUNT=%d); returning anyway as best-effort",
             primary.word_count,
-            url,
+            host_of(url),
             MIN_WORD_COUNT,
         )
         return primary
@@ -394,7 +402,7 @@ def extract_text(url: str, *, guard: UrlGuard | None = None) -> ExtractionResult
             "extract_text: trafilatura yielded only %d words for %s "
             "(below HARD_FLOOR_WORDS=%d); treating as failure",
             primary.word_count,
-            url,
+            host_of(url),
             HARD_FLOOR_WORDS,
         )
 

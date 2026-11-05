@@ -143,6 +143,25 @@ def test_the_list_carries_what_the_consent_screen_must_show(unauthenticated_clie
     assert item["connected"] is False and item["grant"] is None and item["configured"] is True
 
 
+def test_a_connector_redirect_is_the_servers_never_the_callers(unauthenticated_client, db, fake, two, monkeypatch):
+    """T-4.11.2.4 looked here too. Unlike /auth/oauth/{provider}/start this
+    route takes no redirect, so it needs no allow-list: one named in the body
+    goes nowhere, and what is stored and sent is built from APP_BASE_URL."""
+    monkeypatch.setattr(settings, "APP_BASE_URL", "https://app.example.com")
+    expected = "https://app.example.com/echo/connectors/fake/callback"
+
+    r = unauthenticated_client.post(
+        f"{BASE}/fake/authorize",
+        json={"consent_version": fake.consent_version, "redirect_uri": "https://evil.example/cb"},
+        headers=two["ha"],
+    )
+
+    assert r.status_code == 200
+    assert urllib.parse.parse_qs(urllib.parse.urlparse(r.json()["authorize_url"]).query)["redirect_uri"] == [expected]
+    assert db.query(EchoConnectorOAuthState).one().redirect_uri == expected
+    assert fake.calls[-1] == ("authorize", expected)
+
+
 def test_authorize_needs_the_disclosure_the_user_saw(unauthenticated_client, fake, two):
     r = unauthenticated_client.post(f"{BASE}/fake/authorize", json={"consent_version": "old"}, headers=two["ha"])
     assert r.status_code == 409

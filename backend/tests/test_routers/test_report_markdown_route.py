@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from app.middleware.content_security_policy import FILE_POLICY
 from app.models.job import Job
 from app.services import auth_service, report_service
 
@@ -27,6 +28,7 @@ def test_report_md_returns_markdown_and_caches_it(client, db, test_user, tmp_pat
     assert r.status_code == 200
     assert r.headers["content-type"].startswith("text/markdown")
     assert 'filename="report-md-job.md"' in r.headers["content-disposition"]
+    assert r.headers["content-security-policy"] == FILE_POLICY
     body = r.text
     assert body.startswith("# Research Report: pratidhvani smoke test")
     assert "## Executive Summary" in body

@@ -12,6 +12,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
+from app.middleware.content_security_policy import FILE_POLICY
 from app.models.document import Document
 from app.models.document_visibility import DocumentVisibility
 from app.models.job import Job
@@ -155,6 +156,7 @@ def test_markdown_groups_by_target_and_marks_withdrawn(client, notes_world):
     r = client.get(MD)
     assert r.status_code == 200
     assert r.headers["content-type"].startswith("text/markdown")
+    assert r.headers["content-security-policy"] == FILE_POLICY
     text = r.text
     assert text.startswith("# Your notes\n")
     assert "3 notes (1 withdrawn)" in text

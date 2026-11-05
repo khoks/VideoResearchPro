@@ -411,6 +411,7 @@ def test_a_right_current_password_clears_earlier_misses(unauthenticated_client, 
 def _google(monkeypatch):
     monkeypatch.setattr(settings, "OAUTH_GOOGLE_CLIENT_ID", "google-client-id")
     monkeypatch.setattr(settings, "OAUTH_GOOGLE_CLIENT_SECRET", "google-secret")
+    monkeypatch.setattr(settings, "OAUTH_ALLOWED_REDIRECT_ORIGINS", "https://app.example.com")
 
 
 def _google_sign_in(client, db, monkeypatch, email: str) -> str:
@@ -691,7 +692,7 @@ def test_mutation_the_old_decode_only_handshake_lets_a_revoked_token_in(unauthen
 
     def _decode_only(token, session_factory=None):
         payload = auth_service.decode_access_token(token)
-        return (payload.get("sub"), payload.get("jti")) if payload else None
+        return ws._SocketSession(payload.get("sub"), payload.get("jti"), payload.get("exp")) if payload else None
 
     monkeypatch.setattr(ws, "_authenticate", _decode_only)
     auth_service.create_user(db, email="ws-mut@x.com", password=PASSWORD)

@@ -1,5 +1,6 @@
 import json
 import logging
+from typing import NamedTuple
 
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect, status
 from starlette.websockets import WebSocketState
@@ -9,6 +10,16 @@ from app.websocket.manager import manager
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+class _SocketSession(NamedTuple):
+    """Who a socket's token signs in as, and how long for."""
+
+    tenant_id: str
+    # None for a token issued before sessions existed.
+    jti: str | None
+    # The token's `exp`, in epoch seconds. None if it carries none.
+    expires_at: float | None
 
 
 def _owns_job(tenant_id: str, job_id: str, session_factory=None) -> bool:
@@ -62,9 +73,8 @@ def _owns_job(tenant_id: str, job_id: str, session_factory=None) -> bool:
             db.close()
 
 
-def _authenticate(token: str, session_factory=None) -> tuple[str, str | None] | None:
-    """``(tenant_id, jti)`` of the session ``token`` signs in as, or None.
-    The ``jti`` is None for a token issued before sessions existed.
+def _authenticate(token: str, session_factory=None) -> _SocketSession | None:
+    """The session ``token`` signs in as, or None.
 
     The same check every HTTP bearer route makes
     (``auth_service.authenticate_access_token``, T-5.4.15): an access token,
@@ -89,7 +99,12 @@ def _authenticate(token: str, session_factory=None) -> tuple[str, str | None] | 
             return None
         user, payload = resolved
         jti = payload.get("jti")
-        return user.id, jti if isinstance(jti, str) else None
+        exp = payload.get("exp")
+        return _SocketSession(
+            user.id,
+            jti if isinstance(jti, str) else None,
+            exp if isinstance(exp, (int, float)) else None,
+        )
     except Exception:
         logger.exception("ws: token check failed; refusing the socket")
         return None
@@ -108,7 +123,8 @@ async def job_progress_ws(websocket: WebSocket, token: str | None = Query(defaul
         session that is not revoked. Connection is closed with code 1008
         (policy violation) if missing/invalid, and with 1008 again when the
         session is revoked later (T-5.4.19): at once over Redis pub/sub, or
-        within a minute if that message is lost (websocket/manager.py).
+        within a minute if that message is lost (websocket/manager.py). The
+        token expiring closes it the same way, within a minute (T-5.4.21).
         This is the one route that still reads a token from the URL (T-8.8.1.5,
         D-085 addendum): the browser WebSocket API cannot set an Authorization
         header on the handshake. Every HTTP route is header-only.
@@ -137,9 +153,9 @@ async def job_progress_ws(websocket: WebSocket, token: str | None = Query(defaul
     if session is None:
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Invalid token")
         return
-    tenant_id, jti = session
+    tenant_id = session.tenant_id
 
-    await manager.connect(websocket, tenant_id=tenant_id, jti=jti)
+    await manager.connect(websocket, tenant_id=tenant_id, jti=session.jti, expires_at=session.expires_at)
     try:
         while True:
             raw = await websocket.receive_text()
@@ -182,7 +198,7 @@ async def job_progress_ws(websocket: WebSocket, token: str | None = Query(defaul
     except WebSocketDisconnect:
         pass
     except RuntimeError:
-        # T-5.4.19: the manager closes a revoked session's socket from outside
+        # T-5.4.19: the manager closes a revoked or expired socket from outside
         # this loop, so the next send or receive here can find it closed.
         if websocket.application_state != WebSocketState.DISCONNECTED:
             raise

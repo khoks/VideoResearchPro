@@ -8,6 +8,8 @@ entry.
 Flow:
 
 1. ``start_flow(provider, redirect_uri)`` →
+   - refuses a ``redirect_uri`` off the allow-list (T-4.11.2.4): the origin of
+     ``APP_BASE_URL`` plus ``OAUTH_ALLOWED_REDIRECT_ORIGINS``.
    - generates ``state`` (32 bytes random hex) for CSRF protection.
    - generates PKCE verifier + S256 challenge.
    - persists ``oauth_states`` row with 10 min TTL.
@@ -423,16 +425,67 @@ def _generate_pkce_pair() -> tuple[str, str]:
 # ---------------------------------------------------------------------------
 
 
+_DEFAULT_PORTS = {"http": 80, "https": 443}
+
+REDIRECT_NOT_ALLOWED = (
+    "This sign-in cannot return to that address. The app's APP_BASE_URL, or "
+    "OAUTH_ALLOWED_REDIRECT_ORIGINS, has to name the address it is opened at."
+)
+
+
+def _origin_of(url: str) -> tuple[str, str, int] | None:
+    """``(scheme, host, port)`` of ``url``, or None when it is not a plain
+    http(s) URL. Refused rather than parsed: anything a browser could read
+    differently from ``urlsplit``. Credentials before the host, a backslash,
+    and spaces or control characters (which ``urlsplit`` drops silently) can
+    each put one host in this answer and another in the address bar."""
+    if "\\" in url or any(ch <= " " for ch in url):
+        return None
+    try:
+        parts = urllib.parse.urlsplit(url)
+        port = parts.port
+    except ValueError:
+        return None
+    default_port = _DEFAULT_PORTS.get(parts.scheme)
+    if default_port is None or not parts.hostname:
+        return None
+    if parts.username is not None or parts.password is not None:
+        return None
+    return parts.scheme, parts.hostname, default_port if port is None else port
+
+
+def _allowed_redirect_origins() -> set[tuple[str, str, int]]:
+    """The origin of ``APP_BASE_URL`` plus ``OAUTH_ALLOWED_REDIRECT_ORIGINS``.
+    A bad entry is logged and skipped, never fatal, and skipping one only ever
+    allows less."""
+    allowed: set[tuple[str, str, int]] = set()
+    for entry in [settings.APP_BASE_URL, *settings.OAUTH_ALLOWED_REDIRECT_ORIGINS.split(",")]:
+        entry = entry.strip()
+        if not entry:
+            continue
+        origin = _origin_of(entry)
+        if origin is None:
+            logger.warning("OAuth redirect allow-list: ignoring %r, which is not an http(s) origin", entry)
+            continue
+        allowed.add(origin)
+    return allowed
+
+
 def start_flow(
     db: Session, provider_name: str, redirect_uri: str
 ) -> str:
     """Return the provider's authorization URL after persisting an
-    OAuthState row carrying the CSRF state + PKCE verifier."""
+    OAuthState row carrying the CSRF state + PKCE verifier.
+
+    ``redirect_uri`` is checked by origin and otherwise goes to the provider
+    exactly as sent."""
     provider = get_provider(provider_name)
     if not provider.is_configured():
         raise OAuthProviderUnconfiguredError(
             f"OAuth provider '{provider_name}' is not configured."
         )
+    if _origin_of(redirect_uri) not in _allowed_redirect_origins():
+        raise OAuthError(REDIRECT_NOT_ALLOWED)
 
     state = secrets.token_urlsafe(STATE_BYTES)
     code_verifier, code_challenge = _generate_pkce_pair()

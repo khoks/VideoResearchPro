@@ -77,6 +77,7 @@ import chromadb
 from chromadb.utils import embedding_functions
 
 from app.config import settings
+from app.utils.json_logging import route_model_libraries
 
 logger = logging.getLogger(__name__)
 
@@ -116,6 +117,7 @@ def _get_embedding_function() -> embedding_functions.SentenceTransformerEmbeddin
     """
     global _embedding_function, _owner_pid
     if _embedding_function is None:
+        route_model_libraries()
         _embedding_function = embedding_functions.SentenceTransformerEmbeddingFunction(
             model_name=settings.EMBEDDING_MODEL_NAME,
         )

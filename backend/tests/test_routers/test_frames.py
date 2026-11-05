@@ -17,6 +17,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from app.config import settings
+from app.middleware.content_security_policy import FILE_POLICY
 from app.models.document import Document
 from app.models.transcript_cache import TranscriptCache
 from app.models.visual_frame import VisualFrame
@@ -121,6 +122,7 @@ def test_serves_the_still(client, db, test_user, frames_dir):
     assert r.headers["content-type"] == "image/jpeg"
     assert r.content == JPEG
     assert "private" in r.headers["cache-control"]
+    assert r.headers["content-security-policy"] == FILE_POLICY
 
 
 def test_a_visible_document_cannot_read_another_documents_frame(client, db, test_user, frames_dir):

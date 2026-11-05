@@ -41,6 +41,7 @@ from pathlib import Path
 from typing import Any
 
 from app.config import settings
+from app.utils.shared_url_log import shared_url_fetch
 
 logger = logging.getLogger(__name__)
 
@@ -378,6 +379,7 @@ def require_public_address(url: str) -> None:
             raise MediaError("That address points into a private network, so it is not fetched.")
 
 
+@shared_url_fetch()
 def fetch_image(url: str, dest_dir: Path, stem: str) -> tuple[Path, str]:
     """Download an image the user shared by its address into ``dest_dir`` as
     ``<stem><ext>``. Refuses non-public hosts (checked again on every

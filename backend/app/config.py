@@ -8,6 +8,9 @@ class Settings(BaseSettings):
     # App
     APP_NAME: str = "Pratidhvani"
     DEBUG: bool = False
+    # T-4.11.2.2: `text` leaves the API's and the worker's logs as they have
+    # always been; `json` writes one object per line (app/utils/json_logging.py).
+    LOG_FORMAT: str = "text"
 
     # Database
     DATABASE_URL: str = "sqlite:///./data/videoresearchpro.db"
@@ -820,6 +823,11 @@ class Settings(BaseSettings):
     OAUTH_GOOGLE_CLIENT_SECRET: str | None = None
     OAUTH_GITHUB_CLIENT_ID: str | None = None
     OAUTH_GITHUB_CLIENT_SECRET: str | None = None
+    # T-4.11.2.4: origins `GET /auth/oauth/{provider}/start` accepts a
+    # `redirect_uri` on, comma-separated, beside the origin of APP_BASE_URL,
+    # which is always accepted. Each is `scheme://host[:port]`, with no
+    # wildcards. Only an install served from more than one address needs this.
+    OAUTH_ALLOWED_REDIRECT_ORIGINS: str = ""
 
     # T-5.4.8: SMTP delivery for password-reset / future verification emails.
     # When SMTP_HOST is unset, the email_service falls back to logging the

@@ -211,7 +211,7 @@
 
 ### NFR-5 — Observability
 
-- **NFR-5.1.** Logs go through stdlib `logging`, as plain text.
+- **NFR-5.1.** Logs go through stdlib `logging`: plain text by default, and with `LOG_FORMAT=json` one JSON object per line (`time`, `level`, `logger`, `message`, `exception`) from the API and the worker.
 - **NFR-5.2.** Celery task logs include `job_id` in every record.
 - **NFR-5.3.** YouTube API calls are tracked in `api_quota_log` with cost units.
 - **NFR-5.4.** LLM startup probes record `latency_ms` per `(provider, model)` pair on the `LLMStatus` singleton.
@@ -234,7 +234,7 @@
 - **NFR-8.2.** JWTs signed with HS256; secret in `.env`.
 - **NFR-8.3.** Bearer token validated on every protected request.
 - **NFR-8.4.** No user input ever passed unsanitized to the LLM prompt — the agent prompts are templated.
-- **NFR-8.5.** A report is untrusted HTML. The job page frames it from a blob: URL in a sandboxed iframe with scripts blocked, and the reading room sanitises it with DOMPurify. The server sends no `Content-Security-Policy` header of its own.
+- **NFR-8.5.** A report is untrusted HTML. The job page frames it from a blob: URL in a sandboxed iframe with scripts blocked, and the reading room sanitises it with DOMPurify. The API sends a `Content-Security-Policy` on every response: `default-src 'none'; frame-ancestors 'none'` on JSON, and on the stored report one that allows its inline styles and nothing else, so a script in it cannot run. A production host sets the app's own policy ([README](../README.md#content-security-policy-for-the-app)).
 - **NFR-8.6.** ChromaDB queries use parameterized metadata filters; no raw query injection surface.
 
 ### NFR-9 — Privacy

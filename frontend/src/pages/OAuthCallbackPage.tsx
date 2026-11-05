@@ -8,6 +8,7 @@ import { Spinner } from '../components/primitives';
 import { useColors } from '../hooks/useTheme';
 import { apiErrorMessage } from '../utils/apiError';
 import { providerName } from '../utils/accountSecurity';
+import { forgetSignInDestination, recallSignInState } from '../utils/signInReturn';
 import { fonts, fontSize, fontWeight, space } from '../theme';
 
 /**
@@ -16,6 +17,11 @@ import { fonts, fontSize, fontWeight, space } from '../theme';
  * once (the state is single-use), drops them from the address bar, and
  * either signs in or, for an account with two-step verification on, asks
  * for the code. A refusal at the provider comes back as `?error=`.
+ *
+ * The page the reader wanted waited in this tab's storage during the trip to
+ * the provider. It goes back into the router state, where `PublicOnlyRoute`
+ * reads it, before the exchange starts: a token that arrived first would send
+ * the reader to `/`.
  */
 export function OAuthCallbackPage() {
   const c = useColors();
@@ -24,6 +30,7 @@ export function OAuthCallbackPage() {
   const navigate = useNavigate();
   const { completeOAuth } = useAuth();
   const started = useRef(false);
+  const exchanged = useRef(false);
   const name = providerName(provider);
   // Read once: the effect below drops them from the address bar.
   const [answer] = useState(() => {
@@ -45,13 +52,19 @@ export function OAuthCallbackPage() {
     if (started.current) return;
     started.current = true;
     // The code is a one-time credential: keep it out of history.
-    navigate(location.pathname, { replace: true });
+    navigate(location.pathname, { replace: true, state: recallSignInState() });
+    forgetSignInDestination();
+  }, [location.pathname, navigate]);
+
+  useEffect(() => {
+    // Waits for the address above: this render has the destination in its state.
+    if (exchanged.current || location.search) return;
     const { denied, code, state } = answer;
     if (denied || !code || !state) return;
+    exchanged.current = true;
     completeOAuth(provider, code, state)
       .then((result) => {
         if (result.status === 'mfa_required') setMfaToken(result.mfaToken);
-        else navigate('/', { replace: true });
       })
       .catch((err) => {
         setError(
@@ -60,15 +73,14 @@ export function OAuthCallbackPage() {
             : `Signing in with ${name} did not work. Start again from the sign-in page.`,
         );
       });
-  }, [answer, completeOAuth, location.pathname, name, navigate, provider]);
+  }, [answer, completeOAuth, location.search, name, provider]);
 
   if (mfaToken) {
     return (
       <AuthShell title="Two-step verification">
         <MfaCodeStep
           mfaToken={mfaToken}
-          onSignedIn={() => navigate('/', { replace: true })}
-          onStartOver={() => navigate('/login', { replace: true })}
+          onStartOver={() => navigate('/login', { replace: true, state: location.state })}
         />
       </AuthShell>
     );
@@ -79,7 +91,7 @@ export function OAuthCallbackPage() {
       {error ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: space['4'], textAlign: 'center' }}>
           <AuthError message={error} />
-          <Link to="/login" style={{ color: c.accent, fontWeight: fontWeight.semibold, textDecoration: 'none', fontFamily: fonts.ui }}>
+          <Link to="/login" state={location.state} style={{ color: c.accent, fontWeight: fontWeight.semibold, textDecoration: 'none', fontFamily: fonts.ui }}>
             Back to sign in
           </Link>
         </div>

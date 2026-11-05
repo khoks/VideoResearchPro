@@ -2,6 +2,7 @@ import { useJobStore, type ToastKind } from '../../stores/jobStore';
 import { useColors, useShadows } from '../../hooks/useTheme';
 import type { ResolvedColors } from '../../hooks/useTheme';
 import { fonts, fontSize, fontWeight, lineHeight, radius, space, z } from '../../theme';
+import { IconButton } from './IconButton';
 
 function paletteFor(kind: ToastKind, c: ResolvedColors) {
   switch (kind) {
@@ -56,14 +57,11 @@ export function ToastContainer() {
             }}
           >
             <span style={{ flex: 1, wordBreak: 'break-word' }}>{t.message}</span>
-            <button
+            <IconButton
+              label="Dismiss"
               onClick={() => dismissToast(t.id)}
-              aria-label="Dismiss"
               style={{
-                background: 'transparent',
-                border: 'none',
                 color: p.text,
-                cursor: 'pointer',
                 fontSize: fontSize.md,
                 fontWeight: fontWeight.medium,
                 padding: 0,
@@ -72,7 +70,7 @@ export function ToastContainer() {
               }}
             >
               ×
-            </button>
+            </IconButton>
           </div>
         );
       })}

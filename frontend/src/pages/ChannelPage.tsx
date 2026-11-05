@@ -415,9 +415,9 @@ function TrustWeightControl({ channelId, weight }: { channelId: string; weight: 
           }}
         >
           Raising it lets this channel's relevant passages outrank others in your answers, which
-          also narrows them toward this channel. Lowering it lets them sink; near 0 they appear
-          only when little else matches. It never pulls in an off-topic passage, and only your
-          answers change.
+          also narrows them toward this channel. Lowering it lets them sink; near 0 the channel
+          drops out of your answers on any topic your library covers broadly. It never pulls in
+          an off-topic passage, and only your answers change.
           {setWeight.isError && (
             <span role="alert" style={{ color: c.error, marginLeft: space['2'] }}>
               Could not save the weight. Try again.

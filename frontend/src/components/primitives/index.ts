@@ -14,3 +14,6 @@ export { Modal, type ModalProps } from './Modal';
 export { Spinner, Skeleton, type SpinnerProps, type SkeletonProps } from './Spinner';
 export { EmptyState, type EmptyStateProps } from './EmptyState';
 export { LabelPill, type LabelPillProps } from './LabelPill';
+export { IconButton, type IconButtonProps } from './IconButton';
+export { Tab, Tabs, type TabProps, type TabsProps } from './Tabs';
+export { ToastContainer } from './Toast';

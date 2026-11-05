@@ -176,17 +176,26 @@ Overall app status plus a summary of LLM probe results.
   },
   "capabilities": {            // what this install has set up, so the UI offers only that
     "reddit_search_enabled": false,
+    "hn_search_enabled": true,
+    "mastodon_search_enabled": true,
+    "bluesky_search_enabled": false,
+    "podcast_search_enabled": true,
     "article_search_enabled": false,
     "twitter_search_enabled": false,
     "playwright_fallback_enabled": false,
     "whisper_transcribe_enabled": true,
     "visual_analysis_enabled": false
   },
+  "source_holds": {            // sources that refused this install, why a flag above is false
+    "bluesky_post": { "status": 403, "until": "2026-11-05T12:00:00+00:00" }
+  },
   "search_backend": "fts5"     // fts5 | like — S-8.2.1; "like" when SQLite lacks FTS5
 }
 ```
 
-The three `*_search_enabled` flags come from `job_source_types`, the same check that refuses a source on `POST /jobs`, so the submit form never offers what the API would reject (S-1.5.13).
+The `*_search_enabled` flags come from `job_source_types`, the same check that refuses a source on `POST /jobs`, so the submit form never offers what the API would reject (S-1.5.13). Mastodon and Bluesky are not set up when their base URL is blank (T-1.5.13.6).
+
+A source that answered a run's search with 401 or 403 is also on hold (T-1.5.14.1): its flag reads false and it is listed in `source_holds`, so the form stops offering it. A hold ends when the settings that reach the source change, after 24 hours, or when a search answers. `POST /jobs` still accepts a held source, since that check reads settings: the run tries it, and says so if it is refused again. A 403 about one target of a search starts no hold, because a hold reaches every user: every feed a podcast search found refusing, or a `subreddit:name` topic naming a private subreddit, reads on the run as a failed search.
 
 ### `GET /api/v1/health/llm`
 Per-use-case LLM probe detail: the result of the startup smoke check (probes deduped by `(provider, model, vision)`; each use case reports its own reasoning level). `use_cases` is keyed by use-case name and is empty until the first probe completes.
@@ -437,6 +446,8 @@ List the current user's jobs. Returns `list[JobResponse]`.
 
 ### `GET /api/v1/jobs/{job_id}`
 Fetch a single job. Returns `JobResponse` or 404.
+
+`run_notes` (S-1.5.14) is what the run has to say about its sources and limits, oldest first, and empty on a run with nothing to say. Each note is `{ "kind", "text" }`, and `source_type` when it is about one source; `text` is written for the reader. The kinds are `source_unavailable` (the service refused, rate-limited or failed the search), `source_empty` (it answered and found nothing), `budget_moved` (a share went to other sources), `top_up_skipped` (YouTube could not take it within the day's quota) and `whisper_minutes_spent`.
 
 ### `PUT /api/v1/jobs/{job_id}/approve`
 Approve a subset of the searched documents and resume the job. Body: `{ "approved_video_ids": ["...", "..."] }`. The name is legacy: each value is a YouTube `video_id`, or a `document_id` for a source without one. Dispatches `resume_job_after_approval`. Topic jobs only — channel and subscription jobs do not have an approval phase. Returns updated `JobResponse`.

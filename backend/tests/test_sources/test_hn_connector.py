@@ -146,6 +146,38 @@ def test_search_returns_empty_when_no_hits(hn, fake_client):
         assert hn.search("nothing matches") == []
 
 
+def test_a_sentence_falls_back_to_the_words_that_carry_it(hn, fake_client):
+    """T-1.5.14.2: measured on 2026-11-04, this sentence and "Roman Empire fall
+    learn today" found nothing, and "Roman Empire fall" found 30 stories."""
+    sentence = "Why did the Roman Empire fall and what can we learn from it today?"
+    answers = {"Roman Empire fall": _search_payload(_hit(object_id="rome"))}
+    fake_client.search.side_effect = lambda q, limit: answers.get(q, _search_payload())
+    with patch.object(hn_connector_mod.hn_client, "get_client", return_value=fake_client):
+        out = hn.search(sentence, limit=5)
+
+    assert [c.source_id for c in out] == ["hn:rome"]
+    assert [call.args[0] for call in fake_client.search.call_args_list] == [
+        sentence,
+        "Roman Empire fall",
+    ]
+
+
+def test_a_topic_that_finds_nothing_at_all_stops_at_its_shortest_query(hn, fake_client):
+    fake_client.search.return_value = _search_payload()
+    with patch.object(hn_connector_mod.hn_client, "get_client", return_value=fake_client):
+        assert hn.search("How do rare earth magnets shape electric motors") == []
+    assert fake_client.search.call_count == 4
+    assert fake_client.search.call_args.args[0] == "rare earth"
+
+
+def test_a_failure_stays_raised(hn, fake_client):
+    """An empty list means nothing was found (T-1.5.14.1)."""
+    fake_client.search.side_effect = RuntimeError("503")
+    with patch.object(hn_connector_mod.hn_client, "get_client", return_value=fake_client):
+        with pytest.raises(RuntimeError):
+            hn.search("anything")
+
+
 def test_search_handles_missing_optional_fields(hn, fake_client):
     """Search hits sometimes omit url / story_text — must not crash."""
     sparse = {"objectID": "x", "title": "t", "author": "u"}

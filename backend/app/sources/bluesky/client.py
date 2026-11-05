@@ -1,4 +1,4 @@
-"""Bluesky AT-Protocol XRPC client — unauthenticated public endpoints.
+"""Bluesky AT-Protocol XRPC client — unauthenticated read endpoints.
 
 What this module provides:
 
@@ -13,9 +13,16 @@ What this module provides:
   `app.bsky.feed.getAuthorFeed` (creator's recent posts).
 
 AT-Protocol XRPC returns JSON directly — no Bearer token, no app
-password plumbing for these public read endpoints. We still send
+password plumbing for these read endpoints. We still send
 `BLUESKY_USER_AGENT` so the operator can identify us if Bluesky
 ever decides to throttle.
+
+The default base is `api.bsky.app`, not `public.api.bsky.app`: on
+2026-11-04 the CDN in front of the latter answered HTML 403 on
+`searchPosts` (any user agent) and 200 on the other three endpoints,
+while `api.bsky.app` answered all four without credentials. Neither
+promises that, so a refusal is reported on the run rather than read as
+"no results" (T-1.5.14.1).
 
 Tests should mock `get_client` to return a `unittest.mock.Mock`
 rather than monkey-patching httpx — see

@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import api from '../services/api';
-import { useSystemStatusStore, type LLMStatus } from '../stores/systemStatusStore';
+import { useSystemStatusStore, type LLMStatus, type SourceHold } from '../stores/systemStatusStore';
 
 interface HealthLLMPayload {
   status?: LLMStatus;
@@ -12,6 +12,7 @@ interface HealthLLMPayload {
 interface HealthResponse {
   llm?: HealthLLMPayload;
   capabilities?: Record<string, boolean>;
+  source_holds?: Record<string, SourceHold>;
 }
 
 interface NormalizedHealth {
@@ -19,6 +20,7 @@ interface NormalizedHealth {
   unavailableFeatures: string[];
   checkedAt: number;
   capabilities: Record<string, boolean>;
+  sourceHolds: Record<string, SourceHold>;
 }
 
 async function fetchHealth(): Promise<NormalizedHealth> {
@@ -31,12 +33,14 @@ async function fetchHealth(): Promise<NormalizedHealth> {
     unavailableFeatures: llm.unavailable_features ?? [],
     checkedAt: Date.now(),
     capabilities: data.capabilities ?? {},
+    sourceHolds: data.source_holds ?? {},
   };
 }
 
 export function useSystemStatus() {
   const setStatus = useSystemStatusStore((s) => s.setStatus);
   const setCapabilities = useSystemStatusStore((s) => s.setCapabilities);
+  const setSourceHolds = useSystemStatusStore((s) => s.setSourceHolds);
 
   const query = useQuery({
     queryKey: ['systemStatus'],
@@ -53,7 +57,8 @@ export function useSystemStatus() {
     if (!query.data) return;
     setStatus(query.data.status, query.data.unavailableFeatures, query.data.checkedAt);
     setCapabilities(query.data.capabilities);
-  }, [query.data, setStatus, setCapabilities]);
+    setSourceHolds(query.data.sourceHolds);
+  }, [query.data, setStatus, setCapabilities, setSourceHolds]);
 
   return { refetch: query.refetch };
 }

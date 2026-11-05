@@ -8,6 +8,7 @@
 import { featureFlags } from '../config/features';
 import type { Job, JobCreate, JobType, OutputLength } from '../types/job';
 import type { TemplateParameters } from '../services/jobTemplatesApi';
+import type { SourceHold } from '../stores/systemStatusStore';
 
 export const CHANNEL_TYPE_OPTIONS = [
   'educational',
@@ -23,20 +24,23 @@ export type ChannelTypeOption = (typeof CHANNEL_TYPE_OPTIONS)[number];
 /**
  * S-1.5.13: what a topic run can search, in the server's canonical order
  * (`backend/app/services/job_source_types.py`, SEARCHABLE_SOURCE_TYPES).
- * `capability` names the `/health` flag a credential-gated type needs; the
- * form offers that type only when the flag is true, and the server refuses
- * it with a 422 otherwise. Tweet search is the BYOK case (T-1.5.9.3).
+ * `capability` names the `/health` flag that says whether this install can
+ * search a type. A credential-gated type is offered only when the flag is
+ * true, and the server refuses it with a 422 otherwise. Tweet search is the
+ * BYOK case (T-1.5.9.3). A `keyless` type needs no credential, so it is on
+ * offer until the flag says false: a blank base URL (T-1.5.13.6), or a source
+ * on hold for refusing this install (T-1.5.14.1).
  */
 export const SOURCE_TYPE_OPTIONS = [
   { value: 'video', label: 'YouTube' },
   { value: 'reddit_post', label: 'Reddit', capability: 'reddit_search_enabled' },
-  { value: 'hn_story', label: 'Hacker News' },
-  { value: 'mastodon_post', label: 'Mastodon' },
-  { value: 'bluesky_post', label: 'Bluesky' },
-  { value: 'podcast_episode', label: 'Podcasts' },
+  { value: 'hn_story', label: 'Hacker News', capability: 'hn_search_enabled', keyless: true },
+  { value: 'mastodon_post', label: 'Mastodon', capability: 'mastodon_search_enabled', keyless: true },
+  { value: 'bluesky_post', label: 'Bluesky', capability: 'bluesky_search_enabled', keyless: true },
+  { value: 'podcast_episode', label: 'Podcasts', capability: 'podcast_search_enabled', keyless: true },
   { value: 'article', label: 'Web articles', capability: 'article_search_enabled' },
   { value: 'tweet', label: 'X / Twitter', capability: 'twitter_search_enabled' },
-] as const satisfies readonly { value: string; label: string; capability?: string }[];
+] as const satisfies readonly { value: string; label: string; capability?: string; keyless?: boolean }[];
 
 /** S-8.6.3: mirrors MAX_PUBLISHED_AFTER_DAYS in `backend/app/schemas/job.py`. */
 export const MAX_PUBLISHED_AFTER_DAYS = 3650;
@@ -69,10 +73,27 @@ export function sourceTypeLabel(value: string): string {
 
 /**
  * The options this install can search, from `/health` capabilities. Until
- * the first poll answers (null) only the ungated types are offered.
+ * the first poll answers (null) the types that need no credential are offered.
  */
 export function offeredSourceTypes(capabilities: Record<string, boolean> | null): SourceTypeOption[] {
-  return SOURCE_TYPE_OPTIONS.filter((o) => !('capability' in o) || capabilities?.[o.capability] === true);
+  return SOURCE_TYPE_OPTIONS.filter((o) => {
+    if (!('capability' in o)) return true;
+    const flag = capabilities?.[o.capability];
+    return 'keyless' in o ? flag !== false : flag === true;
+  });
+}
+
+/**
+ * Why a source is not on offer although it is set up: it refused this install
+ * (T-1.5.14.1). Null when nothing is on hold.
+ */
+export function heldSourcesNote(holds: Record<string, SourceHold>): string | null {
+  const held = Object.keys(holds);
+  if (held.length === 0) return null;
+  const one = held.length === 1;
+  return `${held.map((v) => sourceTypeLabel(v)).join(', ')} refused ${
+    one ? 'its' : 'their'
+  } last search from this install, so ${one ? 'it is' : 'they are'} not offered for now.`;
 }
 
 /**

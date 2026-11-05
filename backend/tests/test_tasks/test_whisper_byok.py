@@ -329,6 +329,8 @@ def test_a_template_warns_about_transcription_only_when_no_key_can_do_it(db, mon
 
     monkeypatch.setattr(settings, "OPENAI_API_KEY", "")
     monkeypatch.setattr(settings, "WHISPER_MAX_PER_JOB", 50)
+    # The next warning down is about ffmpeg, which a test machine may not have.
+    monkeypatch.setattr("app.services.job_source_types.shutil.which", lambda name: f"/usr/bin/{name}")
     params = _podcast_template_params()
 
     with_key = _account(db, key=USER_KEY)

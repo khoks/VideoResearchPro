@@ -6,6 +6,23 @@ type NotificationCallback = (msg: WSNotificationMessage) => void;
 
 const NOTIFICATIONS_TOPIC = 'notifications';
 
+/**
+ * The subprotocol that carries the token (T-5.4.23). The WebSocket API can set
+ * no header on a handshake and a URL ends up in logs, but it can offer
+ * subprotocols, so the client offers this one and then the token. The server
+ * answers with this name alone.
+ */
+const BEARER_SUBPROTOCOL = 'bearer';
+
+/** A JWT's three base64url parts. `new WebSocket` throws on anything else in a
+ * subprotocol, and a corrupt stored token must fail at the server, as it
+ * always has, and not in whatever component opened the socket. */
+const JWT_SHAPE = /^[\w-]+\.[\w-]+\.[\w-]+$/;
+
+function socketProtocols(token: string | null): string[] {
+  return token && JWT_SHAPE.test(token) ? [BEARER_SUBPROTOCOL, token] : [];
+}
+
 function resolveWsUrl(): string {
   const fromEnv = import.meta.env.VITE_WS_URL;
   if (fromEnv) return fromEnv;
@@ -65,14 +82,7 @@ export class WSClient {
       this.dropSocket();
     }
 
-    const baseUrl = resolveWsUrl();
-    // The one URL that still carries the JWT (T-8.8.1.5): the WebSocket API
-    // cannot set an Authorization header on the handshake. Every HTTP file is
-    // fetched with the header instead (services/apiFiles.ts).
-    const url = token
-      ? `${baseUrl}${baseUrl.includes('?') ? '&' : '?'}token=${encodeURIComponent(token)}`
-      : baseUrl;
-    const socket = new WebSocket(url);
+    const socket = new WebSocket(resolveWsUrl(), socketProtocols(token));
     this.ws = socket;
     this.socketToken = token;
 

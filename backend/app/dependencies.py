@@ -100,6 +100,6 @@ def get_current_jti(
 # report route and the six /exports downloads take the JWT as `?token=`, which
 # leaks it into browser history, server and proxy logs and Referer headers.
 # The browser now fetches those files with the Authorization header and hands
-# them over as blob: URLs (D-085 addendum). The only route that still reads a
-# token from the URL is the /ws/jobs WebSocket (routers/ws.py), because a
-# browser cannot send headers on a WebSocket handshake.
+# them over as blob: URLs (D-085 addendum). The /ws/jobs WebSocket, the last
+# route to read one, takes its token as a subprotocol since T-5.4.23
+# (routers/ws.py), so no route reads a credential from a URL.

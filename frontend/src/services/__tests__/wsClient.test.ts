@@ -16,9 +16,16 @@ class FakeWebSocket {
   onerror: (() => void) | null = null;
 
   url: string;
+  protocols: string[];
 
-  constructor(url: string) {
+  constructor(url: string, protocols: string[] = []) {
+    // What the browser does with a subprotocol it cannot send: `new WebSocket`
+    // throws, inside whichever component opened the socket.
+    if (protocols.some((p) => !/^[!#$%&'*+\-.0-9A-Z^_`a-z|~]+$/.test(p))) {
+      throw new SyntaxError("Failed to construct 'WebSocket': The subprotocol is invalid.");
+    }
     this.url = url;
+    this.protocols = protocols;
     FakeWebSocket.instances.push(this);
   }
 
@@ -153,12 +160,56 @@ describe('WSClient (T-6.7.1.6)', () => {
   });
 });
 
+describe('WSClient token (T-5.4.23)', () => {
+  const TOKEN_KEY = 'videoresearchpro.authToken';
+  const TOKEN = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1In0.c2lnbmF0dXJl-_x';
+
+  beforeEach(() => {
+    FakeWebSocket.instances = [];
+    vi.stubGlobal('WebSocket', FakeWebSocket);
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+    window.localStorage.removeItem(TOKEN_KEY);
+  });
+
+  async function openWith(token: string | null) {
+    if (token !== null) window.localStorage.setItem(TOKEN_KEY, token);
+    const { WSClient } = await import('../wsClient');
+    new WSClient().subscribe('job-a', () => {});
+    return FakeWebSocket.instances[0];
+  }
+
+  it('offers the token as a subprotocol and keeps it out of the URL', async () => {
+    const socket = await openWith(TOKEN);
+    expect(socket.protocols).toEqual(['bearer', TOKEN]);
+    expect(socket.url).not.toContain('?');
+    expect(socket.url).not.toContain(TOKEN);
+  });
+
+  it('offers nothing when signed out', async () => {
+    const socket = await openWith(null);
+    expect(socket.protocols).toEqual([]);
+  });
+
+  it.each(['not a jwt', 'bearer', 'a.b', 'a.b.c,d'])(
+    'a corrupt stored token (%s) is the server\'s to refuse, not a crash here',
+    async (corrupt) => {
+      const socket = await openWith(corrupt);
+      expect(socket.protocols).toEqual([]);
+    },
+  );
+});
+
 describe('WSClient notifications (T-8.3.3.8)', () => {
   beforeEach(() => {
     FakeWebSocket.instances = [];
     vi.stubGlobal('WebSocket', FakeWebSocket);
     vi.useFakeTimers();
-    window.localStorage.setItem('videoresearchpro.authToken', 'token-a');
+    window.localStorage.setItem('videoresearchpro.authToken', 'h.p.token-a');
   });
 
   afterEach(() => {
@@ -235,16 +286,16 @@ describe('WSClient notifications (T-8.3.3.8)', () => {
     const client = await freshClient();
     const leave = client.subscribeNotifications(() => {});
     const first = FakeWebSocket.instances[0];
-    expect(first.url).toContain('token=token-a');
+    expect(first.protocols).toEqual(['bearer', 'h.p.token-a']);
     first.open();
     leave();
 
-    window.localStorage.setItem('videoresearchpro.authToken', 'token-b');
+    window.localStorage.setItem('videoresearchpro.authToken', 'h.p.token-b');
     client.subscribeNotifications(() => {});
     expect(first.readyState).toBe(FakeWebSocket.CLOSED);
     expect(FakeWebSocket.instances).toHaveLength(2);
     const second = FakeWebSocket.instances[1];
-    expect(second.url).toContain('token=token-b');
+    expect(second.protocols).toEqual(['bearer', 'h.p.token-b']);
     second.open();
     expect(sent(second)).toEqual([NOTIFY]);
 

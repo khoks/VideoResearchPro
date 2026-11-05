@@ -431,7 +431,7 @@ import pytest
 
 @pytest.mark.asyncio
 async def test_websocket_subscribe(client):
-    with client.websocket_connect("/ws/jobs") as ws:
+    with client.websocket_connect("/ws/jobs", subprotocols=["bearer", auth_token]) as ws:
         ws.send_json({"action": "subscribe", "job_id": 1})
         message = ws.receive_json()
         assert message["type"] == "subscribed"

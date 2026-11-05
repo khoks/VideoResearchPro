@@ -634,7 +634,7 @@ def socket_db(db, monkeypatch):
 
 def _socket_opens(client, token: str) -> bool:
     try:
-        with client.websocket_connect(f"/ws/jobs?token={token}") as ws:
+        with client.websocket_connect("/ws/jobs", subprotocols=["bearer", token]) as ws:
             ws.send_text("ping")
             assert ws.receive_text() == "pong"
         return True

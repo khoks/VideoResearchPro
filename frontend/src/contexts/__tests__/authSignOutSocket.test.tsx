@@ -40,9 +40,11 @@ class FakeWebSocket {
   onclose: (() => void) | null = null;
   onerror: (() => void) | null = null;
   url: string;
+  protocols: string[];
 
-  constructor(url: string) {
+  constructor(url: string, protocols: string[] = []) {
     this.url = url;
+    this.protocols = protocols;
     FakeWebSocket.instances.push(this);
   }
 
@@ -85,7 +87,7 @@ beforeEach(() => {
   vi.stubGlobal('WebSocket', FakeWebSocket);
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
   localStorage.clear();
-  localStorage.setItem(TOKEN_KEY, 'token-a');
+  localStorage.setItem(TOKEN_KEY, 'h.p.token-a');
   host = document.createElement('div');
   document.body.appendChild(host);
   root = createRoot(host);
@@ -105,7 +107,7 @@ afterEach(() => {
 describe('the socket and the sign-in', () => {
   it('a sign-out closes the socket, and nothing reopens it', async () => {
     const { socket } = openBell();
-    expect(socket.url).toContain('token=token-a');
+    expect(socket.protocols).toEqual(['bearer', 'h.p.token-a']);
     postMock.mockResolvedValueOnce({});
 
     await act(async () => {

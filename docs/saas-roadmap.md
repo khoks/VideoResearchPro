@@ -241,7 +241,7 @@ Self-host has no billing. Every tenant defaults to the highest tier limits effec
 
 - Email + password registration & login
 - JWT bearer tokens
-- WebSocket auth via query-string token
+- WebSocket auth via a subprotocol token
 - ✅ Password reset (self-host: secret returned in response + logged for operator handoff; SMTP delivery deferred)
 - ✅ Account lockout (configurable threshold + duration; unknown emails don't create lock-able state)
 - ✅ Audit log with `GET /api/v1/auth/audit-log` per-user read endpoint

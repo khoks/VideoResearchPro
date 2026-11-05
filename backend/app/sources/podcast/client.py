@@ -23,6 +23,7 @@ import httpx
 
 from app.config import settings
 from app.utils.rate_limiter import RateLimiter
+from app.utils.shared_url_log import shared_url_fetch
 
 logger = logging.getLogger(__name__)
 
@@ -97,6 +98,7 @@ class PodcastClient:
     # ------------------------------------------------------------------
     # RSS feed
     # ------------------------------------------------------------------
+    @shared_url_fetch()
     def fetch_feed(self, feed_url: str) -> dict:
         """GET a podcast RSS feed and return the feedparser-parsed dict.
 
@@ -121,6 +123,7 @@ class PodcastClient:
     # ------------------------------------------------------------------
     # Audio enclosure
     # ------------------------------------------------------------------
+    @shared_url_fetch()
     def fetch_audio_to_file(self, audio_url: str, dest_path: str) -> int:
         """Stream an audio file (typically an MP3) to ``dest_path``.
 

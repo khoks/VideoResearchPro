@@ -85,9 +85,9 @@ def _user_id_from_jwt(request: Request) -> str | None:
     bucket key for rate-limiting."""
     auth = request.headers.get("authorization") or ""
     if not auth.lower().startswith("bearer "):
-        # A `?token=` is not a credential on any HTTP route since T-8.8.1.5
-        # (only the /ws/jobs socket reads one, and this middleware skips it),
-        # so it must not pick the bucket either: such a request is anonymous.
+        # A `?token=` is not a credential on any route since T-8.8.1.5 and
+        # T-5.4.23, so it must not pick the bucket either: such a request is
+        # anonymous.
         return None
     token = auth.split(None, 1)[1].strip()
     try:

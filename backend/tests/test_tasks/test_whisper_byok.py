@@ -23,6 +23,7 @@ from app.models.job import Job
 from app.models.job_video import JobVideo
 from app.services import auth_service, byok_service, llm_service, run_notes, usage_service, youtube_service
 from app.tasks import job_tasks
+from app.utils.log_redaction import provider_error_text
 from tests.test_tasks.test_usage_metering_tasks import _channel_responses
 from tests.test_tasks.test_usage_whisper_and_crash import (  # noqa: F401
     WHISPER,
@@ -317,7 +318,7 @@ def test_a_refused_tenant_key_stays_out_of_a_podcasts_log(no_captions, db, whisp
 
 def test_any_other_whisper_failure_keeps_its_words_in_the_log():
     """A 400 "file too large" is what an operator needs to read."""
-    assert youtube_service.whisper_error_text(ValueError("file too large")) == "file too large"
+    assert provider_error_text(ValueError("file too large")) == "file too large"
 
 
 # ---------------------------------------------------------------- a template's warning

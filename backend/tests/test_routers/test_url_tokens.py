@@ -1,4 +1,4 @@
-"""T-8.8.1.5 (D-085 addendum): no HTTP route takes a JWT from the URL.
+"""T-8.8.1.5 (D-085 addendum) and T-5.4.23: no route takes a JWT from the URL.
 
 A ``?token=`` lands in browser history, server and proxy logs and Referer
 headers. Until 2026-10-25 the legacy HTML report route and the six /exports
@@ -6,26 +6,37 @@ downloads accepted one because ``<iframe src>`` and ``<a download>`` cannot
 send an Authorization header. The frontend now fetches those files with the
 header and hands them to the browser as blob: URLs, and the fallback is gone.
 
-The one route that still reads a token from the URL is the /ws/jobs
-WebSocket: the browser WebSocket API cannot set headers on the handshake.
+The /ws/jobs WebSocket was the last. A browser cannot set a header on its
+handshake, but it can offer subprotocols, so since T-5.4.23 the client offers
+``bearer`` and then the token, and the server answers ``bearer`` alone.
 
 The route-table check below walks every route's dependency tree, so a route
 that re-adds a query-string credential — through any dependency, at any
-depth — fails it. It proves it can see such a parameter by finding the
-WebSocket's own.
+depth — fails it. It proves it can see such a parameter on a route made for
+the purpose. A handler reading ``websocket.query_params`` itself is not a
+parameter, so the socket's own refusal is checked by opening it.
+
+Mutation checks (each failed the named test when this shipped): reading
+``websocket.query_params`` as a fallback
+(``test_a_valid_token_in_the_url_opens_no_socket``); accepting with no
+subprotocol, which a browser fails
+(``test_the_socket_authenticates_with_the_bearer_subprotocol``); answering
+with the offered list's token (the same test); dropping the split on a comma
+(``test_a_header_handed_over_unsplit_still_reads``).
 """
 
+import re
+
 import pytest
+from fastapi import APIRouter, Depends, Query, WebSocket
 from fastapi.routing import APIRoute, APIWebSocketRoute
 from starlette.requests import Request
 from starlette.websockets import WebSocketDisconnect
 
 from app.main import app
 from app.middleware.rate_limit import _user_id_from_jwt
-
-# The names a query-string credential has gone by (`get_user_from_query_or_header`
-# read `token`; the others are the usual spellings).
-_CREDENTIAL_NAMES = {"token", "access_token", "jwt", "auth", "authorization"}
+from app.routers.ws import BEARER_SUBPROTOCOL, _offered_token
+from app.utils.log_redaction import CREDENTIAL_QUERY_NAMES
 
 # Every HTTP route that accepted `?token=` before T-8.8.1.5.
 _RETIRED = [
@@ -91,22 +102,34 @@ def test_the_route_walk_sees_the_whole_app():
     assert len(served) > 100
 
 
-def test_no_http_route_reads_a_credential_from_the_query_string():
-    http = [(path, route, dependant) for path, route, dependant in _served_routes() if isinstance(route, APIRoute)]
-    assert set(_RETIRED) <= {path for path, _route, _dependant in http}  # never passes having seen nothing
+def test_no_route_reads_a_credential_from_the_query_string():
+    served = _served_routes()
+    assert set(_RETIRED) | {"/ws/jobs"} <= {path for path, _route, _dependant in served}  # never passes having seen nothing
     offenders = {
-        f"{sorted(route.methods)} {path}": names
-        for path, route, dependant in http
-        if (names := sorted(_query_param_names(dependant) & _CREDENTIAL_NAMES))
+        f"{sorted(getattr(route, 'methods', None) or ['WS'])} {path}": names
+        for path, route, dependant in served
+        if (names := sorted(_query_param_names(dependant) & CREDENTIAL_QUERY_NAMES))
     }
-    assert offenders == {}, f"HTTP routes reading a credential from the URL: {offenders}"
+    assert offenders == {}, f"routes reading a credential from the URL: {offenders}"
 
 
-def test_the_websocket_is_the_one_route_that_still_does():
-    # Also the check above's proof that the walk sees a query-string token.
-    [(ws, dependant)] = [(route, dep) for path, route, dep in _served_routes() if path == "/ws/jobs"]
-    assert isinstance(ws, APIWebSocketRoute)
-    assert "token" in _query_param_names(dependant)
+def test_the_walk_sees_a_query_string_credential_at_any_depth():
+    # The check above's proof, on a socket and through a dependency.
+    def nested(token: str | None = Query(default=None)):
+        return token
+
+    def outer(_inner=Depends(nested)):
+        return None
+
+    probe = APIRouter()
+
+    @probe.websocket("/probe")
+    async def probe_socket(websocket: WebSocket, _outer=Depends(outer)):
+        pass
+
+    [route] = probe.routes
+    assert isinstance(route, APIWebSocketRoute)
+    assert _query_param_names(route.dependant) & CREDENTIAL_QUERY_NAMES == {"token"}
 
 
 def test_every_retired_route_still_exists():
@@ -131,7 +154,7 @@ def test_the_header_still_authenticates(client, path):
 
 
 # ---------------------------------------------------------------------------
-# The WebSocket keeps its query token
+# The WebSocket takes its token as a subprotocol
 # ---------------------------------------------------------------------------
 
 
@@ -142,8 +165,8 @@ class _FakeManager:
         self.connected = 0
         self.disconnected = 0
 
-    async def connect(self, websocket, *, tenant_id=None, jti=None, expires_at=None):
-        await websocket.accept()
+    async def connect(self, websocket, *, subprotocol=None, tenant_id=None, jti=None, expires_at=None):
+        await websocket.accept(subprotocol=subprotocol)
         self.connected += 1
 
     async def disconnect(self, websocket):
@@ -156,7 +179,8 @@ class _FakeManager:
         pass
 
 
-def test_websocket_still_authenticates_with_a_query_token(unauthenticated_client, auth_token, monkeypatch):
+@pytest.fixture
+def fake_manager(monkeypatch):
     from tests.conftest import TestingSessionLocal
 
     fake = _FakeManager()
@@ -164,21 +188,76 @@ def test_websocket_still_authenticates_with_a_query_token(unauthenticated_client
     # T-5.4.15: the handshake checks the token's session and user in a
     # session of its own, from app.database.SessionLocal.
     monkeypatch.setattr("app.database.SessionLocal", TestingSessionLocal)
-    with unauthenticated_client.websocket_connect(f"/ws/jobs?token={auth_token}") as ws:
+    return fake
+
+
+def test_the_socket_authenticates_with_the_bearer_subprotocol(unauthenticated_client, auth_token, fake_manager):
+    with unauthenticated_client.websocket_connect("/ws/jobs", subprotocols=["bearer", auth_token]) as ws:
+        # A browser fails a handshake whose answer names nothing it offered,
+        # and the token never comes back.
+        assert ws.accepted_subprotocol == "bearer"
+        assert auth_token not in str(ws.extra_headers)
         ws.send_text("ping")
         assert ws.receive_text() == "pong"
-    assert fake.connected == 1
+    assert fake_manager.connected == 1
 
 
-@pytest.mark.parametrize("query", ["", "?token=not-a-real-jwt"])
-def test_websocket_refuses_a_missing_or_bad_token(unauthenticated_client, monkeypatch, query):
-    fake = _FakeManager()
-    monkeypatch.setattr("app.routers.ws.manager", fake)
+def test_a_valid_token_in_the_url_opens_no_socket(unauthenticated_client, auth_token, fake_manager):
     with pytest.raises(WebSocketDisconnect) as exc:
-        with unauthenticated_client.websocket_connect(f"/ws/jobs{query}"):
+        with unauthenticated_client.websocket_connect(f"/ws/jobs?token={auth_token}"):
             pass
     assert exc.value.code == 1008
-    assert fake.connected == 0
+    assert fake_manager.connected == 0
+
+
+def test_a_token_in_the_url_does_not_stand_in_for_the_subprotocol(unauthenticated_client, auth_token, fake_manager):
+    with pytest.raises(WebSocketDisconnect) as exc:
+        with unauthenticated_client.websocket_connect(f"/ws/jobs?token={auth_token}", subprotocols=["bearer"]):
+            pass
+    assert exc.value.code == 1008
+    assert fake_manager.connected == 0
+
+
+@pytest.mark.parametrize("offered", [[], ["bearer", "not-a-real-jwt"]])
+def test_websocket_refuses_a_missing_or_bad_token(unauthenticated_client, fake_manager, offered):
+    with pytest.raises(WebSocketDisconnect) as exc:
+        with unauthenticated_client.websocket_connect("/ws/jobs", subprotocols=offered):
+            pass
+    assert exc.value.code == 1008
+    assert fake_manager.connected == 0
+
+
+@pytest.mark.parametrize(
+    "offered",
+    [
+        [],
+        ["bearer"],
+        ["bearer", ""],
+        ["a.b.c"],
+        ["a.b.c", "bearer"],
+        ["bearer", "a.b.c", "more"],
+        ["Bearer", "a.b.c"],
+        ["graphql-ws", "a.b.c"],
+    ],
+)
+def test_only_bearer_then_a_token_is_an_offer(offered):
+    assert _offered_token(offered) is None
+
+
+def test_a_header_handed_over_unsplit_still_reads():
+    """uvicorn's sans-IO protocol passes the header's value as one entry;
+    its other two split it."""
+    assert _offered_token(["bearer", "a.b.c"]) == "a.b.c"
+    assert _offered_token(["bearer, a.b.c"]) == "a.b.c"
+    assert _offered_token(["bearer,a.b.c"]) == "a.b.c"
+
+
+def test_a_real_token_is_a_legal_subprotocol_name(auth_token):
+    """RFC 6455 section 4.1 holds a subprotocol to RFC 2616's token: US-ASCII
+    with no separators. A browser throws on anything else. A JWT is three
+    unpadded base64url parts, so ``=`` never appears."""
+    assert re.fullmatch(r"[!#$%&'*+\-.0-9A-Z^_`a-z|~]+", auth_token)
+    assert auth_token != BEARER_SUBPROTOCOL, "the two offered must differ"
 
 
 # ---------------------------------------------------------------------------

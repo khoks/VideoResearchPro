@@ -366,7 +366,8 @@ def test_the_provider_text_really_did_carry_the_key(db, studio, provider):
 
     assert KEY in str(raised.value)
     assert probe.status_code == 401
-    assert probe.error == "AuthenticationError"
+    # Its type alone. langchain-openai renames it in later releases.
+    assert probe.error.endswith("AuthenticationError") and KEY not in probe.error
 
 
 def test_neither_reaches_the_log(client, db, studio, provider):

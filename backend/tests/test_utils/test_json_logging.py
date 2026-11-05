@@ -208,8 +208,10 @@ def _run(script: str, tmp_path: Path, log_format: str | None, **extra: str) -> l
 
 
 def _celery(tmp_path: Path, log_format: str | None, args: list[str], until: str) -> list[str]:
-    """The real ``celery`` CLI, until it has written ``until``: what it prints,
-    all of it, in the order it came."""
+    """The real ``celery`` CLI, until it has written ``until``: what it printed
+    by then, all of it, in the order it came. Read before the process is told
+    to stop, because on a signal a worker writes one notice straight to the
+    stream (NFR-5.1 names it)."""
     output = tmp_path / "celery.log"
     command = [_PYTHON, "-m", "celery", "-A", "app.tasks.celery_app", *args]
     with open(output, "wb") as sink:
@@ -222,10 +224,11 @@ def _celery(tmp_path: Path, log_format: str | None, args: list[str], until: str)
                 assert process.poll() is None, output.read_text(encoding="utf-8")[-4000:]
                 assert time.monotonic() < deadline, output.read_text(encoding="utf-8")[-4000:]
                 time.sleep(0.2)
+            written = output.read_text(encoding="utf-8")
         finally:
             process.terminate()
             process.wait(30)
-    return [line for line in output.read_text(encoding="utf-8").splitlines() if line.strip()]
+    return [line for line in written.splitlines() if line.strip()]
 
 
 _API = """

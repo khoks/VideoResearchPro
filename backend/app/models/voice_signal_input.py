@@ -36,7 +36,7 @@ class VoiceSignalInput(Base):
     kind: Mapped[str] = mapped_column(String(16), nullable=False)
     #: SHA-256 of the text as read.
     content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
-    #: en | hi-Deva | hi-Latn | mixed
+    #: en | hi-Deva | hi-Latn | mixed | other
     language: Mapped[str | None] = mapped_column(String(16), nullable=True)
     #: False until the LLM pass has read this version (a failed or skipped
     #: call leaves it pending; stylometry does not need the LLM).

@@ -7,6 +7,7 @@ the test database, the chunker and the profiler run for real.
 """
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -17,7 +18,7 @@ from app.models.document import Document
 from app.models.job import Job
 from app.models.job_video import JobVideo
 from app.services import code_mixing_service, language_mix_service
-from app.sources.types import ExtractedText
+from app.sources.types import DEFAULT_AUDIO_LANGUAGE, ExtractedText
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
 
@@ -112,3 +113,22 @@ def test_mutation_without_the_wiring_the_retry_leaves_no_profile(db, unavailable
     assert [k.get("language_profile") for k in unavailable["handed"]] == [None]
     chunks = unavailable["chroma"].insert_chunks.call_args[0][0]
     assert all(c["metadata"].get("code_mix_primary") == "hi" for c in chunks)
+
+
+def test_the_retry_hands_the_connector_what_the_document_knows(db, unavailable, monkeypatch):
+    """T-1.11.11.4: a recovered document does not pay for the lookup either."""
+    doc = _doc(db, unavailable["document_id"])
+    doc.source_metadata_json = json.dumps({DEFAULT_AUDIO_LANGUAGE: "hi"})
+    db.commit()
+
+    seen = []
+
+    class _Recording(_FakeConnector):
+        def fetch_text(self, candidate, **kw):
+            seen.append(candidate.extra)
+            return super().fetch_text(candidate, **kw)
+
+    monkeypatch.setattr(retry, "connector_for", lambda source_type: _Recording())
+
+    assert retry.main(["--job", unavailable["job"].id]) == 0
+    assert seen == [{DEFAULT_AUDIO_LANGUAGE: "hi"}]

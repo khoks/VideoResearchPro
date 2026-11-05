@@ -27,7 +27,13 @@ from app.config import settings
 from app.services import youtube_service
 from app.sources import registry
 from app.sources.base import BaseConnector
-from app.sources.types import Candidate, CreatorMetadata, ExtractedText, SourceMetadata
+from app.sources.types import (
+    DEFAULT_AUDIO_LANGUAGE,
+    Candidate,
+    CreatorMetadata,
+    ExtractedText,
+    SourceMetadata,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -83,6 +89,14 @@ def _candidate_from_id(video_id: str) -> Candidate:
 
 
 def _metadata_from_details_dict(d: dict) -> SourceMetadata:
+    extra = {
+        k: d[k]
+        for k in ("view_count", "like_count", "url")
+        if k in d and d[k] is not None
+    }
+    # Kept when None: "declares nothing" spares a lookup, "unknown" does not.
+    if DEFAULT_AUDIO_LANGUAGE in d:
+        extra[DEFAULT_AUDIO_LANGUAGE] = d[DEFAULT_AUDIO_LANGUAGE]
     return SourceMetadata(
         title=d.get("title"),
         creator_external_id=d.get("channel_id") or None,
@@ -90,11 +104,7 @@ def _metadata_from_details_dict(d: dict) -> SourceMetadata:
         duration_seconds=d.get("duration_seconds"),
         published_at=_parse_iso(d.get("published_at")),
         thumbnail_url=d.get("thumbnail_url"),
-        extra={
-            k: d[k]
-            for k in ("view_count", "like_count", "url")
-            if k in d and d[k] is not None
-        },
+        extra=extra,
     )
 
 
@@ -190,11 +200,19 @@ class YouTubeConnector(BaseConnector):
         query: str = "",  # noqa: ARG002 — YouTube doesn't classify; signature parity per D-023
         allow_whisper: bool = True,
     ) -> ExtractedText | None:
+        # T-1.11.11.4: a language the document already holds spares the lazy
+        # lookup. Not passing it at all is what lets that lookup still run.
+        known = (
+            {"audio_language": candidate.extra[DEFAULT_AUDIO_LANGUAGE]}
+            if DEFAULT_AUDIO_LANGUAGE in candidate.extra
+            else {}
+        )
         result = youtube_service.fetch_transcript(
             candidate.source_id,
             language=settings.DEFAULT_TRANSCRIPT_LANGUAGE,
             job_id=job_id,
             allow_whisper=allow_whisper,
+            **known,
         )
         if not result:
             return None

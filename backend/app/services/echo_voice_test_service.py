@@ -98,7 +98,14 @@ DRAFT_MAX_TOKENS = 1200
 #: worker. Well above a slow pair: two calls of three tries each.
 STALE_AFTER = timedelta(minutes=30)
 
-LANGUAGE_NAMES = {"en": "English", "hi-Deva": "Hindi", "hi-Latn": "Hindi in Roman letters", "mixed": "Hinglish"}
+LANGUAGE_NAMES = {
+    "en": "English",
+    "hi-Deva": "Hindi",
+    "hi-Latn": "Hindi in Roman letters",
+    "mixed": "Hinglish",
+    # `language_of` could not name it, and the situation was drawn from the note.
+    "other": "the language of the situation above",
+}
 
 # ---------------------------------------------------------------------------
 # Prompts (fixed by the pre-registration)

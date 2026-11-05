@@ -41,6 +41,7 @@ export const SIGNAL_LANGUAGES: { value: string; label: string }[] = [
   { value: 'hi-Deva', label: 'Hindi (Devanagari)' },
   { value: 'hi-Latn', label: 'Hindi (Roman script)' },
   { value: 'mixed', label: 'Mixed' },
+  { value: 'other', label: 'Other language' },
 ];
 
 export const SIGNAL_REGISTERS: { value: string; label: string }[] = [

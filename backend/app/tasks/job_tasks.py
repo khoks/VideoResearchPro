@@ -22,7 +22,7 @@ from app.services import (
     youtube_service,
 )
 from app.sources import connector_for
-from app.sources.types import Candidate, SourceMetadata
+from app.sources.types import DEFAULT_AUDIO_LANGUAGE, Candidate, SourceMetadata
 from app.tasks.celery_app import celery_app
 from app.utils.chunking import chunk_transcript
 from app.utils.html_builder import build_report_html, save_report
@@ -101,7 +101,7 @@ def _source_metadata_to_legacy_dict(sm: SourceMetadata) -> dict:
     to ``SourceMetadata`` directly now that the ``videos`` → ``documents``
     rename has landed.
     """
-    return {
+    legacy = {
         "title": sm.title,
         "channel_id": sm.creator_external_id,
         "channel_name": sm.creator_name,
@@ -113,6 +113,9 @@ def _source_metadata_to_legacy_dict(sm: SourceMetadata) -> dict:
         "view_count": sm.extra.get("view_count"),
         "like_count": sm.extra.get("like_count"),
     }
+    if DEFAULT_AUDIO_LANGUAGE in sm.extra:
+        legacy[DEFAULT_AUDIO_LANGUAGE] = sm.extra[DEFAULT_AUDIO_LANGUAGE]
+    return legacy
 
 
 def _upsert_video_and_link(db, job_id: str, data: dict) -> None:
@@ -120,10 +123,12 @@ def _upsert_video_and_link(db, job_id: str, data: dict) -> None:
 
     `data` is the search-result dict from the Search Agent or YouTube service
     (keys: video_id, title, channel_id, channel_name, url, duration_seconds,
-    thumbnail_url, description, selection_reason). Missing keys are tolerated.
+    thumbnail_url, description, selection_reason, default_audio_language).
+    Missing keys are tolerated.
 
     Existing Document rows are preserved with their transcript/embedding state;
-    only lightweight surface metadata (title, thumbnail, url) is refreshed.
+    only lightweight surface metadata (title, thumbnail, url, the declared audio
+    language) is refreshed.
 
     E-1.10 note: Document PK is now ``document_id`` (UUID). Lookups by
     ``video_id`` go through the back-compat indexed column rather than
@@ -195,6 +200,11 @@ def _upsert_video_and_link(db, job_id: str, data: dict) -> None:
         # Defensive — should not reach here, but if document staging
         # failed, skip the link rather than crash.
         return
+
+    # T-1.11.11.4: what the details said, for the transcript fetch to come.
+    # Only when they were read: an absent key must not turn into "declares none".
+    if DEFAULT_AUDIO_LANGUAGE in data:
+        _set_source_metadata(video, DEFAULT_AUDIO_LANGUAGE, data[DEFAULT_AUDIO_LANGUAGE])
 
     document_id = video.document_id
 
@@ -815,6 +825,32 @@ def _stamp_era_on_embedded_chunks(video: Document, job_id: str) -> None:
         )
 
 
+def _stamp_language_on_reused_chunks(video: Document, job_id: str) -> None:
+    """Give a reused document's stored chunks the language fields they lack.
+
+    T-1.16.2.16: the reuse path re-chunks a document without re-inserting it,
+    so a chunk written before S-1.16.2 would wait for the backfill script.
+    Metadata only and fail-soft: the profile is on the document, the job has
+    the re-chunked text it needs, and the script or the next job reaches the
+    chunks. Runs on every reuse, unlike the era's stamp, because a profile
+    the backfill stored earlier leaves nothing to detect on this run; a
+    document with nothing to add costs one read, and a plain-English one none.
+    """
+    try:
+        updated = metadata_backfill_service.stamp_chunk_language_fields(video)
+    except Exception:
+        logger.exception(
+            f"[job:{job_id}] Could not stamp language fields on the stored chunks of "
+            f"document_id={video.document_id}; the backfill script or the next job will"
+        )
+        return
+    if updated:
+        logger.info(
+            f"[job:{job_id}] Language fields stamped on {updated} stored chunks of "
+            f"document_id={video.document_id}"
+        )
+
+
 def _record_caption_track(video: Document, extracted) -> None:
     """Keep which caption track a transcript came from on the document.
 
@@ -828,14 +864,35 @@ def _record_caption_track(video: Document, extracted) -> None:
     track = extra.get("caption_track") if isinstance(extra, dict) else None
     if not isinstance(track, dict) or not track:
         return
+    _set_source_metadata(video, "caption_track", track)
+
+
+def _source_metadata(video: Document) -> dict:
+    """The document's ``source_metadata_json``; empty when missing or unreadable."""
     try:
         meta = json.loads(video.source_metadata_json) if video.source_metadata_json else {}
     except (TypeError, ValueError):
-        meta = {}
-    if not isinstance(meta, dict):
-        meta = {}
-    meta["caption_track"] = track
+        return {}
+    return meta if isinstance(meta, dict) else {}
+
+
+def _set_source_metadata(video: Document, key: str, value) -> None:
+    meta = _source_metadata(video)
+    if key in meta and meta[key] == value:
+        return
+    meta[key] = value
     video.source_metadata_json = json.dumps(meta)
+
+
+def _known_audio_language(video: Document) -> dict:
+    """``Candidate.extra`` for what the document knows of its spoken language.
+
+    T-1.11.11.4: empty on a document whose details never carried it (one
+    older than this, or a video the details call did not return), and then
+    ``fetch_transcript`` looks it up as it always did.
+    """
+    meta = _source_metadata(video)
+    return {DEFAULT_AUDIO_LANGUAGE: meta[DEFAULT_AUDIO_LANGUAGE]} if DEFAULT_AUDIO_LANGUAGE in meta else {}
 
 
 def _load_cached_segments(
@@ -1380,6 +1437,7 @@ def resume_job_after_approval(self, job_id: str) -> None:
                         language_profile=language_profile,
                     )
                     all_chunks.extend(chunks)
+                    _stamp_language_on_reused_chunks(video, job_id)
                     reused_count += 1
                     fetched_count += 1
                     logger.info(
@@ -1461,6 +1519,7 @@ def resume_job_after_approval(self, job_id: str) -> None:
                             # A podcast's feed URL, which its fetch_text
                             # re-reads; other connectors ignore it.
                             creator_external_id=video.channel_id,
+                            extra=_known_audio_language(video),
                         ),
                         **fetch_kwargs,
                     )
@@ -1748,6 +1807,7 @@ def _run_extraction_and_rag(self, db, job) -> None:
                     language_profile=language_profile,
                 )
                 all_chunks.extend(chunks)
+                _stamp_language_on_reused_chunks(video, job_id)
                 reused_count += 1
                 fetched_count += 1
                 logger.info(
@@ -1797,6 +1857,7 @@ def _run_extraction_and_rag(self, db, job) -> None:
                     source_id=video.source_id,
                     title=video.title,
                     source_url=video.source_url or video.url,
+                    extra=_known_audio_language(video),
                 ),
                 job_id=job_id,
                 query=job.topic or "",
@@ -2120,7 +2181,7 @@ def execute_subscription_job(self, job_id: str) -> None:
                     }
                 for vid in unlinked_ids:
                     info = details.get(vid) or {}
-                    _upsert_video_and_link(db, job_id, {
+                    row = {
                         "video_id": vid,
                         "title": info.get("title", "Unknown"),
                         "channel_id": info.get("channel_id", channel_id),
@@ -2130,7 +2191,10 @@ def execute_subscription_job(self, job_id: str) -> None:
                         "thumbnail_url": info.get("thumbnail_url"),
                         "published_at": info.get("published_at"),
                         "selection_reason": "subscription",
-                    })
+                    }
+                    if DEFAULT_AUDIO_LANGUAGE in info:
+                        row[DEFAULT_AUDIO_LANGUAGE] = info[DEFAULT_AUDIO_LANGUAGE]
+                    _upsert_video_and_link(db, job_id, row)
                     linked_video_ids.add(vid)
                     total_ingested += 1
                 db.commit()

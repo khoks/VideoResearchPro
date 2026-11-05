@@ -44,7 +44,7 @@ from app.agents.state import SearchAgentState
 from app.services import language_service, temporal_service, youtube_service
 from app.services.llm_service import get_llm_for, response_text
 from app.sources import connector_for
-from app.sources.types import Candidate, SourceMetadata
+from app.sources.types import DEFAULT_AUDIO_LANGUAGE, Candidate, SourceMetadata
 from app.utils.youtube_helpers import format_duration
 
 logger = logging.getLogger(__name__)
@@ -247,7 +247,7 @@ def _source_metadata_to_legacy_dict(sm: SourceMetadata, source_id: str) -> dict:
     (the connector dataclass keeps it as the mapping key, not on the
     object itself).
     """
-    return {
+    legacy = {
         "video_id": source_id,
         "title": sm.title,
         "channel_id": sm.creator_external_id or "",
@@ -259,6 +259,9 @@ def _source_metadata_to_legacy_dict(sm: SourceMetadata, source_id: str) -> dict:
         "view_count": sm.extra.get("view_count"),
         "like_count": sm.extra.get("like_count"),
     }
+    if DEFAULT_AUDIO_LANGUAGE in sm.extra:
+        legacy[DEFAULT_AUDIO_LANGUAGE] = sm.extra[DEFAULT_AUDIO_LANGUAGE]
+    return legacy
 
 
 def resolve_preferred_channels(state: SearchAgentState) -> dict:

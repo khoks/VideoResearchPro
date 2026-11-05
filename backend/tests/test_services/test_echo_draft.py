@@ -16,6 +16,7 @@ What must hold:
 """
 from __future__ import annotations
 
+import dataclasses
 import json
 import uuid
 
@@ -26,6 +27,7 @@ from app.agents.echo_agent import ContextItem, DraftDeps
 from app.config import settings
 from app.models.echo_draft import EchoDraft
 from app.services import auth_service, echo_draft_service, echo_intake_service, echo_processing_service
+from app.services import echo_signal_extraction as extraction
 from app.services import quota_metering_service as quota
 
 SOURCE = "Tariffs raise prices for the importer first and then for the buyer, the study found across forty markets."
@@ -342,6 +344,22 @@ def test_only_the_users_own_words_set_the_voice(db, tmp_path, monkeypatch):
     texts = echo_draft_service.own_texts(db, user.id)
     assert sorted(texts) == ["MY ESSAY on tariffs.", "MY NOTE: base rates first."]
     assert all("THEIR THREAD" not in t for t in texts), "a context-only share never sets the voice"
+
+
+def test_a_note_in_another_language_is_no_hindi_exemplar():
+    spanish = "Creo que los incentivos importan mas que las intenciones en este caso, y la gente responde a lo que le conviene."
+    hindi = "pehle dekho incentive kya hai, phir intention samajh aayega"
+    picked = echo_draft_service.exemplars([spanish, hindi, hindi], "hi-Latn", extraction.language_of, k=2)
+    assert picked == [hindi, hindi]
+
+
+def test_a_message_echo_cannot_name_drafts_in_english_when_the_model_names_nothing():
+    """`other` is a label on what the user wrote, not a language to write in."""
+    d, calls = deps(classify={"intent": "social", "topic": "saludo", "language": "es", "people": []})
+    message = "Creo que los incentivos importan mas que las intenciones en este caso, y la gente responde."
+    state = agent.run_echo_draft(dataclasses.replace(d, language_of=extraction.language_of), message=message)
+    assert state["language"] == "en"
+    assert agent.LANGUAGE_NAMES["hi-Latn"] not in calls.prompts["draft"][0]
 
 
 def test_exemplars_are_style_diverse_within_the_language():

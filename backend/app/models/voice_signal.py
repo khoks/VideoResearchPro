@@ -51,7 +51,7 @@ class VoiceSignal(Base):
     weight: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
     #: Up to five ``{text, source, at}`` verbatim examples.
     examples_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
-    #: en | hi-Deva | hi-Latn | mixed; null = not language-specific.
+    #: en | hi-Deva | hi-Latn | mixed | other; null = not language-specific.
     language: Mapped[str | None] = mapped_column(String(16), nullable=True)
     #: intimate | casual | professional | public; null = any.
     register: Mapped[str | None] = mapped_column(String(16), nullable=True)

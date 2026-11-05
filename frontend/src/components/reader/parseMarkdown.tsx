@@ -58,6 +58,15 @@ function textOf(node: RootContent | ElementContent | Root): string {
   return '';
 }
 
+/**
+ * A paragraph that is all emphasis is a note about the text, not the text: a
+ * book's "About this edition" or "Processing note" line in the front matter.
+ */
+function isNote(p: Element): boolean {
+  const parts = p.children.filter((n) => n.type !== 'text' || n.value.trim() !== '');
+  return parts.length === 1 && isElement(parts[0]) && parts[0].tagName === 'em';
+}
+
 function norm(text: string): string {
   return text.replace(/\s+/g, ' ').trim();
 }
@@ -188,9 +197,10 @@ function transform(root: Root, opts: ParseMarkdownOptions): { outline: OutlineEn
     if (match) a.properties.href = `#${match}`;
   }
 
-  // 5. Drop cap on the first substantial top-level paragraph.
+  // 5. Drop cap on the first substantial top-level paragraph of the text itself.
   const lead = root.children.find(
-    (n): n is Element => isElement(n) && n.tagName === 'p' && norm(textOf(n)).length >= DROP_CAP_MIN_CHARS,
+    (n): n is Element =>
+      isElement(n) && n.tagName === 'p' && !isNote(n) && norm(textOf(n)).length >= DROP_CAP_MIN_CHARS,
   );
   if (lead) addClass(lead, 'reader-dropcap');
 

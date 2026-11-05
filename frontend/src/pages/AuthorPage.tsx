@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   useAuthorKinds,
@@ -108,25 +108,31 @@ export function AuthorPage() {
   const cancelMut = useCancelOutput();
   // S-6.7.1: the output this visit just queued; it opens when it finishes.
   const [awaiting, setAwaiting] = useState<string | null>(null);
+  const announced = useRef<string | null>(null);
+  const finished = useMemo(() => {
+    const row = awaiting ? outputs.data?.find((o) => o.id === awaiting) : undefined;
+    return row && !isActiveOutput(row.status) ? row : null;
+  }, [awaiting, outputs.data]);
   const activeIds = useMemo(
     () => (outputs.data ?? []).filter((o) => isActiveOutput(o.status) && !isOrphanedPending(o)).map((o) => o.id),
     [outputs.data],
   );
-  useOutputsProgress(awaiting && !activeIds.includes(awaiting) ? [...activeIds, awaiting] : activeIds);
+  useOutputsProgress(
+    awaiting && !finished && !activeIds.includes(awaiting) ? [...activeIds, awaiting] : activeIds,
+  );
   useEffect(() => {
-    if (!awaiting) return;
-    const row = outputs.data?.find((o) => o.id === awaiting);
-    if (!row || isActiveOutput(row.status)) return;
-    setAwaiting(null);
-    if (row.status === 'completed') {
-      pushToast('success', `“${row.title}” is ready.`);
-      navigate(`/author/outputs/${row.id}`);
-    } else if (row.status === 'failed') {
-      pushToast('error', row.error_message ?? 'Generation failed.');
-    } else if (row.status === 'skipped') {
-      pushToast('info', row.progress_message ?? 'Nothing new; no issue was made.');
+    // Every refetch hands over a new row: each output is announced once.
+    if (!finished || announced.current === finished.id) return;
+    announced.current = finished.id;
+    if (finished.status === 'completed') {
+      pushToast('success', `“${finished.title}” is ready.`);
+      navigate(`/author/outputs/${finished.id}`);
+    } else if (finished.status === 'failed') {
+      pushToast('error', finished.error_message ?? 'Generation failed.');
+    } else if (finished.status === 'skipped') {
+      pushToast('info', finished.progress_message ?? 'Nothing new; no issue was made.');
     }
-  }, [awaiting, outputs.data, navigate, pushToast]);
+  }, [finished, navigate, pushToast]);
 
   const cancel = (output: OutputItem) =>
     cancelMut.mutate(output.id, {

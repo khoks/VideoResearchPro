@@ -20,6 +20,8 @@ import {
   Input,
   Select,
   Skeleton,
+  Tab,
+  Tabs,
 } from '../components/primitives';
 import { useColors } from '../hooks/useTheme';
 import {
@@ -253,26 +255,17 @@ export function LibraryPage() {
         </p>
       </header>
 
-      <div
-        role="tablist"
-        aria-label="Library sections"
-        style={{
-          display: 'flex',
-          gap: space['1'],
-          marginBottom: space['4'],
-          borderBottom: `1px solid ${c.border}`,
-        }}
-      >
-        <TabButton active={tab === 'videos'} onClick={() => setTab('videos')}>
+      <Tabs label="Library sections">
+        <Tab active={tab === 'videos'} onClick={() => setTab('videos')}>
           Sources
-        </TabButton>
-        <TabButton active={tab === 'channels'} onClick={() => setTab('channels')}>
+        </Tab>
+        <Tab active={tab === 'channels'} onClick={() => setTab('channels')}>
           Channels
-        </TabButton>
-        <TabButton active={tab === 'ingest'} onClick={() => setTab('ingest')}>
+        </Tab>
+        <Tab active={tab === 'ingest'} onClick={() => setTab('ingest')}>
           Add sources
-        </TabButton>
-      </div>
+        </Tab>
+      </Tabs>
 
       {tab === 'ingest' ? (
         <IngestTab onViewShelf={handleViewShelf} />
@@ -361,41 +354,6 @@ export function LibraryPage() {
         </>
       )}
     </div>
-  );
-}
-
-function TabButton({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  const c = useColors();
-  return (
-    <button
-      type="button"
-      role="tab"
-      aria-selected={active}
-      onClick={onClick}
-      style={{
-        background: 'transparent',
-        color: active ? c.accent : c.textSecondary,
-        border: 'none',
-        borderBottom: `2px solid ${active ? c.accent : 'transparent'}`,
-        padding: `${space['2']} ${space['4']}`,
-        marginBottom: -1,
-        cursor: 'pointer',
-        fontFamily: fonts.ui,
-        fontWeight: active ? fontWeight.semibold : fontWeight.medium,
-        fontSize: fontSize.sm,
-        letterSpacing: '0.02em',
-      }}
-    >
-      {children}
-    </button>
   );
 }
 

@@ -9,9 +9,10 @@ import { Spinner } from '../primitives';
  * wizard, goes to `/welcome`; everyone else to `/submit`. If the state cannot
  * be read the app must still open, so an error falls through to `/submit`.
  *
- * Every way of signing in ends here (T-3.7.6.1), so this is where a share made
- * while signed out is picked up. A second redirect beside this one would race
- * it: the share page lost to `/submit` when both fired.
+ * A sign-in with no page to go back to ends here (T-5.4.20), so this is where a
+ * share made while signed out is picked up (T-3.7.6.1). A share that opened the
+ * app on the share page goes back there by itself. A second redirect beside
+ * this one would race it: the share page lost to `/submit` when both fired.
  */
 export function OnboardingGate() {
   const { data, isError, isLoading } = useOnboarding();

@@ -798,3 +798,134 @@ def test_a_silent_video_charges_what_whisper_heard_through_the_real_connector(
 
     assert silent_youtube.asked == [True, next_allowed]
     assert whisper_api.sent == (2 if next_allowed else 1)
+
+
+# ---------------------------------------------------------------------------
+# T-1.7.1.8: an episode Whisper answered with words and no segments
+#
+# The podcast single-file path dropped such an answer, and since #430 charged
+# it as empty, so the episode was paid for and its words lost. It is now kept
+# as pseudo-segments (YouTube's helper), an ordinary transcription: read,
+# charged once to the count and by what Whisper heard to the minute cap, and
+# never also as empty. Through the real connector, with the OpenAI client as
+# the only fake (`whisper_api`), so no request leaves.
+#
+# Mutation check: take the pseudo-segment fallback out of
+# `_whisper_transcribe_audio` and each episode reads unavailable: the run
+# fails and the status assertions below fail with it.
+# ---------------------------------------------------------------------------
+
+
+def test_a_text_only_episode_is_read_and_counts_once(db, tasks, whisper_api, monkeypatch):  # noqa: F811
+    """Two recordings allowed and three episodes: the first two are read and
+    the third waits. Charged twice each (as read and as empty), the second
+    would have waited too."""
+    monkeypatch.setattr(settings, "WHISPER_MAX_PER_JOB", 2)
+    _single_episodes(monkeypatch, whisper_api, episodes=3)
+    whisper_api.text_only = True
+    job_id = _approved(db, [None, None, None])
+
+    _resume(job_id)
+
+    assert whisper_api.sent == 2
+    db.expire_all()
+    assert db.get(Job, job_id).status == "completed"
+    docs = db.query(Document).order_by(Document.source_id).all()
+    assert [d.transcript_status for d in docs] == ["fetched", "fetched", "unavailable"]
+    assert [d.transcript_source for d in docs[:2]] == ["podcast_whisper", "podcast_whisper"]
+    assert docs[0].transcript_word_count == 60, "the words Whisper sent are kept: 300 s, a word every 5 s"
+
+
+@pytest.mark.parametrize("cap_minutes, requests", [(5, 1), (6, 2)])
+def test_a_text_only_episode_counts_what_whisper_heard_against_the_minute_cap(
+    db, tasks, whisper_api, monkeypatch, cap_minutes, requests  # noqa: F811
+):
+    """300 s heard: its pseudo-segments end there, so a 5-minute cap is spent
+    by the first episode and a 6-minute one is not."""
+    monkeypatch.setattr(settings, "WHISPER_MAX_MINUTES_PER_JOB", cap_minutes)
+    monkeypatch.setattr(settings, "WHISPER_MAX_PER_JOB", 50)
+    _single_episodes(monkeypatch, whisper_api)
+    whisper_api.text_only = True
+    job_id = _approved(db, [None, None])
+
+    _resume(job_id)
+
+    assert whisper_api.sent == requests
+    db.expire_all()
+    statuses = [d.transcript_status for d in db.query(Document).order_by(Document.source_id)]
+    assert statuses[0] == "fetched"
+
+
+@pytest.mark.parametrize("cap_minutes, requests", [(5, 1), (6, 2)])
+def test_sparse_text_counts_all_whisper_heard_when_the_feed_declares_no_length(
+    db, tasks, whisper_api, monkeypatch, cap_minutes, requests  # noqa: F811
+):
+    """Three words in 300 s, in a feed with no ``itunes:duration``. The helper
+    gives a pseudo-segment only to a 30 s slot with a word, so the third ends
+    at 90 s; the cap counted that (1.5 minutes) and let a 5-minute cap send
+    the next episode. The timeline now ends where Whisper stopped, and the
+    episode counts the 300 s it was billed for.
+
+    Mutation check: take ``_end_where_whisper_stopped`` out of the connector
+    and the 5-minute case sends two episodes and counts 90 s."""
+    monkeypatch.setattr(settings, "WHISPER_MAX_MINUTES_PER_JOB", cap_minutes)
+    monkeypatch.setattr(settings, "WHISPER_MAX_PER_JOB", 50)
+    _single_episodes(monkeypatch, whisper_api)
+    whisper_api.text_only = True
+    whisper_api.text_words = 3
+    counted: list[float] = []
+    real_charge = job_tasks.WhisperMinutes.charge
+
+    def charge(self, document, extracted):
+        before = self.used_seconds
+        real_charge(self, document, extracted)
+        counted.append(self.used_seconds - before)
+
+    monkeypatch.setattr(job_tasks.WhisperMinutes, "charge", charge)
+    job_id = _approved(db, [None, None])
+
+    _resume(job_id)
+
+    assert whisper_api.sent == requests
+    assert counted == [300.0] * requests
+    db.expire_all()
+    first = db.query(Document).order_by(Document.source_id).first()
+    assert first.transcript_status == "fetched" and first.transcript_word_count == 3, "every word is kept"
+
+
+def test_a_text_only_episode_is_never_also_charged_as_empty(db, tasks, whisper_api, monkeypatch):  # noqa: F811
+    """The one connector answer is the transcript: ``_fetch_text`` sees no
+    ``PaidTranscriptionLost``, so ``charge_part`` is never called."""
+    _single_episodes(monkeypatch, whisper_api)
+    whisper_api.text_only = True
+    parts: list[float] = []
+    charged: list[float] = []
+    real_charge = job_tasks.WhisperMinutes.charge
+    monkeypatch.setattr(job_tasks.WhisperMinutes, "charge_part", lambda self, seconds: parts.append(seconds))
+
+    def charge(self, document, extracted):
+        charged.append(document.source_id)
+        real_charge(self, document, extracted)
+
+    monkeypatch.setattr(job_tasks.WhisperMinutes, "charge", charge)
+    job_id = _approved(db, [None, None])
+
+    _resume(job_id)
+
+    assert charged == ["podcast:ep-0", "podcast:ep-1"]
+    assert parts == []
+
+
+def test_an_episode_with_no_words_at_all_is_still_charged_as_empty(db, tasks, whisper_api, monkeypatch):  # noqa: F811
+    """T-1.7.1.7 unchanged beside it: no text at all stays TranscriptionEmpty."""
+    _single_episodes(monkeypatch, whisper_api)
+    whisper_api.silent = True
+    parts: list[float] = []
+    monkeypatch.setattr(job_tasks.WhisperMinutes, "charge_part", lambda self, seconds: parts.append(seconds))
+    job_id = _approved(db, [None, None])
+
+    _resume(job_id)
+
+    assert parts == [300.0, 300.0]
+    db.expire_all()
+    assert [d.transcript_status for d in db.query(Document)] == ["unavailable", "unavailable"]

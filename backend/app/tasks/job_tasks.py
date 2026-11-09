@@ -28,6 +28,7 @@ from app.services import (
 )
 from app.services.quota_service import QuotaExceededError as YouTubeQuotaExceededError
 from app.sources import connector_for
+from app.sources.paste_url.platform_metadata import to_utc_post_date
 from app.sources.types import DEFAULT_AUDIO_LANGUAGE, Candidate, ExtractedText, SourceMetadata
 from app.tasks.celery_app import celery_app
 from app.utils.chunking import chunk_transcript
@@ -269,6 +270,7 @@ def _upsert_candidate_and_link(
     *,
     classification: dict | None = None,
     extracted_text=None,
+    newly_dated: list[Document] | None = None,
 ) -> Document | None:
     """Insert/refresh a global Document from a connector ``Candidate`` and
     create the JobVideo (job_documents) link.
@@ -297,6 +299,10 @@ def _upsert_candidate_and_link(
             ``transcript_status='fetched'``, ``transcript_word_count``,
             ``transcript_language``, and ``transcript_source`` so the
             downstream chunk pipeline can be uniform across source types.
+        newly_dated: when given, an existing row that is already embedded
+            and that this call dated is appended to it. Its stored chunks
+            still lack the date, and no later step re-inserts them, so the
+            caller stamps them once its commit has kept the date.
 
     Returns:
         The persisted ``Document`` (existing or newly added). ``None``
@@ -363,6 +369,11 @@ def _upsert_candidate_and_link(
             existing.transcript_word_count = extracted_text.word_count
             existing.transcript_language = extracted_text.language
             existing.transcript_source = extracted_text.text_source
+        # A gap only: the row is shared, and a date it has stays (D-144's
+        # "a job fills gaps"). The Candidate's date first, then the page's.
+        dated = _fill_published_at(existing, extracted_text, candidate_date=candidate.published_at)
+        if dated and newly_dated is not None and getattr(existing, "embedded_in_chroma", False):
+            newly_dated.append(existing)
         document = existing
     else:
         # New row. video_id stays NULL for non-video sources; for
@@ -395,6 +406,8 @@ def _upsert_candidate_and_link(
                 extracted_text.text_source if extracted_text is not None else None
             ),
         )
+        # T-1.6.7: a Brave result has no date of its own; its page may.
+        _fill_published_at(document, extracted_text)
         db.add(document)
 
     # Create the JobVideo link with the canonical document_id.
@@ -413,6 +426,40 @@ def _upsert_candidate_and_link(
         )
 
     return document
+
+
+def _fill_published_at(document: Document, extracted, *, candidate_date: datetime | None = None) -> bool:
+    """Date a document that has no ``published_at`` yet (T-1.6.7). True when
+    this call set the date.
+
+    The order is the Candidate's date, then the date its own page states,
+    which the paste-URL connectors (articles among them) put in
+    ``extra["extracted_published_at"]`` (T-1.5.8.4). An article Brave found
+    has no Candidate date, so its page was the only place one could come
+    from, and ``job_tasks`` never looked. A date the row already has is never
+    replaced, so a page's date never goes over a Candidate's.
+
+    The page's date is kept as D-072 and D-154 set it: timezone-aware UTC, and
+    unknown (None, never a placeholder) when it is missing, not a datetime, or
+    before 1995 or after tomorrow. The chunk fields (``published_ts``,
+    ``published_year``) and the corpus statistics read the column, so they
+    follow, as they do for a Candidate's date. Chunks built after this call
+    carry it; chunks already stored do not, which is why a caller that dates
+    an embedded row stamps them (``_stamp_dates_on_embedded_chunks``).
+    """
+    if document.published_at is not None:
+        return False
+    if candidate_date is not None:
+        document.published_at = candidate_date
+        return True
+    extra = getattr(extracted, "extra", None) if extracted is not None else None
+    if not isinstance(extra, dict):
+        return False
+    page_date = to_utc_post_date(extra.get("extracted_published_at"))
+    if page_date is None:
+        return False
+    document.published_at = page_date
+    return True
 
 
 def _resolve_source_types(job: Job) -> list[str]:
@@ -640,6 +687,8 @@ def _store_non_video_candidates(db, job: Job, result, limits: dict[str, int]) ->
     from app.sources.registry import connector_for
 
     stored = 0
+    # Library rows already embedded that this search dated (T-1.6.7).
+    newly_dated: list[Document] = []
     searched = result.candidates_by_source_type
     for st, candidates in searched.items():
         if not candidates:
@@ -671,6 +720,7 @@ def _store_non_video_candidates(db, job: Job, result, limits: dict[str, int]) ->
                     cand,
                     classification=classification,
                     extracted_text=extracted,
+                    newly_dated=newly_dated,
                 )
                 if document is not None:
                     _cache_document_text(db, document, extracted)
@@ -684,6 +734,12 @@ def _store_non_video_candidates(db, job: Job, result, limits: dict[str, int]) ->
                 )
 
     db.commit()
+    # A row already in the library is re-fetched here, so it can be dated
+    # now, but the resume reuses its stored chunks without re-inserting them:
+    # without this they keep no date while the row and the statistics have
+    # one. After the commit, so a chunk never holds a date its row lost.
+    for document in newly_dated:
+        _stamp_dates_on_embedded_chunks(document, job.id, "publish date")
     logger.info(
         "[job:%s] Non-video dispatch persisted %d candidates across %d source types",
         job.id,
@@ -997,17 +1053,26 @@ def _ensure_era(db, video: Document, segments: list[dict], job_id: str) -> None:
 def _stamp_era_on_embedded_chunks(video: Document, job_id: str) -> None:
     """Metadata-only update of an embedded document's chunks. Fail-soft: the
     era is on the document, and the backfill script reaches the chunks later."""
+    _stamp_dates_on_embedded_chunks(video, job_id, "era")
+
+
+def _stamp_dates_on_embedded_chunks(video: Document, job_id: str, what: str) -> None:
+    """Bring an embedded document's stored chunks up to its dates: the era and
+    the publish date (``published_ts``, ``published_year``, ``published_at``),
+    metadata only, no re-embed. ``what`` names the date that changed, for the
+    log. Fail-soft: the date is on the document, and the backfill script
+    (``backfill_chunk_temporal_fields.py``) reaches the chunks later."""
     if not getattr(video, "embedded_in_chroma", False):
         return
     try:
         updated = metadata_backfill_service.stamp_chunk_temporal_fields(video)
         logger.info(
-            f"[job:{job_id}] Era stamped on {updated} stored chunks of "
+            f"[job:{job_id}] The {what} stamped on {updated} stored chunks of "
             f"document_id={video.document_id}"
         )
     except Exception:
         logger.exception(
-            f"[job:{job_id}] Could not stamp the era on the stored chunks of "
+            f"[job:{job_id}] Could not stamp the {what} on the stored chunks of "
             f"document_id={video.document_id}; the backfill script will"
         )
 
@@ -1225,6 +1290,29 @@ def _is_cancelled(db, job_id: str) -> bool:
     return job is not None and job.status == "cancelled"
 
 
+def _already_failed(job: Job, task: str) -> bool:
+    """Is this run already failed, so a delivered task must leave it alone?
+
+    T-5.2.18: a dispatch can raise after the broker took the message (the
+    publish went out, the reply was lost). The route then fails the row,
+    ``POST /jobs`` and ``_dispatch_subscription_sync`` alike, and tells the
+    user it never started; the worker would still get the message. Each entry
+    point reads the row first and returns, before the usage scope opens and
+    before any write or publish, so the run stays failed in the words the
+    route wrote and charges nothing.
+
+    Nothing runs a failed job again on purpose: no route retries one in place
+    (a new run is a new row), the scheduler queues no job tasks, and the tasks
+    never call ``self.retry``. A redelivery after a worker died mid-run
+    (``task_acks_late``) finds the row in the state that worker left, never
+    failed, so it still runs. Cancelled is not read here (unchanged).
+    """
+    if job.status != "failed":
+        return False
+    logger.info("[job:%s] %s delivered for a failed run; leaving it failed", job.id, task)
+    return True
+
+
 @celery_app.task(bind=True, max_retries=2, default_retry_delay=60)
 def execute_topic_job(self, job_id: str) -> None:
     """Orchestrates topic-based job Phase 1: search for videos."""
@@ -1236,6 +1324,8 @@ def execute_topic_job(self, job_id: str) -> None:
         job = _get_job(db, job_id)
         if not job:
             logger.warning(f"[job:{job_id}] Job not found in DB, aborting")
+            return
+        if _already_failed(job, "execute_topic_job"):
             return
         meter.enter_context(usage_service.metered(db, job.tenant_id))
 
@@ -1477,6 +1567,8 @@ def execute_channel_job(self, job_id: str) -> None:
         if not job:
             logger.warning(f"[job:{job_id}] Job not found in DB, aborting")
             return
+        if _already_failed(job, "execute_channel_job"):
+            return
         meter.enter_context(usage_service.metered(db, job.tenant_id))
 
         channel_list = json.loads(job.channel_list) if job.channel_list else []
@@ -1599,6 +1691,8 @@ def resume_job_after_approval(self, job_id: str) -> None:
         job = _get_job(db, job_id)
         if not job:
             logger.warning(f"[job:{job_id}] Job not found in DB, aborting")
+            return
+        if _already_failed(job, "resume_job_after_approval"):
             return
         meter.enter_context(usage_service.metered(db, job.tenant_id))
 
@@ -1790,6 +1884,9 @@ def resume_job_after_approval(self, job_id: str) -> None:
                     if hasattr(video, "transcript_source"):
                         video.transcript_source = extracted.text_source
                     _record_caption_track(video, extracted)
+                    # T-1.6.7: before the chunks are built, so they carry it.
+                    # The row's Candidate date, if it had one, is already set.
+                    _fill_published_at(video, extracted)
 
                     language_profile = language_mix_service.ensure(video, transcript)
                     _ensure_era(db, video, transcript, job_id)
@@ -2319,6 +2416,8 @@ def execute_subscription_job(self, job_id: str) -> None:
         job = _get_job(db, job_id)
         if not job:
             logger.warning(f"[job:{job_id}] Job not found in DB, aborting")
+            return
+        if _already_failed(job, "execute_subscription_job"):
             return
         meter.enter_context(usage_service.metered(db, job.tenant_id))
 

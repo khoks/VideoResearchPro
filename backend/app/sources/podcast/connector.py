@@ -429,11 +429,53 @@ def _whisper_transcribe_audio(
             elif isinstance(s, dict):
                 normalised.append(s)
         segments = podcast_flatten.whisper_segments_to_canonical(normalised)
+        heard = youtube_service._whisper_duration(response)
+        if not segments:
+            # T-1.7.1.8: words with no `segments`, which YouTube's path has
+            # always kept as pseudo-segments spread over what Whisper heard.
+            # The same helper, so the episode is an ordinary transcription,
+            # charged once by the job like any other.
+            segments = _end_where_whisper_stopped(
+                youtube_service._synthesize_pseudo_segments(_whisper_text(response), heard), heard
+            )
+            if segments:
+                logger.info(
+                    "%s Whisper returned text with no segments for %s: %d pseudo-segments",
+                    tag,
+                    label,
+                    len(segments),
+                )
         if not segments:
             # Answered and billed, with no words (T-1.7.1.7): up to the job,
             # whose Whisper limits count it as they count a cut-short one.
-            raise TranscriptionEmpty(youtube_service._whisper_duration(response))
+            raise TranscriptionEmpty(heard)
         return segments
+
+
+def _whisper_text(response: Any) -> str:
+    """The whole-text field of a verbose_json answer, by attribute (the SDK's
+    model) or by key (an older SDK's dict); "" when there is none."""
+    text = response.get("text") if isinstance(response, dict) else getattr(response, "text", None)
+    return text.strip() if isinstance(text, str) else ""
+
+
+def _end_where_whisper_stopped(segments: list[dict], heard: float) -> list[dict]:
+    """Stretch the last pseudo-segment so the timeline ends at ``heard``.
+
+    ``_synthesize_pseudo_segments`` gives a segment only to a 30 s slot that
+    gets a word, so sparse speech (ten words in an hour of music) ends its
+    segments after about 30 s per word (300 s). The minute cap charges an
+    episode by where its transcript ends when the feed declares no length
+    (``WhisperMinutes.charge``), and Whisper billed every second it heard, so
+    the timeline must reach that far. Every start stays as the helper set it;
+    only the last segment's duration grows, over audio that held no words.
+    """
+    if segments and heard > 0:
+        last = segments[-1]
+        start = float(last.get("start") or 0.0)
+        if start + float(last.get("duration") or 0.0) < heard:
+            last["duration"] = round(heard - start, 3)
+    return segments
 
 
 class PodcastConnector(BaseConnector):

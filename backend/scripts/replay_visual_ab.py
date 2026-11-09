@@ -58,7 +58,11 @@ from app.models.job import Job  # noqa: E402
 from app.models.job_video import JobVideo  # noqa: E402
 from app.services.visual_service import annotate_segments  # noqa: E402
 from app.tasks.job_tasks import _build_video_metadata, _load_cached_segments  # noqa: E402
+from app.utils import tiktoken_cache  # noqa: E402
 from app.utils.chunking import chunk_transcript  # noqa: E402
+
+# T-8.8.6.6: the encoding in TIKTOKEN_ENCODINGS_DIR, as the API and the worker keep it.
+tiktoken_cache.use_app_folder(settings.TIKTOKEN_ENCODINGS_DIR)
 
 MARKER = "[VISUAL @"
 

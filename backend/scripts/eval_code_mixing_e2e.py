@@ -111,7 +111,12 @@ def main() -> None:
     args = ap.parse_args()
     load_env(args.env_file)
 
+    from app.config import settings
+    from app.utils import tiktoken_cache
     from app.utils.chunking import chunk_transcript
+
+    # T-8.8.6.6: the encoding in TIKTOKEN_ENCODINGS_DIR, as the API and the worker keep it.
+    tiktoken_cache.use_app_folder(settings.TIKTOKEN_ENCODINGS_DIR)
 
     sources = []
     db = sqlite3.connect(args.db)

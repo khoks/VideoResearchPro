@@ -10,7 +10,8 @@ without a word said, so there is none: the file is kept where nothing clears it.
 
 ``use_app_folder`` points tiktoken at ``TIKTOKEN_ENCODINGS_DIR``
 (``./data/tiktoken``, beside the app's other data). The API and the worker call
-it while they import, before anything counts a token:
+it while they import, before anything counts a token, and each script in
+``backend/scripts`` that counts tokens calls it before it does (T-8.8.6.6):
 
 * ``TIKTOKEN_CACHE_DIR`` or ``DATA_GYM_CACHE_DIR`` already in the environment,
   set to anything: left alone. That is how the test suite keeps its own folder

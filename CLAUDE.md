@@ -495,7 +495,7 @@ Copy `.env.example` to `backend/.env` and fill in required keys. The repository 
 | `CHROMA_NOTES_COLLECTION_NAME` | No | `notes_global` | The asker's own notes, one vector per live note, tenant-filtered (S-8.5.2) |
 | `CHROMA_SHARES_COLLECTION_NAME` / `CHROMA_PERSONAL_CONTEXT_COLLECTION_NAME` | No | `shares_global` / `personal_context_global` | Echo's private collections (tenant-filtered). The full Echo delete sweeps both |
 | `CHUNK_SIZE` / `CHUNK_OVERLAP` | No | `256` / `32` | RAG chunk size and overlap, in tokens |
-| `TIKTOKEN_ENCODINGS_DIR` | No | `./data/tiktoken` | Where the API and the worker keep tiktoken's encoding (`cl100k_base`, 1.7 MB), which every token count and so every chunking reads (T-8.8.6.5). Downloaded on the first count of a fresh install; an earlier copy in the temp folder is copied over. A `TIKTOKEN_CACHE_DIR` or `DATA_GYM_CACHE_DIR` in the environment wins, which is how the test suite keeps its own. Empty: tiktoken's temp folder, as before |
+| `TIKTOKEN_ENCODINGS_DIR` | No | `./data/tiktoken` | Where the API, the worker and the scripts that count tokens keep tiktoken's encoding (`cl100k_base`, 1.7 MB), which every token count and so every chunking reads (T-8.8.6.5, T-8.8.6.6). Downloaded on the first count of a fresh install; an earlier copy in the temp folder is copied over. A `TIKTOKEN_CACHE_DIR` or `DATA_GYM_CACHE_DIR` in the environment wins, which is how the test suite keeps its own. Empty: tiktoken's temp folder, as before |
 | `RAG_TOP_K` | No | `15` | Number of RAG results per query |
 | `RAG_DISTANCE_THRESHOLD` | No | `0.6` | Relevance cut on the raw distance, applied before any D-068 re-rank |
 | `EMBEDDING_MODEL_NAME` | No | `paraphrase-multilingual-MiniLM-L12-v2` | SentenceTransformer model |

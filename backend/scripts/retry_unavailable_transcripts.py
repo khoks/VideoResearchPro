@@ -50,7 +50,11 @@ from app.tasks.job_tasks import (  # noqa: E402
     _known_audio_language,
     _record_caption_track,
 )
+from app.utils import tiktoken_cache  # noqa: E402
 from app.utils.chunking import chunk_transcript  # noqa: E402
+
+# T-8.8.6.6: the encoding in TIKTOKEN_ENCODINGS_DIR, as the API and the worker keep it.
+tiktoken_cache.use_app_folder(settings.TIKTOKEN_ENCODINGS_DIR)
 
 
 def main(argv: list[str] | None = None) -> int:

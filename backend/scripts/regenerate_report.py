@@ -51,8 +51,12 @@ def main() -> int:
         _load_cached_segments,
         _persist_report_intermediates,
     )
+    from app.utils import tiktoken_cache
     from app.utils.chunking import chunk_transcript
     from app.utils.html_builder import build_report_html, save_report
+
+    # T-8.8.6.6: the encoding in TIKTOKEN_ENCODINGS_DIR, as the API and the worker keep it.
+    tiktoken_cache.use_app_folder(settings.TIKTOKEN_ENCODINGS_DIR)
 
     db = SessionLocal()
     try:

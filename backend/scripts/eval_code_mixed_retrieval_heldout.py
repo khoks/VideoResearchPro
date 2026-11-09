@@ -48,9 +48,14 @@ def main() -> None:
 
     import numpy as np
 
+    from app.config import settings
     from app.services import chroma_service
     from app.services import code_mixing_service as cm
+    from app.utils import tiktoken_cache
     from app.utils.chunking import chunk_transcript
+
+    # T-8.8.6.6: the encoding in TIKTOKEN_ENCODINGS_DIR, as the API and the worker keep it.
+    tiktoken_cache.use_app_folder(settings.TIKTOKEN_ENCODINGS_DIR)
 
     if args.cache.exists():
         pool = json.loads(args.cache.read_text(encoding="utf-8"))

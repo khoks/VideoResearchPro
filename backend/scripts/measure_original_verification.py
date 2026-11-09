@@ -33,8 +33,13 @@ for _k, _v in dotenv_values(BACKEND / ".env").items():
         os.environ[_k] = _v
 
 from app.agents import report_agent  # noqa: E402
+from app.config import settings  # noqa: E402
 from app.database import SessionLocal  # noqa: E402
 from app.services import language_service  # noqa: E402
+from app.utils import tiktoken_cache  # noqa: E402
+
+# T-8.8.6.6: the encoding in TIKTOKEN_ENCODINGS_DIR, as the API and the worker keep it.
+tiktoken_cache.use_app_folder(settings.TIKTOKEN_ENCODINGS_DIR)
 
 sys.path.insert(0, str(BACKEND / "scripts"))
 from replay_visual_ab import build_arms  # noqa: E402

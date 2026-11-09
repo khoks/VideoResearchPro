@@ -143,7 +143,10 @@ def main(argv: list[str] | None = None) -> int:
     from app.config import settings
     from app.database import SessionLocal
     from app.models.job import Job
+    from app.utils import tiktoken_cache
 
+    # T-8.8.6.6: the encoding in TIKTOKEN_ENCODINGS_DIR, as the API and the worker keep it.
+    tiktoken_cache.use_app_folder(settings.TIKTOKEN_ENCODINGS_DIR)
     settings.REPORT_MAP_BATCH_TOKENS = args.cap
     settings.REPORT_MAP_BATCHING = args.batching
     settings.REPORT_MAP_CONCURRENCY = args.concurrency

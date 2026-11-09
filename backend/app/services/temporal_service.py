@@ -48,10 +48,9 @@ from collections.abc import Iterable
 from datetime import datetime, timezone
 from typing import Any
 
-import tiktoken
-
 from app.agents.prompts.temporal_prompts import TEMPORAL_SCOPE_PROMPT
 from app.config import settings
+from app.utils import tiktoken_cache
 
 logger = logging.getLogger(__name__)
 
@@ -98,7 +97,7 @@ def sample_transcript(segments_or_text: Any, window_tokens: int | None = None) -
 
     window = int(window_tokens or settings.TEMPORAL_SCOPE_WINDOW_TOKENS)
     try:
-        enc = tiktoken.get_encoding("cl100k_base")
+        enc = tiktoken_cache.encoding()
         tokens = enc.encode(text)
         if len(tokens) <= window * 3:
             return text

@@ -61,7 +61,7 @@ npm run build        # Production build + type check
 
 ### Tests
 ```bash
-# All backend tests (4,900+; `pytest tests/ --collect-only -q` prints the count)
+# All backend tests (5,400+; `pytest tests/ --collect-only -q` prints the count)
 cd backend && ./venv/Scripts/python -m pytest tests/ -v
 
 # Single test file
@@ -443,7 +443,7 @@ Copy `.env.example` to `backend/.env` and fill in required keys. The repository 
 | `REDIS_URL` | No | `redis://localhost:6379/0` | Redis for pub/sub |
 | `CELERY_BROKER_URL` | No | `redis://localhost:6379/1` | Celery broker |
 | `CELERY_RESULT_BACKEND` | No | `redis://localhost:6379/2` | Celery result store |
-| `APP_BASE_URL` | No | `http://localhost:5173` | Where the app is opened: the base of the links in emails (saved-search alerts) and Echo connector callbacks, and an origin OAuth sign-in may return to |
+| `APP_BASE_URL` | No | `http://localhost:5173` | Where the app is opened: the base of the links in emails (saved-search alerts) and Echo connector callbacks. Its origin is on the app's one list of origins: a page there may call the API (CORS) and OAuth sign-in may return to it (T-4.11.3.3) |
 | **YouTube** | | | |
 | `YOUTUBE_API_KEY` | Yes | (unset) | YouTube Data API v3 key |
 | `YOUTUBE_DAILY_QUOTA` | No | `10000` | The install's daily YouTube Data API units: the limit `/health/quota` reports usage against |
@@ -493,6 +493,7 @@ Copy `.env.example` to `backend/.env` and fill in required keys. The repository 
 | `CHROMA_NOTES_COLLECTION_NAME` | No | `notes_global` | The asker's own notes, one vector per live note, tenant-filtered (S-8.5.2) |
 | `CHROMA_SHARES_COLLECTION_NAME` / `CHROMA_PERSONAL_CONTEXT_COLLECTION_NAME` | No | `shares_global` / `personal_context_global` | Echo's private collections (tenant-filtered). The full Echo delete sweeps both |
 | `CHUNK_SIZE` / `CHUNK_OVERLAP` | No | `256` / `32` | RAG chunk size and overlap, in tokens |
+| `TIKTOKEN_ENCODINGS_DIR` | No | `./data/tiktoken` | Where the API and the worker keep tiktoken's encoding (`cl100k_base`, 1.7 MB), which every token count and so every chunking reads (T-8.8.6.5). Downloaded on the first count of a fresh install; an earlier copy in the temp folder is copied over. A `TIKTOKEN_CACHE_DIR` or `DATA_GYM_CACHE_DIR` in the environment wins, which is how the test suite keeps its own. Empty: tiktoken's temp folder, as before |
 | `RAG_TOP_K` | No | `15` | Number of RAG results per query |
 | `RAG_DISTANCE_THRESHOLD` | No | `0.6` | Relevance cut on the raw distance, applied before any D-068 re-rank |
 | `EMBEDDING_MODEL_NAME` | No | `paraphrase-multilingual-MiniLM-L12-v2` | SentenceTransformer model |
@@ -620,7 +621,7 @@ Copy `.env.example` to `backend/.env` and fill in required keys. The repository 
 | **OAuth** | | | |
 | `OAUTH_GOOGLE_CLIENT_ID` / `OAUTH_GOOGLE_CLIENT_SECRET` | No | (unset) / (unset) | Google OAuth 2.0 + PKCE. Both must be set; endpoint returns 503 when unconfigured. |
 | `OAUTH_GITHUB_CLIENT_ID` / `OAUTH_GITHUB_CLIENT_SECRET` | No | (unset) / (unset) | GitHub OAuth 2.0 + PKCE. |
-| `OAUTH_ALLOWED_REDIRECT_ORIGINS` | No | (empty) | Origins `GET /auth/oauth/{provider}/start` accepts a `redirect_uri` on, comma-separated, beside the origin of `APP_BASE_URL` (T-4.11.2.4). Each is `scheme://host[:port]`, with no wildcards, and anything else is a 400 with nothing stored. `localhost` and `127.0.0.1` are different origins |
+| `OAUTH_ALLOWED_REDIRECT_ORIGINS` | No | (empty) | The addresses the app is opened at beside `APP_BASE_URL`'s origin, comma-separated, each `scheme://host[:port]`. **Despite the name, CORS reads it too** (T-4.11.3.3): a page on one of these origins may call the API, and `GET /auth/oauth/{provider}/start` accepts a `redirect_uri` on it (T-4.11.2.4; anything else is a 400 with nothing stored). A wildcard is refused, logged and skipped, since the API allows credentials. `localhost` and `127.0.0.1` are different origins. The name stays because a rename would break a pinned `.env` |
 | `OAUTH_GITHUB_CONNECTOR_CLIENT_ID` / `OAUTH_GITHUB_CONNECTOR_CLIENT_SECRET` | No | (unset) / (unset) | Echo's GitHub connector (S-3.2.4). Unset, it uses the sign-in app above, whose callback URL must then cover both redirects (register the frontend origin) |
 | `OAUTH_GOOGLE_CONNECTOR_CLIENT_ID` / `OAUTH_GOOGLE_CONNECTOR_CLIENT_SECRET` | No | (unset) / (unset) | Reserved for the Google connectors (S-3.2.2, S-3.2.5), on their own client so a scope review never touches Google sign-in. Not read by any code yet |
 | **Rate limiting (E-5.5)** | | | |

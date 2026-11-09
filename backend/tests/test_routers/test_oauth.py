@@ -15,6 +15,7 @@ from app.models.audit_log import AuditLog
 from app.models.oauth import OAuthIdentity, OAuthState
 from app.models.user import User
 from app.services import auth_service, oauth_service
+from app.utils import app_origins
 
 
 @pytest.fixture(autouse=True)
@@ -215,8 +216,11 @@ def test_a_list_of_origins_reads_loosely(unauthenticated_client, monkeypatch):
 
 
 def test_a_bad_entry_is_logged_and_only_ever_allows_less(unauthenticated_client, monkeypatch):
+    # The list and its warnings live in app_origins since CORS reads it too
+    # (T-4.11.3.3); the parse is cached by value, so start from an empty cache.
     log = MagicMock()
-    monkeypatch.setattr(oauth_service, "logger", log)
+    monkeypatch.setattr(app_origins, "logger", log)
+    app_origins._parse.cache_clear()
     monkeypatch.setattr(settings, "OAUTH_ALLOWED_REDIRECT_ORIGINS", "not an origin, https://one.example")
     assert _start(unauthenticated_client, "https://one.example/cb").status_code == 200
     log.warning.assert_called_once()

@@ -153,6 +153,24 @@ The endpoint spawns the restart script as a detached child, returns `202`, then 
 
 ---
 
+## The address the app is opened at
+
+The API answers a browser only on the pages it knows, and Google or GitHub sign-in returns only to them. Both read one list: the origin of `APP_BASE_URL` (default `http://localhost:5173`, where `npm run dev` serves) plus `OAUTH_ALLOWED_REDIRECT_ORIGINS`, comma-separated, in `backend/.env`. Origins are compared by scheme, host and port.
+
+```bash
+APP_BASE_URL=https://research.example.org
+OAUTH_ALLOWED_REDIRECT_ORIGINS=http://192.168.1.20:5173,http://127.0.0.1:5173
+```
+
+- **A page opened at any other address** cannot call the API: each call fails in the browser as a CORS error. Google and GitHub sign-in answer 400 there too. Set `APP_BASE_URL` to the address, or add it to the list. A page that reaches the API through the Vite proxy (`VITE_API_BASE_URL=/api/v1`) calls its own origin, so CORS does not stop it, but sign-in still needs the origin listed.
+- `localhost` and `127.0.0.1` are different origins, and so are two ports on one host.
+- **No wildcard.** An entry with `*` is logged and skipped: the API allows credentials, and a wildcard would let every site's pages call it.
+- `OAUTH_ALLOWED_REDIRECT_ORIGINS` is older than its CORS role. It keeps its name so a `.env` that sets it keeps working.
+- `http://localhost:3000` is no longer allowed by default. It sat in a list written into the code, and nothing serves the app there.
+- At startup the API logs the list it uses: `App origins (CORS and OAuth sign-in): ...`.
+
+---
+
 ## Running behind a reverse proxy
 
 Behind nginx, Caddy, a load balancer or a CDN, tell the app which proxies it can believe. Every request reaches the API from the proxy, so the real caller is only in `X-Forwarded-For`, and anyone can write that header. Set `TRUSTED_PROXY_IPS` in `backend/.env` to the proxies' addresses, as comma-separated IPs or CIDRs:
@@ -267,7 +285,7 @@ Pratidhvani/
 │   │   ├── tasks/               # Celery task definitions
 │   │   ├── websocket/           # WebSocket connection manager
 │   │   └── utils/               # Chunking, HTML builder, YouTube helpers
-│   ├── tests/                   # 4,900+ pytest tests
+│   ├── tests/                   # 5,400+ pytest tests
 │   ├── alembic/                 # Migrations
 │   ├── scripts/                 # stress_test_llm, etc.
 │   └── requirements*.txt

@@ -488,7 +488,9 @@ class Settings(BaseSettings):
     # always asks.
     SAVED_SEARCH_GATE_ENABLED: bool = True
 
-    # Links in emails (saved-search alerts) point here.
+    # Where the app is opened. Links in emails (saved-search alerts) and Echo
+    # connector callbacks point here, and its origin is on the list CORS and
+    # OAuth sign-in read (T-4.11.3.3, with OAUTH_ALLOWED_REDIRECT_ORIGINS).
     APP_BASE_URL: str = "http://localhost:5173"
 
     # T-8.3.3.8: publish each new notification on Redis
@@ -749,6 +751,11 @@ class Settings(BaseSettings):
     # RAG
     CHUNK_SIZE: int = 256
     CHUNK_OVERLAP: int = 32
+    # T-8.8.6.5: where tiktoken keeps its encoding (cl100k_base, about 1.7 MB)
+    # in the API and the worker, instead of the temp folder a cleanup empties.
+    # A TIKTOKEN_CACHE_DIR or DATA_GYM_CACHE_DIR already in the environment
+    # wins. Empty: tiktoken's temp default. See app/utils/tiktoken_cache.py.
+    TIKTOKEN_ENCODINGS_DIR: str = "./data/tiktoken"
     RAG_TOP_K: int = 15
     RAG_DISTANCE_THRESHOLD: float = 0.6
     # S-8.5.2: notes join job and library Q&A retrieval. Off switch for the
@@ -835,10 +842,12 @@ class Settings(BaseSettings):
     OAUTH_GOOGLE_CLIENT_SECRET: str | None = None
     OAUTH_GITHUB_CLIENT_ID: str | None = None
     OAUTH_GITHUB_CLIENT_SECRET: str | None = None
-    # T-4.11.2.4: origins `GET /auth/oauth/{provider}/start` accepts a
-    # `redirect_uri` on, comma-separated, beside the origin of APP_BASE_URL,
-    # which is always accepted. Each is `scheme://host[:port]`, with no
-    # wildcards. Only an install served from more than one address needs this.
+    # T-4.11.2.4, T-4.11.3.3: the addresses the app is opened at beside
+    # APP_BASE_URL's origin, comma-separated, each `scheme://host[:port]`.
+    # Despite the name, CORS reads it too: a page on one of these origins may
+    # call the API, and Google or GitHub sign-in may return to it. A wildcard
+    # is refused. Only an install opened at more than one address needs it.
+    # Kept its name because a rename would break a pinned .env.
     OAUTH_ALLOWED_REDIRECT_ORIGINS: str = ""
 
     # T-5.4.8: SMTP delivery for password-reset / future verification emails.

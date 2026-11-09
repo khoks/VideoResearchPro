@@ -22,6 +22,8 @@
  * the reader acted, needs its hook's `meta`, so the global toast does not say it
  * again. A third holds the other side: a hook whose `meta` leaves the failure to
  * its caller's line gets no caller without one, or the failure is said nowhere.
+ * Since T-3.4.1.22 both also follow a line through a dialog's or picker's
+ * callback prop and through a mutation's `isError`.
  */
 import { AxiosError, AxiosHeaders } from 'axios';
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -246,8 +248,9 @@ describe('the guard', () => {
 // `catch` of a `try` that awaits a `mutateAsync`, or a `.mutateAsync().catch()`
 // that hands its error to a call that is not an `is…` check, or gives a setter a
 // sentence. A handler that only checks the error (`isSessionEnded(err)`) or
-// ignores it leaves the global toast to speak, as it should. Mutations passed in
-// as props, which the guard cannot follow to their hook, are not read.
+// ignores it leaves the global toast to speak, as it should. A mutation passed in
+// a callback prop, and a line read from a mutation's state, are read below
+// (T-3.4.1.22).
 //
 // Mutation checks, run on 2026-11-09: taking `meta` off `useDeleteTag`,
 // `useDeleteShelf`, `useDeleteTemplate` or `useCompleteConnector`, or dropping
@@ -328,12 +331,155 @@ function saysItOnThePage(src: string, handler: string): boolean {
   return [...body.matchAll(handedOn)].some((m) => !/^is[A-Z]/.test(m[1]));
 }
 
+// ---------------------------------------------------------------------------
+// A line reached through a prop, or read from the mutation's state
+// ---------------------------------------------------------------------------
+//
+// Two more ways a page says a failed mutation where the reader acted, which the
+// handlers above do not show (T-3.4.1.22):
+// - through a prop: a dialog or picker awaits a callback in a `try` whose
+//   `catch` says the failure (`ShelfFormModal`'s `onSubmit`, `LabelPicker`'s
+//   `onToggle`), and its caller passes a mutation in that callback;
+// - from the mutation's state: the page reads `x.isError` or `x.error` and
+//   builds a line from it (the channel page's subscribe and sync).
+// Both count as a line, for the second guard and the third alike.
+//
+// Mutation checks, run on 2026-11-09: dropping the prop reading from the second
+// guard fails its four prop cases below, and dropping the state reading its two
+// state cases and the module scan. Taking `meta` off `useApproveJob`,
+// `useCreateShelf`, `useSubscribeChannel`, `useSetChannelWeight` or `useApplyTag`,
+// or `{ inlineErrors: true }` off the wizard's start or saves, the templates
+// page's rename or the picker's remove, fails "finds no line on a page that the
+// global toast repeats". Setting `meta` for every caller of
+// `useUpdateOnboarding`, `useUpdateTemplate`, `useRemoveJobFromShelf` or
+// `useCreateJob` fails the third guard's "finds no mutation whose failure is
+// said nowhere".
+
+/** Whether `index` starts the argument of an `is…Refusal(` check, a line kept for
+ * the refusals the global toast already leaves to the page. */
+function inRefusalCheck(src: string, index: number): boolean {
+  return /\bis(?:DocumentCap|Sync)Refusal\(\s*$/.test(src.slice(Math.max(0, index - 40), index));
+}
+
+/** Each name whose failure `src` reads from its state, with where it first does. */
+function shownFromState(src: string): Map<string, number> {
+  const shown = new Map<string, number>();
+  for (const m of src.matchAll(/\b([A-Za-z_$][\w$]*)\s*\.\s*(?:isError|error)\b/g)) {
+    if (!inRefusalCheck(src, m.index!) && !shown.has(m[1])) shown.set(m[1], m.index!);
+  }
+  return shown;
+}
+
+/** Function components in `src`: name, parameter text and body. */
+function componentsIn(src: string): Array<{ name: string; params: string; body: [number, number] }> {
+  const found: Array<{ name: string; params: string; body: [number, number] }> = [];
+  for (const m of src.matchAll(/\bfunction\s+([A-Z][\w$]*)\s*\(/g)) {
+    const open = m.index! + m[0].length - 1;
+    const paramsEnd = closing(src, open);
+    const bodyOpen = src.indexOf('{', paramsEnd);
+    if (bodyOpen === -1) continue;
+    found.push({ name: m[1], params: src.slice(open, paramsEnd), body: [bodyOpen, closing(src, bodyOpen)] });
+  }
+  return found;
+}
+
+/** For each component, the callback props whose failure it says on the page: an
+ * `await onSubmit(…)` in a `try` whose `catch` says it, or an
+ * `onContinue(…).catch(…)` that does. */
+function lineProps(sources: Record<string, string>): Map<string, Set<string>> {
+  const props = new Map<string, Set<string>>();
+  for (const src of Object.values(sources)) {
+    for (const comp of componentsIn(src)) {
+      const isParam = (name: string) => new RegExp(`\\b${name.replace('$', '\\$')}\\b`).test(comp.params);
+      const names = new Set<string>();
+      const [from, to] = comp.body;
+      for (const m of src.slice(from, to).matchAll(/\btry\s*\{/g)) {
+        const open = from + m.index! + m[0].length - 1;
+        const end = closing(src, open);
+        const handler = /^\s*catch\s*(?:\(\s*([A-Za-z_$][\w$]*)[^)]*\))?\s*\{/.exec(src.slice(end));
+        if (!handler) continue;
+        const catchOpen = end + handler[0].length - 1;
+        if (!saysItOnThePage(src, `(${handler[1] ?? ''}) => ${src.slice(catchOpen, closing(src, catchOpen))}`)) continue;
+        for (const call of src.slice(open, end).matchAll(/\bawait\s+([A-Za-z_$][\w$]*)\s*\(/g)) {
+          if (isParam(call[1])) names.add(call[1]);
+        }
+      }
+      for (const call of src.slice(from, to).matchAll(/(?<![.\w$])([A-Za-z_$][\w$]*)\s*\(/g)) {
+        if (!isParam(call[1])) continue;
+        let i = closing(src, from + call.index! + call[0].length - 1);
+        for (let chained = CHAINED.exec(src.slice(i)); chained; chained = CHAINED.exec(src.slice(i))) {
+          const open = i + chained[0].length - 1;
+          const close = closing(src, open);
+          if (chained[1] === 'catch' && saysItOnThePage(src, src.slice(open + 1, close - 1))) names.add(call[1]);
+          i = close;
+        }
+      }
+      if (names.size) props.set(comp.name, new Set([...(props.get(comp.name) ?? []), ...names]));
+    }
+  }
+  return props;
+}
+
+/** The statement that defines a local function `name`, if `src` has one. */
+function localFunction(src: string, name: string): [number, number] | null {
+  const def = new RegExp(`\\b(?:const|let)\\s+${name.replace('$', '\\$')}\\s*=|\\bfunction\\s+${name.replace('$', '\\$')}\\s*\\(`).exec(src);
+  if (!def) return null;
+  let i = def.index + def[0].length;
+  if (def[0].endsWith('(')) {
+    const bodyOpen = src.indexOf('{', closing(src, i - 1));
+    return bodyOpen === -1 ? null : [def.index, closing(src, bodyOpen)];
+  }
+  while (i < src.length && src[i] !== ';') i = '({['.includes(src[i]) ? closing(src, i) : i + 1;
+  return [def.index, i];
+}
+
+/** The parts of `src` that a component's line answers for: the value of each of
+ * its line props where `src` renders it, and the local function passed as one. */
+function lineSpans(src: string, props: Map<string, Set<string>>): Array<[number, number]> {
+  const spans: Array<[number, number]> = [];
+  for (const [comp, names] of props) {
+    for (const m of src.matchAll(new RegExp(`<${comp}\\b`, 'g'))) {
+      let end = m.index! + m[0].length;
+      while (end < src.length && src[end] !== '>') end = src[end] === '{' ? closing(src, end) : end + 1;
+      for (const name of names) {
+        const attr = new RegExp(`\\b${name}\\s*=\\s*\\{`, 'g');
+        attr.lastIndex = m.index!;
+        const a = attr.exec(src);
+        if (!a || a.index > end) continue;
+        const open = a.index + a[0].length - 1;
+        const close = closing(src, open);
+        spans.push([open, close]);
+        const local = /^\{\s*([A-Za-z_$][\w$]*)\s*\}$/.exec(src.slice(open, close));
+        const body = local && localFunction(src, local[1]);
+        if (body) spans.push(body);
+      }
+    }
+  }
+  return spans;
+}
+
+/** The mutations `text` calls or hands on: `x.mutateAsync`, and both sides of
+ * `(on ? add : remove).mutateAsync`. */
+function mutationsCalledIn(text: string): string[] {
+  const names = [...text.matchAll(/\b([A-Za-z_$][\w$]*)\s*\.\s*(?:mutate|mutateAsync)\b/g)].map((m) => m[1]);
+  for (const m of text.matchAll(/\(\s*[^()?]+\?\s*([A-Za-z_$][\w$]*)\s*:\s*([A-Za-z_$][\w$]*)\s*\)\s*\.\s*(?:mutate|mutateAsync)\b/g)) {
+    names.push(m[1], m[2]);
+  }
+  return names;
+}
+
 /** Every place in `src` where a line on the page sits beside the global toast. */
-function linesTheToastRepeats(src: string, hooks: Map<string, HookMeta>): number[] {
+function linesTheToastRepeats(src: string, hooks: Map<string, HookMeta>, props = new Map<string, Set<string>>()): number[] {
   // Which mutation each name holds, and whether its `meta` is set for this caller.
   const held = mutationsIn(src, hooks);
   const repeats = (names: string[]) => names.some((n) => held.get(n)?.standsAside === false);
   const found: number[] = [];
+  // A line read from the mutation's state.
+  for (const [name, index] of shownFromState(src)) if (repeats([name])) found.push(lineOf(src, index));
+  // A line in a component the mutation reaches through a prop.
+  for (const [open, close] of lineSpans(src, props)) {
+    if (repeats(mutationsCalledIn(src.slice(open, close)))) found.push(lineOf(src, open));
+  }
   // A per-call `onError`.
   for (const m of src.matchAll(/\b([A-Za-z_$][\w$]*)\s*\.(mutate|mutateAsync)\(/g)) {
     const open = m.index! + m[0].length - 1;
@@ -383,11 +529,15 @@ function linesTheToastRepeats(src: string, hooks: Map<string, HookMeta>): number
 
 /** Every call in `src` whose failure is said nowhere: the global toast stands
  * aside for it, its hook says nothing, and the call has no line of its own. */
-function failuresSaidNowhere(src: string, hooks: Map<string, HookMeta>): number[] {
+function failuresSaidNowhere(src: string, hooks: Map<string, HookMeta>, props = new Map<string, Set<string>>()): number[] {
   const held = mutationsIn(src, hooks);
+  // A line read from the mutation's state, or in a component it reaches through
+  // a prop, says the failure as well as a handler does.
+  const fromState = shownFromState(src);
+  const spans = lineSpans(src, props);
   const silent = (name: string) => {
     const h = held.get(name);
-    return !!h && h.standsAside && !h.toasts;
+    return !!h && h.standsAside && !h.toasts && !fromState.has(name);
   };
   // The `try` blocks whose `catch` says the failure on the page.
   const caught: Array<[number, number]> = [];
@@ -403,6 +553,7 @@ function failuresSaidNowhere(src: string, hooks: Map<string, HookMeta>): number[
   const found: number[] = [];
   for (const m of src.matchAll(/\b([A-Za-z_$][\w$]*)\s*\.(mutate|mutateAsync)\(/g)) {
     if (!silent(m[1])) continue;
+    if (spans.some(([a, b]) => m.index! > a && m.index! < b)) continue;
     const open = m.index! + m[0].length - 1;
     const close = closing(src, open);
     if (onErrorValues(src.slice(open, close)).some((v) => saysItOnThePage(src, v))) continue;
@@ -433,11 +584,16 @@ const NOT_YET: Record<string, string> = {
   // dialog mid-request unmounts it, and its line with it, so the toast is the
   // only word then. What it should say then is the owner's call (T-3.4.1.18).
   'src/components/echo/QuickShare.tsx': 'waits on the owner’s ruling',
-  // The first-run step says a failed start under its button, and the global
-  // toast says it too; the same page does it for saving the channels and for the
-  // approval, through a prop and `isError`, which this guard does not follow.
-  // Found by this guard after T-3.4.1.18 was filed, and left for its own task.
-  'src/pages/WelcomePage.tsx': 'found by this guard, not yet in a task',
+  // Each builds a line from a mutation's `isError` / `error` beside the global
+  // toast. Found once the guard read lines from a mutation's state (T-3.4.1.22),
+  // after that task was filed, and left for one of their own.
+  'src/components/echo/DraftEditor.tsx': 'found by the state reading, not yet in a task',
+  'src/components/frames/VideoFramesPanel.tsx': 'found by the state reading, not yet in a task',
+  'src/components/library/PasteUrlsForm.tsx': 'found by the state reading, not yet in a task',
+  'src/components/notes/NotesPanel.tsx': 'found by the state reading, not yet in a task',
+  'src/components/savedSearches/PinQuestionButton.tsx': 'found by the state reading, not yet in a task',
+  'src/pages/NotesPage.tsx': 'found by the state reading, not yet in a task',
+  'src/pages/SavedSearchesPage.tsx': 'found by the state reading, not yet in a task',
 };
 
 /** Stand-ins for the hooks the guards read: one with no `meta`, one that sets
@@ -450,6 +606,13 @@ const HOOKS = new Map<string, HookMeta>([
   ['useEither', { when: 'option', option: 'inlineErrors', toasts: false }],
 ]);
 
+/** Stand-ins for components that say a callback's failure on the page: a form's
+ * `onSubmit` and a picker's `onToggle`. */
+const PROPS = new Map<string, Set<string>>([
+  ['Form', new Set(['onSubmit'])],
+  ['Picker', new Set(['onToggle'])],
+]);
+
 describe('the second guard', () => {
   const sources = import.meta.glob(['../../**/*.{ts,tsx}', '!**/__tests__/**', '!**/*.test.{ts,tsx}'], {
     query: '?raw',
@@ -457,21 +620,80 @@ describe('the second guard', () => {
     eager: true,
   }) as Record<string, string>;
   const hooks = mutationHooks(sources);
+  const props = lineProps(sources);
 
   it('knows how each hook sets `meta`, and whether it toasts', () => {
     expect(hooks.get('useDeleteTag')).toEqual({ when: 'always', toasts: false });
     expect(hooks.get('useCreateShare')).toEqual({ when: 'option', option: 'toastErrors', toasts: true });
     expect(hooks.get('useAskLibraryQA')).toEqual({ when: 'option', option: 'inlineErrors', toasts: false });
     expect(hooks.get('useCreateDraft')).toEqual({ when: 'always', toasts: true });
-    expect(hooks.get('useCreateShelf')).toEqual({ when: 'never', toasts: false });
+    expect(hooks.get('useCancelJob')).toEqual({ when: 'never', toasts: false });
+    // T-3.4.1.22: a hook every caller answers on the page, and one whose callers differ.
+    expect(hooks.get('useApproveJob')).toEqual({ when: 'always', toasts: false });
+    expect(hooks.get('useCreateJob')).toEqual({ when: 'option', option: 'inlineErrors', toasts: false });
   });
 
   it('finds no line on a page that the global toast repeats, but those known and not yet changed', () => {
     const offenders = Object.entries(sources)
-      .map(([file, src]) => [file.replace('../../', 'src/'), linesTheToastRepeats(src, hooks)] as const)
+      .map(([file, src]) => [file.replace('../../', 'src/'), linesTheToastRepeats(src, hooks, props)] as const)
       .filter(([, lines]) => lines.length > 0)
       .map(([file]) => file);
     expect(offenders.sort()).toEqual(Object.keys(NOT_YET).sort());
+  });
+
+  it('reads the callbacks a dialog or picker says the failure of (T-3.4.1.22)', () => {
+    expect(props.get('ShelfFormModal')).toEqual(new Set(['onSubmit']));
+    expect(props.get('SaveTemplateModal')).toEqual(new Set(['onSubmit']));
+    expect(props.get('LabelPicker')).toEqual(new Set(['onToggle', 'onCreate']));
+    expect(props.get('VideoApprovalSection')).toEqual(new Set(['onApprove']));
+    expect(props.get('ChannelsStep')).toEqual(new Set(['onContinue']));
+    expect(props.get('FirstRunStep')).toEqual(new Set(['onStarted']));
+  });
+
+  it.each([
+    [
+      "function Form({ onSubmit, onClose }: P) {\n  const go = async () => {\n    try {\n      await onSubmit(v);\n      onClose();\n    } catch (err) {\n      setError(inlineErrorMessage(err, 'No.'));\n    }\n  };\n}",
+      'Form',
+      ['onSubmit'],
+    ],
+    [
+      "function Step({ onContinue }: P) {\n  return <Button onClick={() => onContinue(c).catch((err) => setError(inlineErrorMessage(err, 'No.')))} />;\n}",
+      'Step',
+      ['onContinue'],
+    ],
+  ])('reads a line prop in %s', (src, comp, names) => {
+    expect(lineProps({ src })).toEqual(new Map([[comp, new Set(names)]]));
+  });
+
+  it.each([
+    ['function Quiet({ onDone }: P) {\n  const go = async () => {\n    try {\n      await onDone();\n    } catch {\n      // the global toast said it\n    }\n  };\n}'],
+    ["function Local() {\n  const go = async () => {\n    try {\n      await save();\n    } catch (err) {\n      setError(inlineErrorMessage(err, 'No.'));\n    }\n  };\n}"],
+  ])('reads no line prop in %s', (src) => {
+    expect(lineProps({ src })).toEqual(new Map());
+  });
+
+  it.each([
+    // A line read from the mutation's state.
+    ["const x = useBare();\nconst line = x.isError ? apiErrorMessage(x.error, 'No.') : null;"],
+    ['const x = useBare();\nreturn <>{x.isError && <p role="alert">No.</p>}</>;'],
+    // A line in a component the mutation reaches through a prop.
+    ['const x = useBare();\nreturn <Form onSubmit={(v) => x.mutateAsync(v)} />;'],
+    ['const x = useBare();\nconst save = async (v: V) => {\n  await x.mutateAsync(v);\n  go();\n};\nreturn <Form title="New" onSubmit={save} />;'],
+    ['const add = useQuiet();\nconst remove = useBare();\nreturn <Picker onToggle={(l, on) => (on ? add : remove).mutateAsync(l)} />;'],
+    ['const x = useBare();\nreturn <VideoList onApprove={x.mutateAsync} />;'],
+  ])('catches %s', (src) => {
+    expect(linesTheToastRepeats(src, HOOKS, new Map([...PROPS, ['VideoList', new Set(['onApprove'])]]))).toHaveLength(1);
+  });
+
+  it.each([
+    ["const x = useQuiet();\nconst line = x.isError ? inlineErrorMessage(x.error, 'No.') : null;"],
+    ['const x = useBare();\nconst full = isDocumentCapRefusal(x.error);'],
+    ['const x = useQuiet();\nreturn <Form onSubmit={(v) => x.mutateAsync(v)} />;'],
+    ['const x = useEither({ inlineErrors: true });\nreturn <Picker onToggle={(l) => x.mutateAsync(l)} />;'],
+    ['const x = useBare();\nreturn <Form onClose={() => x.mutate(p)} />;'],
+    ['const x = useBare();\nreturn <Other onSubmit={(v) => x.mutateAsync(v)} />;'],
+  ])('leaves alone %s', (src) => {
+    expect(linesTheToastRepeats(src, HOOKS, PROPS)).toEqual([]);
   });
 
   it.each([
@@ -511,6 +733,7 @@ describe('the third guard', () => {
     eager: true,
   }) as Record<string, string>;
   const hooks = mutationHooks(sources);
+  const props = lineProps(sources);
 
   it('reads the hooks that leave every failure to their callers', () => {
     const silent = [...hooks].filter(([, h]) => h.when === 'always' && !h.toasts).map(([name]) => name);
@@ -521,10 +744,27 @@ describe('the third guard', () => {
 
   it('finds no mutation whose failure is said nowhere', () => {
     const offenders = Object.entries(sources)
-      .map(([file, src]) => [file.replace('../../', 'src/'), failuresSaidNowhere(src, hooks)] as const)
+      .map(([file, src]) => [file.replace('../../', 'src/'), failuresSaidNowhere(src, hooks, props)] as const)
       .filter(([, lines]) => lines.length > 0)
       .map(([file, lines]) => `${file}:${lines.join(',')}`);
     expect(offenders).toEqual([]);
+  });
+
+  it.each([
+    ['const x = useQuiet();\nreturn <Other onSubmit={(v) => x.mutateAsync(v)} />;'],
+    ['const x = useQuiet();\nreturn <Form onClose={() => x.mutate(p)} />;'],
+    ['const x = useQuiet();\nconst save = (v: V) => x.mutateAsync(v);\nreturn <Other onSubmit={save} />;'],
+  ])('catches a call no line answers for: %s', (src) => {
+    expect(failuresSaidNowhere(src, HOOKS, PROPS)).toHaveLength(1);
+  });
+
+  it.each([
+    ['const x = useQuiet();\nreturn <Form onSubmit={(v) => x.mutateAsync(v)} />;'],
+    ['const x = useQuiet();\nconst save = (v: V) => x.mutateAsync(v);\nreturn <Form onSubmit={save} />;'],
+    ['const x = useQuiet();\nconst save = async (v: V) => {\n  const made = await x.mutateAsync(v);\n  go(made);\n};\nreturn <Form onSubmit={save} />;'],
+    ["const x = useQuiet();\nx.mutate(p);\nconst line = x.isError ? inlineErrorMessage(x.error, 'No.') : null;"],
+  ])('leaves alone a call a line answers for: %s', (src) => {
+    expect(failuresSaidNowhere(src, HOOKS, PROPS)).toEqual([]);
   });
 
   it.each([

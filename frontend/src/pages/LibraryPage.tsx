@@ -36,7 +36,7 @@ import {
 } from '../theme';
 import type { LibrarySort, LibraryVideoResponse } from '../services/libraryApi';
 import type { Channel } from '../services/channelsApi';
-import { apiErrorMessage } from '../utils/apiError';
+import { inlineErrorMessage } from '../utils/apiError';
 
 type TabKey = 'videos' | 'channels' | 'ingest';
 
@@ -196,13 +196,15 @@ export function LibraryPage() {
     });
   };
 
-  // A refused subscribe or sync (a full library, T-5.2.10) is said above the
-  // channel list, where it was started; the next attempt clears it.
-  const channelActionError = subscribeMut.isError
-    ? apiErrorMessage(subscribeMut.error, 'Could not subscribe. Try again.')
-    : syncMut.isError
-      ? apiErrorMessage(syncMut.error, 'Could not start a sync. Try again.')
-      : null;
+  // A failed subscribe or sync (a full library, T-5.2.10, or any other) is said
+  // above the channel list, where it was started, and only there: both hooks
+  // set `meta`, so the global toast stands aside, and a 401 says nothing
+  // (T-3.4.1.22). Each has its own line, so one never hides the other; the next
+  // attempt of each clears it.
+  const channelActionErrors = [
+    subscribeMut.isError ? inlineErrorMessage(subscribeMut.error, 'Could not subscribe. Try again.') : null,
+    syncMut.isError ? inlineErrorMessage(syncMut.error, 'Could not start a sync. Try again.') : null,
+  ].filter((line): line is string => !!line);
 
   const handleSyncFinished = useCallback((channelId: string) => {
     setSyncingChannels((prev) => {
@@ -322,7 +324,7 @@ export function LibraryPage() {
         </>
       ) : (
         <>
-        {channelActionError && (
+        {channelActionErrors.length > 0 && (
           <div
             role="alert"
             style={{
@@ -337,7 +339,9 @@ export function LibraryPage() {
               padding: `${space['2']} ${space['3']}`,
             }}
           >
-            {channelActionError}
+            {channelActionErrors.map((line, i) => (
+              <div key={i}>{line}</div>
+            ))}
           </div>
         )}
         {syncNote && (
@@ -361,6 +365,11 @@ export function LibraryPage() {
                 ? (unsubscribeMut.variables as string | undefined)
                 : undefined
           }
+          // One line says each action's failure, and it follows the last press:
+          // a second channel's press would take the first one's line away before
+          // it is written, so the other rows wait for the answer (T-3.4.1.22).
+          subscribeHeld={subscribeMut.isPending}
+          syncHeld={syncMut.isPending}
           syncingChannels={syncingChannels}
           onSyncFinished={handleSyncFinished}
         />
@@ -685,6 +694,8 @@ interface ChannelsTabProps {
   onToggleSubscribe: (channel: Channel) => void;
   onSync: (channelId: string) => void;
   subscribeBusyId: string | undefined;
+  subscribeHeld: boolean;
+  syncHeld: boolean;
   syncingChannels: Record<string, string>;
   onSyncFinished: (channelId: string) => void;
 }
@@ -699,6 +710,8 @@ function ChannelsTab({
   onToggleSubscribe,
   onSync,
   subscribeBusyId,
+  subscribeHeld,
+  syncHeld,
   syncingChannels,
   onSyncFinished,
 }: ChannelsTabProps) {
@@ -743,7 +756,8 @@ function ChannelsTab({
           onOpen={onOpen}
           onToggleSubscribe={onToggleSubscribe}
           onSync={onSync}
-          subscribeBusy={subscribeBusyId === channel.channel_id}
+          subscribeBusy={subscribeBusyId === channel.channel_id || subscribeHeld}
+          syncHeld={syncHeld}
           syncJobId={syncingChannels[channel.channel_id]}
           onSyncFinished={onSyncFinished}
         />
@@ -758,6 +772,7 @@ function ChannelRowWithSyncWatcher({
   onToggleSubscribe,
   onSync,
   subscribeBusy,
+  syncHeld,
   syncJobId,
   onSyncFinished,
 }: {
@@ -766,6 +781,7 @@ function ChannelRowWithSyncWatcher({
   onToggleSubscribe: (channel: Channel) => void;
   onSync: (channelId: string) => void;
   subscribeBusy: boolean;
+  syncHeld: boolean;
   syncJobId: string | undefined;
   onSyncFinished: (channelId: string) => void;
 }) {
@@ -786,6 +802,7 @@ function ChannelRowWithSyncWatcher({
       onSync={onSync}
       subscribeBusy={subscribeBusy}
       syncBusy={!!syncJobId}
+      syncHeld={syncHeld}
     />
   );
 }

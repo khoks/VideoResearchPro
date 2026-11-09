@@ -68,6 +68,9 @@ export function useCreateShelf() {
   return useMutation({
     mutationFn: (body: ShelfCreate) => shelvesApi.create(body),
     onSuccess: () => void qc.invalidateQueries({ queryKey: shelvesKeys.all }),
+    // Both callers say a failure where it was asked: the new-shelf form, and the
+    // "Add to shelf" picker's "New shelf…" field (T-3.4.1.22).
+    meta: ERRORS_SHOWN_HERE,
   });
 }
 
@@ -76,6 +79,8 @@ export function useUpdateShelf() {
   return useMutation({
     mutationFn: ({ id, body }: { id: string; body: ShelfUpdate }) => shelvesApi.update(id, body),
     onSuccess: (_updated, { id }) => touchShelf(qc, id),
+    // Its callers, both through the shelf form, say a failure in the form.
+    meta: ERRORS_SHOWN_HERE,
   });
 }
 
@@ -99,15 +104,23 @@ export function useAddJobToShelf() {
     mutationFn: ({ shelfId, jobId }: { shelfId: string; jobId: string }) =>
       shelvesApi.addJob(shelfId, jobId),
     onSuccess: (_shelf, { shelfId }) => touchShelf(qc, shelfId),
+    // Its one caller, the "Add to shelf" picker, says a failure in the picker.
+    meta: ERRORS_SHOWN_HERE,
   });
 }
 
-export function useRemoveJobFromShelf() {
+/**
+ * `inlineErrors`: the caller says every failure on the page, so the global toast
+ * stands aside (T-3.4.1.22, D-153 point 2). The "Add to shelf" picker passes it;
+ * a shelf page's own Remove shows no line and leaves it off.
+ */
+export function useRemoveJobFromShelf({ inlineErrors = false }: { inlineErrors?: boolean } = {}) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ shelfId, jobId }: { shelfId: string; jobId: string }) =>
       shelvesApi.removeJob(shelfId, jobId),
     onSuccess: (_void, { shelfId }) => touchShelf(qc, shelfId),
+    meta: inlineErrors ? ERRORS_SHOWN_HERE : undefined,
   });
 }
 

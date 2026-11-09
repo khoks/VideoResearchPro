@@ -23,11 +23,14 @@ function refreshRows(qc: QC) {
   void qc.invalidateQueries({ queryKey: ['shelfDocuments'] });
 }
 
+// The tag control on a source, the one caller of the next three, says a failure
+// in its picker, so the global toast stands aside (T-3.4.1.22).
 export function useCreateTag() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (body: TagCreate) => tagsApi.create(body),
     onSuccess: () => void qc.invalidateQueries({ queryKey: tagsKey }),
+    meta: ERRORS_SHOWN_HERE,
   });
 }
 
@@ -63,6 +66,7 @@ export function useApplyTag() {
     mutationFn: ({ documentId, tagId }: { documentId: string; tagId: string }) =>
       tagsApi.apply(documentId, tagId),
     onSuccess: () => refreshRows(qc),
+    meta: ERRORS_SHOWN_HERE,
   });
 }
 
@@ -72,5 +76,6 @@ export function useUnapplyTag() {
     mutationFn: ({ documentId, tagId }: { documentId: string; tagId: string }) =>
       tagsApi.unapply(documentId, tagId),
     onSuccess: () => refreshRows(qc),
+    meta: ERRORS_SHOWN_HERE,
   });
 }

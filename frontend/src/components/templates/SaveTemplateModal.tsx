@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Button, FormField, Input, Modal, Textarea } from '../primitives';
 import { space } from '../../theme';
-import { apiErrorMessage } from '../../utils/apiError';
+import { inlineErrorMessage } from '../../utils/apiError';
 
 interface Props {
   open: boolean;
@@ -10,7 +10,9 @@ interface Props {
   submitLabel?: string;
   initialName?: string;
   initialDescription?: string | null;
-  /** Rejections read inline in the server's words (a 409 name collision). */
+  /** Rejections read inline in the server's words (a 409 name collision), and
+   * only there: the mutation behind it sets `meta`, so the global toast stands
+   * aside (T-3.4.1.22). */
   onSubmit: (values: { name: string; description: string | null }) => Promise<unknown>;
 }
 
@@ -49,16 +51,24 @@ export function SaveTemplateModal({
       await onSubmit({ name: name.trim(), description: description.trim() || null });
       onClose();
     } catch (err) {
-      setError(apiErrorMessage(err, 'Could not save the template.'));
+      // A 401 says nothing: the session-expiry path owns it.
+      setError(inlineErrorMessage(err, 'Could not save the template.'));
     } finally {
       setBusy(false);
     }
   };
 
+  // The dialog is where a failure is said, and the only place, so it stays open
+  // until the answer comes: Escape and the backdrop wait, as Cancel does.
+  // Closed early, a failure would be said nowhere (D-156 point 2).
+  const dismiss = () => {
+    if (!busy) onClose();
+  };
+
   return (
     <Modal
       open={open}
-      onClose={onClose}
+      onClose={dismiss}
       title={title}
       footer={
         <>

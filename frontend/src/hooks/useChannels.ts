@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { channelsApi, type Channel } from '../services/channelsApi';
+import { ERRORS_SHOWN_HERE } from '../services/queryClient';
 
 export function useChannels() {
   return useQuery({
@@ -42,6 +43,9 @@ export function useSubscribeChannel() {
       void queryClient.invalidateQueries({ queryKey: ['channel', id] });
       void queryClient.invalidateQueries({ queryKey: ['jobs'] });
     },
+    // Both callers, the channel page and the library's channel list, say a
+    // failure under the buttons (T-3.4.1.22).
+    meta: ERRORS_SHOWN_HERE,
   });
 }
 
@@ -59,6 +63,9 @@ export function useSetChannelWeight() {
   return useMutation({
     mutationFn: ({ id, weight }: { id: string; weight: number }) => channelsApi.setWeight(id, weight),
     onSuccess: (updated) => patchChannelInList(queryClient, updated),
+    // Its one caller, the channel page's trust weight, says a failure beside it
+    // (T-3.4.1.22).
+    meta: ERRORS_SHOWN_HERE,
   });
 }
 
@@ -70,5 +77,7 @@ export function useSyncChannel() {
       void queryClient.invalidateQueries({ queryKey: ['channels'] });
       void queryClient.invalidateQueries({ queryKey: ['jobs'] });
     },
+    // As subscribe: both callers say a failure under the buttons.
+    meta: ERRORS_SHOWN_HERE,
   });
 }

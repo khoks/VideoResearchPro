@@ -43,7 +43,7 @@ import { fonts, fontSize, fontWeight, lineHeight, measure, radius, space } from 
 import { formatDuration, formatDate, statusTone } from '../utils/formatters';
 import { buildClarifyContext, CLARIFY_ANSWER_MAX_CHARS } from '../utils/clarifyContext';
 import { depthLabel, depthOf, withDepth, type Depth } from '../utils/depth';
-import { apiErrorMessage, isSessionEnded } from '../utils/apiError';
+import { inlineErrorMessage, isSessionEnded } from '../utils/apiError';
 import { isDefaultSourceTypes, sourceTypeLabel, windowLabel } from '../utils/jobForm';
 import { useJobStore } from '../stores/jobStore';
 import { wsClient } from '../services/wsClient';
@@ -178,7 +178,9 @@ export function JobDetailPage() {
               Save as template
             </Button>
             {isActive && (
-              <Button variant="secondary" size="sm" onClick={() => cancelJob.mutate(job.id)}>
+              // Waits for an approval in flight: a cancel would take the approval
+              // section, and the line that says its failure, away (T-3.4.1.22).
+              <Button variant="secondary" size="sm" onClick={() => cancelJob.mutate(job.id)} disabled={approveJob.isPending}>
                 Cancel
               </Button>
             )}
@@ -671,7 +673,9 @@ export function VideoApprovalSection({
   const deselectAll = () => setSelected(new Set());
 
   // A refused approval (the document cap, T-5.2.10) changes nothing on the
-  // server; say why here, where the user can deselect and try again.
+  // server; say why here, where the user can deselect and try again. Every
+  // failure is said here alone: `useApproveJob` sets `meta`, and a 401 says
+  // nothing (T-3.4.1.22).
   const [approveError, setApproveError] = useState<string | null>(null);
   const [approving, setApproving] = useState(false);
   const handleApprove = async () => {
@@ -680,7 +684,7 @@ export function VideoApprovalSection({
     try {
       await onApprove({ id: jobId, data: { approved_video_ids: Array.from(selected) } });
     } catch (err) {
-      setApproveError(apiErrorMessage(err, 'The approval did not go through. Try again.'));
+      setApproveError(inlineErrorMessage(err, 'The approval did not go through. Try again.'));
     } finally {
       setApproving(false);
     }

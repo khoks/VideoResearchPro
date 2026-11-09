@@ -53,13 +53,16 @@ const STATUS: EchoStatus = {
 
 const askLibrary = vi.fn();
 const askHistory = vi.fn();
+const draftStatus = vi.fn();
+const draft = vi.fn();
 
 vi.mock('../../../services/echoApi', async (orig) => ({
   ...(await orig<typeof import('../../../services/echoApi')>()),
   echoApi: {
     status: async () => STATUS,
     listConnectors: async () => ({ connectors: [] }),
-    draftStatus: async () => ({ available: false, blockers: [] }),
+    draftStatus: () => draftStatus(),
+    draft: (p: unknown) => draft(p),
     cards: async () => ({ cards: [], muted_kinds: [] }),
     cardSettings: async () => ({ kinds: {} }),
     cardShown: async () => undefined,
@@ -128,6 +131,8 @@ beforeEach(() => {
   useEchoPanelStore.setState({ open: true, mode: 'ask', target: 'library', turns: [], askText: '' });
   askLibrary.mockReset();
   askHistory.mockReset();
+  draftStatus.mockReset().mockResolvedValue({ available: false, blockers: [] });
+  draft.mockReset();
   clearToasts();
 });
 
@@ -222,5 +227,58 @@ describe('the library page', () => {
     await act(async () => button.click());
     await flush();
     expect(messages()).toEqual(['The server says no, in words.']);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The draft turn (T-3.4.1.22)
+// ---------------------------------------------------------------------------
+//
+// Review saw the bubble's draft turn beside `useCreateDraft`'s toast. It is not:
+// the bubble calls `echoApi.draft` itself, so no mutation and no toast speaks
+// beside the turn, and the turn is the one message. So, as for an ask, it says the
+// server's words when there are any, else the bubble's line for the status, and
+// nothing on a 401: the session ends, and the thread with it. A draft stop keeps
+// S-3.4.1's own words.
+//
+// Mutation check, run on 2026-11-09: `draftFailure` back on
+// `requestErrorLine(err)` alone fails the `words` row ("Not available for you
+// yet.") and the `sessionEnded` row ("Something went wrong. Try again.").
+
+describe('the draft turn', () => {
+  async function draftReply(message: string) {
+    const field = panel()!.querySelector('textarea')!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(field, message);
+      field.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    const button = Array.from(panel()!.querySelectorAll<HTMLButtonElement>('form button[type="submit"]')).find(
+      (b) => b.textContent?.trim() === 'Draft a reply',
+    )!;
+    await act(async () => button.click());
+    await flush();
+  }
+
+  beforeEach(() => {
+    useEchoPanelStore.setState({ mode: 'draft' });
+    draftStatus.mockResolvedValue({ enabled: true, state: 'enabled' });
+  });
+
+  it.each(FAILURE_KINDS)('says a failure (%s) once, in its turn', async (kind) => {
+    draft.mockRejectedValueOnce(failures[kind]());
+    await mount();
+    await draftReply('Can we meet Thursday?');
+    expect(draft).toHaveBeenCalledTimes(1);
+    expect(toastMessages()).toEqual([]);
+    expect(messages()).toEqual(TURN_SAYS[kind]);
+  });
+
+  it('keeps a draft stop in its own words', async () => {
+    draft.mockRejectedValueOnce(
+      answered(409, { detail: { code: 'ungrounded', message: 'Nothing in your library speaks to this.' } }),
+    );
+    await mount();
+    await draftReply('Can we meet Thursday?');
+    expect(messages()).toEqual(['Nothing in your library speaks to this.']);
   });
 });

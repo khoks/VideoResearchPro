@@ -606,3 +606,195 @@ def test_a_part_paid_video_counts_as_a_recording_through_the_real_connector(
 
     assert youtube_path == [True, False]
     assert whisper_api.sent == 1
+
+
+# ---------------------------------------------------------------------------
+# T-1.7.1.7: Whisper that answered and left no text
+#
+# Every chunk merged to nothing, or a single file came back with no words. It
+# was billed in full, and it read as a failed download, so neither limit heard
+# about it. The connector now says so the way a cut-short one does
+# (`TranscriptionEmpty`, a `PaidTranscriptionLost`), and the job charges one
+# recording and what Whisper reported hearing, never from the usage meter
+# (D-111). Mutation check: make the single-file paths (YouTube's and the
+# podcast's) and `_transcribe_in_chunks` return None where they raise
+# `TranscriptionEmpty`, and every test below that counts requests sends the
+# next recording to Whisper.
+# ---------------------------------------------------------------------------
+
+
+def _single_episodes(monkeypatch, whisper_api, *, episodes: int = 2) -> None:  # noqa: F811
+    """Every episode reaches the real connector as one file under the upload
+    cap, and Whisper reports hearing 300 s of it."""
+    feed_url = "https://example.com/feed.xml"
+    entries = [
+        {"id": f"ep-{i}", "title": f"Episode {i}", "enclosures": [{"href": f"https://example.com/{i}.mp3"}]}
+        for i in range(episodes)
+    ]
+
+    def writes(url, path):
+        with open(path, "wb") as f:
+            f.write(b"mp3 bytes")
+        return 9
+
+    monkeypatch.setattr(podcast_connector.settings, "OPENAI_API_KEY", "sk-test")
+    monkeypatch.setattr(
+        podcast_connector.podcast_client,
+        "get_client",
+        lambda: SimpleNamespace(
+            fetch_feed=lambda url: {"feed": {}, "entries": entries if url == feed_url else []},
+            fetch_audio_to_file=writes,
+        ),
+    )
+    whisper_api.seconds = 300.0
+
+
+def _episodes(kind: str, monkeypatch, tmp_path, whisper_api) -> int:  # noqa: F811
+    """Episodes of ``kind``; returns the requests one of them takes."""
+    if kind == "split":
+        _split_episodes(monkeypatch, tmp_path, whisper_api)
+        return 3
+    _single_episodes(monkeypatch, whisper_api)
+    return 1
+
+
+def _silent_first(whisper_api, requests: int) -> None:  # noqa: F811
+    """The first recording's ``requests`` answers have no words; the rest do."""
+
+    def before_send(api):
+        api.silent = api.sent < requests
+
+    whisper_api.before_send = before_send
+
+
+@pytest.mark.parametrize("kind", ["single", "split"])
+def test_a_silent_episode_counts_as_a_recording(db, tasks, whisper_api, monkeypatch, tmp_path, kind):  # noqa: F811
+    monkeypatch.setattr(settings, "WHISPER_MAX_PER_JOB", 1)
+    per_episode = _episodes(kind, monkeypatch, tmp_path, whisper_api)
+    whisper_api.silent = True
+    job_id = _approved(db, [None, None])
+
+    _resume(job_id)
+
+    assert whisper_api.sent == per_episode, "the next episode stayed behind the limit"
+    db.expire_all()
+    assert db.get(Job, job_id).status == "failed", "nothing was read, so the run has nothing"
+
+
+@pytest.mark.parametrize(
+    "kind, cap_minutes, requests",
+    # One file: 300 s heard spends a 5-minute cap, not a 6-minute one.
+    # Three chunks 285 s apart reach 870 s: past 14 minutes, short of 15.
+    [("single", 5, 1), ("single", 6, 2), ("split", 14, 3), ("split", 15, 6)],
+)
+def test_a_silent_episode_counts_against_the_minute_cap(
+    db, tasks, whisper_api, monkeypatch, tmp_path, kind, cap_minutes, requests  # noqa: F811
+):
+    monkeypatch.setattr(settings, "WHISPER_MAX_MINUTES_PER_JOB", cap_minutes)
+    monkeypatch.setattr(settings, "WHISPER_MAX_PER_JOB", 50)
+    _episodes(kind, monkeypatch, tmp_path, whisper_api)
+    whisper_api.silent = True
+    job_id = _approved(db, [None, None])
+
+    _resume(job_id)
+
+    assert whisper_api.sent == requests
+
+
+@pytest.mark.parametrize("kind", ["single", "split"])
+def test_a_silent_episode_is_unavailable_and_the_run_goes_on(
+    db, tasks, whisper_api, monkeypatch, tmp_path, kind  # noqa: F811
+):
+    per_episode = _episodes(kind, monkeypatch, tmp_path, whisper_api)
+    _silent_first(whisper_api, per_episode)
+    job_id = _approved(db, [None, None])
+
+    _resume(job_id)
+
+    db.expire_all()
+    assert db.get(Job, job_id).status == "completed"
+    statuses = [d.transcript_status for d in db.query(Document).order_by(Document.source_id)]
+    assert statuses == ["unavailable", "fetched"]
+
+
+def test_a_silent_episode_reaches_the_limits_without_the_usage_meter(
+    db, tasks, whisper_api, monkeypatch, tmp_path  # noqa: F811
+):
+    """D-111: with the meter silent the cap still hears, from the connector."""
+    monkeypatch.setattr(youtube_service.usage_service, "record_whisper", lambda seconds: None)
+    monkeypatch.setattr(settings, "WHISPER_MAX_MINUTES_PER_JOB", 5)
+    _single_episodes(monkeypatch, whisper_api)
+    whisper_api.silent = True
+    job_id = _approved(db, [None, None])
+
+    _resume(job_id)
+
+    assert whisper_api.sent == 1
+
+
+def test_an_empty_split_says_how_far_whisper_heard(whisper_api, monkeypatch, tmp_path):  # noqa: F811
+    _split_episodes(monkeypatch, tmp_path, whisper_api)
+    whisper_api.silent = True
+    audio = tmp_path / "episode.mp3"
+    audio.write_bytes(b"x" * 9)
+
+    with pytest.raises(source_failure.TranscriptionEmpty) as caught:
+        youtube_service._transcribe_in_chunks(whisper_api.client, str(audio), str(tmp_path), "ep", "")
+
+    assert caught.value.seconds == 870.0
+    assert isinstance(caught.value, source_failure.PaidTranscriptionLost)
+    assert caught.value.__context__ is None and caught.value.__cause__ is None
+
+
+@pytest.fixture
+def silent_youtube(db, tasks, no_captions, whisper_api, monkeypatch, tmp_path):  # noqa: F811
+    """Captions fail and Whisper answers every request with no words, 300 s
+    heard each. Yields a function that splits each download in three, and the
+    ``allow_whisper`` of each ``fetch_transcript``, in order."""
+    whisper_api.seconds = 300.0
+    whisper_api.silent = True
+    real = youtube_service.fetch_transcript
+    asked: list[bool] = []
+
+    def fetch_transcript(video_id, **kwargs):
+        asked.append(kwargs.get("allow_whisper", True))
+        return real(video_id, **kwargs)
+
+    monkeypatch.setattr(youtube_service, "fetch_transcript", fetch_transcript)
+    return SimpleNamespace(asked=asked, split=lambda: _split_into(monkeypatch, tmp_path, 3))
+
+
+@pytest.mark.parametrize("kind", ["sync", "approved"])
+@pytest.mark.parametrize("split", [False, True], ids=["single", "split"])
+def test_a_silent_video_counts_as_a_recording_through_the_real_connector(
+    db, silent_youtube, youtube_network, whisper_api, monkeypatch, kind, split  # noqa: F811
+):
+    """Down YouTube's own path: the real `YouTubeConnector`, `fetch_transcript`
+    and Whisper paths, with only the network fake. A try/except on the way up
+    that turned the exception into None would let the second video through."""
+    monkeypatch.setattr(settings, "WHISPER_MAX_MINUTES_PER_JOB", 600)
+    monkeypatch.setattr(settings, "WHISPER_MAX_PER_JOB", 1)
+    if split:
+        silent_youtube.split()
+
+    _run_two_videos(db, kind, youtube_network)
+
+    assert silent_youtube.asked == [True, False]
+    assert whisper_api.sent == (3 if split else 1)
+
+
+@pytest.mark.parametrize("kind", ["sync", "approved"])
+@pytest.mark.parametrize("cap_minutes, next_allowed", [(5, False), (6, True)])
+def test_a_silent_video_charges_what_whisper_heard_through_the_real_connector(
+    db, silent_youtube, youtube_network, whisper_api, monkeypatch, kind, cap_minutes, next_allowed  # noqa: F811
+):
+    """300 s heard of a video that declares 10 minutes: a 5-minute cap is
+    spent, and a 6-minute one, which the declared length would have spent, is
+    not."""
+    monkeypatch.setattr(settings, "WHISPER_MAX_MINUTES_PER_JOB", cap_minutes)
+    monkeypatch.setattr(settings, "WHISPER_MAX_PER_JOB", 50)
+
+    _run_two_videos(db, kind, youtube_network)
+
+    assert silent_youtube.asked == [True, next_allowed]
+    assert whisper_api.sent == (2 if next_allowed else 1)

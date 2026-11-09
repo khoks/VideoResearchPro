@@ -70,6 +70,7 @@ from app.services.output_service import (
 from app.services.tier_service import require_feature
 from app.tasks.newsletter_tasks import issue_newsletter
 from app.tasks.output_tasks import generate_output
+from app.utils.log_redaction import error_summary
 
 router = APIRouter(prefix="/author", tags=["author"])
 
@@ -343,7 +344,7 @@ def create_and_generate(
     except Exception as e:  # noqa: BLE001 — broker down: say so on the row
         output_service.transition_to(
             db, row, output_service.OutputStatus.FAILED,
-            error_message=f"Could not queue generation: {e}", progress_message="Failed",
+            error_message=f"Could not queue generation: {error_summary(e)}", progress_message="Failed",
         )
         db.refresh(row)
         return _to_item(row)

@@ -22,7 +22,7 @@ from app.database import SessionLocal
 from app.models.transcript_cache import TranscriptCache
 from app.services import quota_service, usage_service
 from app.services.quota_service import QuotaExceededError
-from app.services.source_failure import TranscriptionCutShort
+from app.services.source_failure import TranscriptionCutShort, TranscriptionEmpty
 from app.utils.log_redaction import provider_error_text
 from app.utils.rate_limiter import RateLimiter
 from app.utils.youtube_helpers import parse_iso8601_duration
@@ -1633,6 +1633,8 @@ def _transcribe_in_chunks(
     the first chunk fails: a transcript with a hole in it would read as
     complete. A later chunk failing raises ``TranscriptionCutShort``, because
     the chunks before it were billed and the job's Whisper limits count them.
+    Every chunk answering with no words raises ``TranscriptionEmpty`` for the
+    same reason (T-1.7.1.7).
     """
     chunks = _split_audio_for_whisper(audio_path, tmpdir, tag)
     if not chunks:
@@ -1673,12 +1675,12 @@ def _transcribe_in_chunks(
         chunk_len_estimate = chunk_len or chunk_len_estimate
         per_chunk.append((chunk_start, chunk_len or chunk_len_estimate, segs))
     merged = _merge_chunk_transcripts(per_chunk, overlap, tag)
+    if not merged:
+        raise TranscriptionEmpty(reached)
     logger.info(
         f"{tag} Segmented Whisper transcription succeeded for {source_id}: "
         f"{len(merged)} segments across {n} chunks (language={language})"
     )
-    if not merged:
-        return None
     return merged, language
 
 
@@ -1766,15 +1768,17 @@ def _transcribe_with_whisper(
         if response is None:
             return None
 
-        transcript, response_language, _ = _whisper_response_to_segments(
+        transcript, response_language, heard = _whisper_response_to_segments(
             response, tag, video_id
         )
+        if not transcript:
+            # Answered and billed, with no words (T-1.7.1.7): the job's
+            # Whisper limits count it, as they count a recording cut short.
+            raise TranscriptionEmpty(heard)
         logger.info(
             f"{tag} Whisper transcription succeeded for {video_id}: "
             f"{len(transcript)} segments (language={response_language})"
         )
-        if not transcript:
-            return None
         return transcript, response_language
 
 

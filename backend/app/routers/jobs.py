@@ -32,6 +32,9 @@ router = APIRouter(
     dependencies=[Depends(get_current_user)],
 )
 
+# What a run whose task the broker refused says on its row (T-5.2.17).
+_NOT_QUEUED = "The run could not be queued, so it never started. Submit it again in a few minutes."
+
 
 @router.post("", response_model=JobResponse, status_code=201)
 def create_job(
@@ -95,14 +98,25 @@ def create_job(
     # heavy Free-tier workloads from Studio-tier latency budgets.
     from app.services.task_routing_service import dispatch_for_user
 
-    if job_data.job_type == "topic":
-        async_result = dispatch_for_user(execute_topic_job, current_user, job.id)
-    elif job_data.job_type == "subscription":
-        async_result = dispatch_for_user(
-            execute_subscription_job, current_user, job.id
+    task = {
+        "topic": execute_topic_job,
+        "subscription": execute_subscription_job,
+    }.get(job_data.job_type, execute_channel_job)
+    try:
+        async_result = dispatch_for_user(task, current_user, job.id)
+    except Exception:  # noqa: BLE001 - the broker is down: fail the row, say so
+        # T-5.2.17: a row nothing will run must not stay pending, which the
+        # job limit reads as active: enough of them and the user could never
+        # start another job. As `_dispatch_subscription_sync` does (T-5.2.15).
+        logger.exception("Failed to dispatch the %s job %s", job_data.job_type, job.id)
+        job.status = "failed"
+        job.error_message = _NOT_QUEUED
+        job.progress_message = "Failed"
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Could not queue the run; the task queue is unavailable. Try again in a few minutes.",
         )
-    else:
-        async_result = dispatch_for_user(execute_channel_job, current_user, job.id)
 
     # Store task id synchronously so cancel can revoke the live task even
     # if the worker hasn't picked it up yet.
@@ -195,23 +209,40 @@ def approve_job(
     job.celery_task_id = None
     db.commit()
 
+    # T-5.6.5: route resume on the same queue as the original job dispatch
+    # by looking up the user via job.tenant_id. Falls back to default queue
+    # for legacy NULL-tenant jobs.
+    from app.services.task_routing_service import dispatch_for_tenant_id
+    try:
+        async_result = dispatch_for_tenant_id(
+            resume_job_after_approval, db, job.tenant_id, job_id
+        )
+    except Exception:  # noqa: BLE001 - the broker is down: say so, in words
+        # T-5.2.17: the run stays awaiting approval, with the picks kept, so
+        # Approve works again once the queue is back, and Cancel frees its
+        # place. Failing it would throw the candidates away. Nothing was
+        # granted yet (below), so the documents hold no place under the
+        # document cap either.
+        logger.exception("Failed to dispatch the resume of job %s", job_id)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Could not queue the run; the task queue is unavailable. Approve it again in a few minutes.",
+        )
+
     # T-5.2.10: the approved documents join the library now, not when the
     # resume task starts. The cap counts visibility grants, and the resume can
     # wait behind other work on the (solo) worker for hours; until it ran, a
     # second approval, a paste or an upload was measured against a count that
     # left this approval out. The resume task re-grants the same set
     # (idempotent). After the commit, because a failed grant rolls back.
+    # T-5.2.17: after the dispatch too, so a run the queue refused grants
+    # nothing: its documents were never read and must not count toward the
+    # cap. ``grant`` never raises (best-effort), and a grant lost here is
+    # written by the resume task.
     visibility_service.grant(
         db, approved_document_ids, current_user.id, visibility_service.SOURCE_JOB
     )
 
-    # T-5.6.5: route resume on the same queue as the original job dispatch
-    # by looking up the user via job.tenant_id. Falls back to default queue
-    # for legacy NULL-tenant jobs.
-    from app.services.task_routing_service import dispatch_for_tenant_id
-    async_result = dispatch_for_tenant_id(
-        resume_job_after_approval, db, job.tenant_id, job_id
-    )
     job = job_service.update_job_status(db, job_id, "extracting", progress_pct=30,
                                         progress_message="Starting transcript extraction...")
     if job is not None:

@@ -29,6 +29,8 @@ from app.services.scheduler_service import (
     schedule,
 )
 
+from tests.provider_errors import CASES, assert_kept_out
+
 NOW = datetime(2026, 10, 19, 12, 0, 0)  # naive UTC, a Monday
 
 
@@ -373,3 +375,15 @@ def test_status_counts(db, fake_kind):
     assert s["last_run_at"] is None
     run_tick(db, now=NOW)
     assert svc.status(db, now=NOW)["last_run_at"] == NOW.isoformat() + "Z"
+
+
+@pytest.mark.parametrize("case", CASES)
+def test_a_failed_dispatch_keeps_no_key(db, fake_kind, case):
+    """T-5.6.17: `last_error` is a stored row, not a log. A broker's error is
+    no provider's, but the same rule costs nothing here."""
+    fake_kind.apply_async.side_effect = case.make()
+    row = schedule(db, kind="fake", target_id="t1", cadence=_every(3600), start_at=NOW - timedelta(minutes=1))
+    run_tick(db, now=NOW)
+    db.refresh(row)
+    assert row.last_status == STATUS_DISPATCH_FAILED
+    assert_kept_out(case, row.last_error)

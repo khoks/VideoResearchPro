@@ -37,6 +37,7 @@ from app.services import cost_estimator, llm_service
 from app.services.llm_routing import resolve_config
 from app.services.output_service import OutputError
 from app.services.outputters import book_html
+from app.utils.log_redaction import error_summary
 
 logger = logging.getLogger(__name__)
 
@@ -370,7 +371,8 @@ def _call(
         return parsed, record
     except Exception as e:  # noqa: BLE001 — fail-soft, disclosed
         logger.warning("book cohesion: %s failed: %s", use_case, e)
-        record.error = f"{type(e).__name__}: {str(e)[:300]}"
+        # T-5.6.17: kept in `outputs.usage_json`, and a deck's failure quotes it.
+        record.error = error_summary(e, limit=340)
         return None, record
     finally:
         record.seconds = time.perf_counter() - t0

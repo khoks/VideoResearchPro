@@ -157,13 +157,15 @@ class FakeWhisperApi:
     code. ``seconds`` is what each response reports; ``sent`` counts responses.
     ``segment_start`` is where its one segment begins: past the overlap, it
     survives the merge of a split recording. ``before_send`` runs first and may
-    raise, as a dying worker does."""
+    raise, as a dying worker does. ``silent`` answers with no words at all,
+    billed all the same (T-1.7.1.7)."""
 
     def __init__(self) -> None:
         self.seconds = 60.0
         self.segment_start = 0.0
         self.sent = 0
         self.before_send = None
+        self.silent = False
         self.client = MagicMock()
         self.client.with_options.return_value = self.client
         self.client.audio.transcriptions.create.side_effect = self._create
@@ -172,6 +174,8 @@ class FakeWhisperApi:
         if self.before_send is not None:
             self.before_send(self)
         self.sent += 1
+        if self.silent:
+            return SimpleNamespace(language="en", duration=self.seconds, segments=[], text="")
         segment = _WhisperSegment(
             text=f"spoken words {self.sent}", start=self.segment_start, end=self.seconds
         )

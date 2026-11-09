@@ -20,7 +20,7 @@ from typing import Any, Iterator
 import httpx
 
 from app.config import settings
-from app.services.source_failure import SearchFailed
+from app.services.source_failure import SearchFailed, TranscriptionEmpty
 from app.sources import registry
 from app.sources._topic_terms import term_keys, topic_keys, topic_queries
 from app.sources.base import BaseConnector
@@ -327,10 +327,11 @@ def _whisper_transcribe_audio(
 
     Fail-soft: any error (HTTP fetch / Whisper call / file IO) is
     logged + caught here, and the function returns None. Caller
-    treats None as "text unavailable". The exception is a split episode
-    that fails part-way: `_transcribe_in_chunks` raises
-    `TranscriptionCutShort`, which goes up to the job, so its Whisper
-    limits count the chunks that were billed (T-1.7.1.5).
+    treats None as "text unavailable". The exceptions are Whisper answers
+    that were billed and left no text: a split episode that fails part-way
+    (`TranscriptionCutShort`, T-1.7.1.5) and an episode that came back with
+    no words (`TranscriptionEmpty`, T-1.7.1.7). Both go up to the job, so
+    its Whisper limits count what was billed.
     """
     if not audio_url:
         return None
@@ -427,7 +428,12 @@ def _whisper_transcribe_audio(
                 normalised.append(s.model_dump())
             elif isinstance(s, dict):
                 normalised.append(s)
-        return podcast_flatten.whisper_segments_to_canonical(normalised)
+        segments = podcast_flatten.whisper_segments_to_canonical(normalised)
+        if not segments:
+            # Answered and billed, with no words (T-1.7.1.7): up to the job,
+            # whose Whisper limits count it as they count a cut-short one.
+            raise TranscriptionEmpty(youtube_service._whisper_duration(response))
+        return segments
 
 
 class PodcastConnector(BaseConnector):

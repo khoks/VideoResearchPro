@@ -487,7 +487,7 @@ def test_a_model_failure_with_nothing_else_to_keep_keeps_its_own_reason(client, 
 
     job = db.get(Job, job_id)
     assert job.status == "failed"
-    assert job.error_message == "the model is down"
+    assert job.error_message == "RuntimeError: the model is down"
 
 
 def test_youtube_timing_out_through_the_real_agent_leaves_the_others_standing(

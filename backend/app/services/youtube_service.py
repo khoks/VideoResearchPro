@@ -25,7 +25,7 @@ from app.services.quota_service import QuotaExceededError
 from app.services.source_failure import TranscriptionCutShort, TranscriptionEmpty
 from app.utils.log_redaction import provider_error_text
 from app.utils.rate_limiter import RateLimiter
-from app.utils.shared_url_log import loggable_channel_input
+from app.utils.shared_url_log import is_channel_id, loggable_channel_input
 from app.utils.youtube_helpers import parse_iso8601_duration
 
 logger = logging.getLogger(__name__)
@@ -579,18 +579,21 @@ def resolve_channel_id(channel_input: str, job_id: str = "") -> str | None:
     logger.info(f"{tag} resolve_channel_id: input is {loggable_channel_input(channel_input)}")
     youtube = get_youtube_client()
 
-    # Direct channel ID
-    if channel_input.startswith("UC") and len(channel_input) == 24:
+    # Direct channel ID, by its exact shape. A name such as "UC Berkeley Data
+    # Science" is also 24 characters starting with "UC": it is the user's
+    # words, so it goes to the search below, and its line by its length.
+    if is_channel_id(channel_input):
         logger.info(f"{tag} resolve_channel_id: direct channel ID detected → {channel_input}")
         return channel_input
 
-    # Channel URL with /channel/UCxxxx
+    # Channel URL with /channel/UCxxxx. What follows `/channel/` is whatever
+    # the link held, so its line says it the way the input line does.
     if "/channel/" in channel_input:
         parts = channel_input.split("/channel/")
         if len(parts) > 1:
             cid = parts[1].split("/")[0].split("?")[0]
             if cid.startswith("UC"):
-                logger.info(f"{tag} resolve_channel_id: extracted from URL → {cid}")
+                logger.info(f"{tag} resolve_channel_id: extracted from URL → {loggable_channel_input(cid)}")
                 return cid
 
     # Handle (@username) or URL with /@handle

@@ -26,7 +26,7 @@ from app.sources.mastodon.client import MastodonClient
 from app.sources.podcast.client import PodcastClient
 from app.sources.reddit.client import RedditClient
 from app.sources.twitter.client import TwitterClient
-from app.utils.shared_url_log import loggable_channel_input, traceback_without_text
+from app.utils.shared_url_log import is_channel_id, loggable_channel_input, traceback_without_text
 
 WORDS = ("zanzibar", "quokka")
 QUERY = "Zanzibar quokka"
@@ -138,9 +138,27 @@ def test_a_cycle_ends():
     ("@Wombat Brewing Society", "a name of 23 characters"),
     ("", "a name of 0 characters"),
     (None, "a name of 0 characters"),
+    # 24 characters starting with "UC", and a name all the same.
+    ("UC Berkeley Data Science", "a name of 24 characters"),
+    ("UCéééééééééééééééééééééé", "a name of 24 characters"),
 ])
 def test_a_channel_input_names_its_kind(channel_input, logged):
     assert loggable_channel_input(channel_input) == logged
+
+
+@pytest.mark.parametrize("value, is_id", [
+    ("UCabcdefghijklmnopqrstuv", True),
+    ("UC_abc-defghijklmnopqrst", True),
+    ("UC Berkeley Data Science", False),
+    ("UCéééééééééééééééééééééé", False),
+    ("UCabcdefghijklmnopqrstu", False),
+    ("UCabcdefghijklmnopqrstuvw", False),
+    (" UCabcdefghijklmnopqrstuv", False),
+    ("ucabcdefghijklmnopqrstuv", False),
+    (None, False),
+])
+def test_a_channel_id_is_its_exact_shape(value, is_id):
+    assert is_channel_id(value) is is_id
 
 
 # ---------------------------------------------------------------------------

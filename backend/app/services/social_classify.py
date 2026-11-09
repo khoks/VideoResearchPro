@@ -244,33 +244,58 @@ def classify(text: str, query: str) -> StanceClassification:
         )
         return StanceClassification(**_FALLBACK_CLASSIFICATION)  # type: ignore[arg-type]
 
+    # The reply was written from a prompt holding the run's topic, the user's
+    # own words, and can restate it: in prose, or as a value outside the
+    # schema ("skeptical of <topic> claims"). So the lines below say its
+    # length, its type or the fields that failed, never what it says
+    # (T-4.11.4.2).
     body = _strip_code_fence(raw)
     try:
         data = json.loads(body)
     except json.JSONDecodeError:
         logger.warning(
-            "social_classify_stance returned non-JSON: %r; using fallback",
-            body[:200],
+            "social_classify_stance returned non-JSON of %d characters; using fallback",
+            len(body),
         )
         return StanceClassification(**_FALLBACK_CLASSIFICATION)  # type: ignore[arg-type]
 
     if not isinstance(data, dict):
         logger.warning(
-            "social_classify_stance returned non-object: %r; using fallback",
-            data,
+            "social_classify_stance returned a JSON %s, not an object; using fallback",
+            type(data).__name__,
         )
         return StanceClassification(**_FALLBACK_CLASSIFICATION)  # type: ignore[arg-type]
 
     try:
         return StanceClassification(**data)
-    except Exception:
+    except Exception as exc:
         # Pydantic ValidationError or similar — the model returned a
         # value outside the Literal sets, or a non-numeric topic_relevance.
         logger.warning(
-            "social_classify_stance schema validation failed for %r; using fallback",
-            data,
+            "social_classify_stance schema validation failed (%s on %s); using fallback",
+            type(exc).__name__,
+            _failing_fields(exc),
         )
         return StanceClassification(**_FALLBACK_CLASSIFICATION)  # type: ignore[arg-type]
+
+
+def _failing_fields(exc: Exception) -> str:
+    """The schema's own field names a validation error names, for a log line.
+    Never a value, and never a key the model made up: either can hold the
+    topic's words."""
+    known = set(StanceClassification.model_fields)
+    names: list[str] = []
+    errors = getattr(exc, "errors", None)
+    if callable(errors):
+        try:
+            for err in errors():
+                loc = err.get("loc") or ()
+                name = str(loc[0]) if loc else ""
+                if name in known and name not in names:
+                    names.append(name)
+        except Exception:  # noqa: BLE001 - a log line must not raise
+            pass
+    return ", ".join(names) or "no named field"
 
 
 __all__ = [

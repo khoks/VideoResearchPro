@@ -54,10 +54,17 @@ def loggable_id(source_id: str) -> str:
 
 
 # A YouTube channel id, and a handle: the channel's own public name.
-_CHANNEL_ID = re.compile(r"UC[\w-]{22}")
+_CHANNEL_ID = re.compile(r"UC[A-Za-z0-9_-]{22}")
 _HANDLE = re.compile(r"@[\w.-]{1,100}")
 # A link pasted without its scheme: `youtube.com/@name`, `www.youtube.com/...`.
 _BARE_LINK = re.compile(r"[\w-]+(\.[\w-]+)+/", re.ASCII)
+
+
+def is_channel_id(value: object) -> bool:
+    """Whether ``value`` is exactly a YouTube channel id: ``UC`` and 22 more
+    of its alphabet. "UC Berkeley Data Science" is 24 characters starting with
+    ``UC`` too, and is a name the user typed, not an id."""
+    return isinstance(value, str) and _CHANNEL_ID.fullmatch(value) is not None
 
 
 def loggable_channel_input(channel_input: object) -> str:

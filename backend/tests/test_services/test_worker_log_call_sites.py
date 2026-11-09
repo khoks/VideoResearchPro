@@ -166,6 +166,40 @@ def test_resolving_a_channel_names_the_inputs_kind(youtube, yt_log, channel_inpu
     assert youtube.queries == [channel_input], "the search itself still asks for what the user typed"
 
 
+def test_a_name_shaped_like_a_channel_id_is_still_a_name(youtube, yt_log):
+    """24 characters starting with "UC" used to count as an id: the line wrote
+    the name, and the name came back as if it were an id."""
+    name = "UC Berkeley Data Science"
+    assert len(name) == 24
+    youtube.search_items = [{"snippet": {"channelId": "UCabcdefghijklmnopqrstuv"}}]
+
+    assert youtube_service.resolve_channel_id(name, job_id="job-1") == "UCabcdefghijklmnopqrstuv"
+
+    text = assert_no_words(yt_log, "berkeley", "science")
+    assert "input is a name of 24 characters" in text
+    assert "direct channel id detected" not in text
+    assert youtube.queries == [name], "the name goes to the search, as a name does"
+
+
+def test_what_follows_channel_in_a_link_is_named_by_kind(youtube, yt_log):
+    link = "https://www.youtube.com/channel/UC wombat brewing society/videos"
+    assert youtube_service.resolve_channel_id(link) == "UC wombat brewing society"
+
+    text = assert_no_words(yt_log)
+    assert "extracted from url → a name of 25 characters" in text
+
+
+def test_a_channel_id_and_its_link_stand_as_written(youtube, yt_log):
+    cid = "UCabcdefghijklmnopqrstuv"
+    assert youtube_service.resolve_channel_id(cid) == cid
+    assert youtube_service.resolve_channel_id(f"https://www.youtube.com/channel/{cid}?si=SHAREtoken123") == cid
+
+    text = assert_no_words(yt_log)
+    assert f"direct channel id detected → {cid.lower()}" in text
+    assert f"extracted from url → {cid.lower()}" in text
+    assert youtube.queries == [], "an id costs no search"
+
+
 def test_a_handle_is_the_channels_public_name_and_stands(youtube, yt_log):
     youtube.search_items = [{"snippet": {"channelId": "UCabcdefghijklmnopqrstuv"}}]
     youtube_service.resolve_channel_id(LINK)
@@ -410,32 +444,71 @@ def test_a_github_request_writes_no_httpx_line(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# A database error's text, which every traceback of one carries
+# DEBUG's statement echo (part 2): documented, not changed
 # ---------------------------------------------------------------------------
 
-def test_a_database_error_leaves_its_values_out_unless_debug():
-    """DEBUG echoes each statement with its values, as before. Otherwise a
-    database error's text says the values are hidden: it reaches a log as a
-    traceback and a Celery failure line, and a run's stored error."""
+def test_debug_echo_writes_each_statements_values_and_nothing_else_follows_debug():
+    """What CLAUDE.md's DEBUG row and .env.example say: the echo writes each
+    statement with its bound values. The setting's behaviour is unchanged:
+    the app's engine follows DEBUG with ``echo`` alone, and a database error's
+    text keeps its values with DEBUG off as before (hiding them is the owner's
+    call, not this item's)."""
+    import io
+    import logging
+
     from sqlalchemy import create_engine, text
 
     from app import database
 
-    assert database.engine.hide_parameters is (not settings.DEBUG)
-    assert database.engine_options(True) == {"echo": True, "hide_parameters": False}
+    assert database.engine.echo == settings.DEBUG
+    assert database.engine.hide_parameters is False
 
-    def failure(debug: bool) -> str:
-        # Echo stays off here: an echoing engine adds a stdout handler to
-        # SQLAlchemy's logger for the rest of the session.
-        engine = create_engine("sqlite://", **{**database.engine_options(debug), "echo": False})
-        with pytest.raises(Exception) as caught, engine.connect() as conn:
-            conn.execute(text("insert into missing (q) values (:q)"), {"q": f"How does {TOPIC} work?"})
-        return str(caught.value)
+    # Echo would add a stdout handler to SQLAlchemy's logger for the rest of
+    # the session; the engine logger at INFO is what echo turns on, and it
+    # writes the same lines to a handler of the test's own.
+    stream = io.StringIO()
+    handler = logging.StreamHandler(stream)
+    engine_log = logging.getLogger("sqlalchemy.engine.Engine")
+    level = engine_log.level
+    engine_log.addHandler(handler)
+    engine_log.setLevel(logging.INFO)
+    try:
+        engine = create_engine("sqlite://", connect_args={"check_same_thread": False})
+        with engine.connect() as conn:
+            conn.execute(text("select :q"), {"q": f"How does {TOPIC} work?"})
+    finally:
+        engine_log.removeHandler(handler)
+        engine_log.setLevel(level)
 
-    hidden = failure(False)
-    assert "no such table: missing" in hidden, "what failed is still said"
-    assert "zanzibar" not in hidden.lower() and "parameters hidden" in hidden
-    assert TOPIC in failure(True), "DEBUG still shows the values"
+    assert TOPIC in stream.getvalue(), "the echo writes the bound value, as the docs now say"
+
+
+# ---------------------------------------------------------------------------
+# social_classify_stance, whose prompt holds the run's topic
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("reply, line", [
+    (f"I think this post is skeptical of {TOPIC} claims.", "returned non-json of"),
+    (json.dumps([f"{TOPIC}", "for"]), "returned a json list, not an object"),
+    (json.dumps({"stance": "for", "sentiment": "mixed", "framing": f"skeptical of {TOPIC} claims",
+                 "topic_relevance": 0.9, f"{TOPIC}": "yes"}),
+     "schema validation failed (validationerror on framing)"),
+])
+def test_a_classifier_reply_that_fails_is_logged_without_its_words(monkeypatch, reply, line):
+    from app.services import llm_service, social_classify
+
+    log = MagicMock()
+    monkeypatch.setattr(social_classify, "logger", log)
+    llm = MagicMock()
+    llm.invoke.return_value = MagicMock(content=reply)
+    monkeypatch.setattr(llm_service, "get_llm_for", lambda *a, **kw: llm)
+
+    out = social_classify.classify("A post about cloves on the island.", TOPIC)
+
+    assert out.stance == "unclear", "the fallback still applies"
+    assert TOPIC in llm.invoke.call_args.args[0][1].content, "the prompt did carry the topic"
+    text = assert_no_words(log, "skeptical")
+    assert line in text
 
 
 # ---------------------------------------------------------------------------

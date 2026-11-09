@@ -831,7 +831,8 @@ def _reference_for_source_type(chunk: dict) -> tuple[str, dict]:
         # All five paste-mode source types share rendering — the
         # permalink is the original URL, the title comes from the
         # extracted document title (or the URL fallback), the author
-        # comes from trafilatura's metadata extraction.
+        # from the post's own page or address, else trafilatura's
+        # metadata extraction (T-1.5.8.4).
         permalink = (
             meta.get("comment_url")
             or meta.get("permalink")

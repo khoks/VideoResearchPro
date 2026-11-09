@@ -28,6 +28,7 @@ from typing import Any
 import httpx
 
 from app.config import settings
+from app.sources import _http_retry
 from app.utils.rate_limiter import RateLimiter
 
 logger = logging.getLogger(__name__)
@@ -62,12 +63,18 @@ class RedditClient:
                 "REDDIT_CLIENT_ID / REDDIT_CLIENT_SECRET must be set"
             )
         try:
-            resp = httpx.post(
-                REDDIT_OAUTH_URL,
-                data={"grant_type": "client_credentials"},
-                auth=(client_id, client_secret),
-                headers={"User-Agent": settings.REDDIT_USER_AGENT},
-                timeout=self._timeout,
+            # Not paced: the token endpoint is not the search API. A failed
+            # try is retried once like any other request (T-1.5.11.2).
+            resp = _http_retry.send(
+                lambda: httpx.post(
+                    REDDIT_OAUTH_URL,
+                    data={"grant_type": "client_credentials"},
+                    auth=(client_id, client_secret),
+                    headers={"User-Agent": settings.REDDIT_USER_AGENT},
+                    timeout=self._timeout,
+                ),
+                url=REDDIT_OAUTH_URL,
+                limiter=None,
             )
             resp.raise_for_status()
         except httpx.HTTPError as e:
@@ -90,19 +97,23 @@ class RedditClient:
         """GET ``REDDIT_API_BASE + path`` and return the parsed JSON.
 
         Rate-limited per `REDDIT_RATE_LIMIT_RPM`. On a 401 the cached
-        token is dropped and the request is retried exactly once. Any
-        other HTTP failure raises ``httpx.HTTPError``.
+        token is dropped and the request is retried exactly once. A
+        timeout, a connection error or a 5xx is tried once more
+        (T-1.5.11.2). Any other HTTP failure raises ``httpx.HTTPError``.
         """
         url = f"{REDDIT_API_BASE}{path}"
         for attempt in (0, 1):
-            self._limiter.wait()
             token = self._get_token(force=(attempt == 1))
             headers = {
                 "Authorization": f"Bearer {token}",
                 "User-Agent": settings.REDDIT_USER_AGENT,
             }
-            resp = httpx.get(
-                url, params=params, headers=headers, timeout=self._timeout
+            resp = _http_retry.send(
+                lambda: httpx.get(
+                    url, params=params, headers=headers, timeout=self._timeout
+                ),
+                url=url,
+                limiter=self._limiter,
             )
             if resp.status_code == 401 and attempt == 0:
                 logger.info("Reddit token rejected (401); refreshing")

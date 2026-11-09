@@ -919,9 +919,17 @@ def _build_video_metadata(video: Document, language: str | None) -> dict:
     sensible fallbacks.
     """
     # Lift per-source fields from source_metadata_json (defensive against
-    # both dict and missing-attr shapes — older rows may not have it).
+    # both dict and missing-attr shapes — older rows may not have it). The
+    # column is JSON text: until T-1.5.8.4 only a dict was read, so a pasted
+    # page's author never reached its chunks, and library Q&A listed it as
+    # "by Unknown".
     source_metadata: dict = {}
     raw_meta = getattr(video, "source_metadata_json", None) or {}
+    if isinstance(raw_meta, str):
+        try:
+            raw_meta = json.loads(raw_meta)
+        except ValueError:
+            raw_meta = {}
     if isinstance(raw_meta, dict):
         source_metadata = raw_meta
 

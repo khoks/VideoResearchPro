@@ -26,7 +26,8 @@ export function TemplatesPage() {
   const navigate = useNavigate();
   const templatesQuery = useJobTemplates();
   const [renaming, setRenaming] = useState<JobTemplate | null>(null);
-  const update = useUpdateTemplate();
+  // A failed rename is said in its dialog alone (T-3.4.1.22).
+  const update = useUpdateTemplate({ inlineErrors: true });
 
   const templates = templatesQuery.data ?? [];
   const own = templates.filter((t) => !t.builtin);

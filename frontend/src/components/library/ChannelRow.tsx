@@ -14,6 +14,9 @@ interface Props {
   onSync: (channelId: string) => void;
   subscribeBusy?: boolean;
   syncBusy?: boolean;
+  /** Sync now waits, without reading as syncing: another channel's press is in
+   * flight, and the one line that says its failure follows the last press. */
+  syncHeld?: boolean;
 }
 
 export function ChannelRow({
@@ -23,6 +26,7 @@ export function ChannelRow({
   onSync,
   subscribeBusy,
   syncBusy,
+  syncHeld,
 }: Props) {
   const c = useColors();
   const subscribed = channel.subscribed;
@@ -127,7 +131,7 @@ export function ChannelRow({
             size="sm"
             variant="tertiary"
             onClick={() => onSync(channel.channel_id)}
-            disabled={syncBusy}
+            disabled={syncBusy || syncHeld}
             leadingIcon={syncBusy ? <Spinner size={12} /> : undefined}
           >
             {syncBusy ? 'Syncing…' : 'Sync now'}

@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom';
 import { useColors, usePaletteColor, useShadows } from '../../hooks/useTheme';
 import { Button, Input, Spinner } from '../primitives';
 import { fonts, fontSize, radius, space, z } from '../../theme';
-import { apiErrorMessage } from '../../utils/apiError';
+import { inlineErrorMessage } from '../../utils/apiError';
 
 export interface PickerLabel {
   id: string;
@@ -31,8 +31,10 @@ interface Props {
   hrefFor?: (label: PickerLabel) => string;
   isLoading?: boolean;
   busy?: boolean;
+  /** Its failure is said in the popover alone: the mutations behind it set
+   * `meta`, so the global toast stands aside (T-3.4.1.22). */
   onToggle: (label: PickerLabel, selected: boolean) => Promise<unknown>;
-  /** Creates a label and applies it. */
+  /** Creates a label and applies it. A failure is said as `onToggle`'s is. */
   onCreate: (name: string) => Promise<unknown>;
   /** Alignment of the popover under the button. */
   align?: 'left' | 'right';
@@ -43,7 +45,9 @@ interface Props {
  * toggle, and an inline field that creates a new label and applies it. The
  * shared engine behind "Add to shelf" (S-8.1.2) and the tag control on
  * library rows (S-8.1.3). Errors (a 409 name collision, a 403 tier gate)
- * read inline in the server's own words.
+ * read inline in the server's own words, and only there; a 401 says nothing.
+ * While a change is in flight the popover stays open, since closing it would
+ * take that line away before it is written (D-156 point 2).
  */
 export function LabelPicker({
   labels,
@@ -71,6 +75,9 @@ export function LabelPicker({
   const rootRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const [anchor, setAnchor] = useState<CSSProperties | null>(null);
+  // Changes this popover has in flight. While there are any, a click outside,
+  // Escape and the button leave it open, so its line is there for the answer.
+  const [pending, setPending] = useState(0);
 
   // The popover is portalled to <body> with fixed coordinates taken from the
   // button: every Card sets a transform, which makes it its own stacking
@@ -105,10 +112,10 @@ export function LabelPicker({
     const onDown = (e: MouseEvent) => {
       const target = e.target as Node;
       if (rootRef.current?.contains(target) || panelRef.current?.contains(target)) return;
-      setOpen(false);
+      if (pending === 0) setOpen(false);
     };
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false);
+      if (e.key === 'Escape' && pending === 0) setOpen(false);
     };
     // Capture phase: the wrapper stops propagation (so a click never opens
     // the card behind it), which would otherwise hide these from the document.
@@ -118,14 +125,17 @@ export function LabelPicker({
       document.removeEventListener('mousedown', onDown, true);
       document.removeEventListener('keydown', onKey, true);
     };
-  }, [open]);
+  }, [open, pending]);
 
   const toggle = async (label: PickerLabel) => {
     setError(null);
+    setPending((n) => n + 1);
     try {
       await onToggle(label, !selectedIds.has(label.id));
     } catch (err) {
-      setError(apiErrorMessage(err, 'Could not save that change.'));
+      setError(inlineErrorMessage(err, 'Could not save that change.'));
+    } finally {
+      setPending((n) => n - 1);
     }
   };
 
@@ -133,11 +143,14 @@ export function LabelPicker({
     const name = newName.trim();
     if (!name) return;
     setError(null);
+    setPending((n) => n + 1);
     try {
       await onCreate(name);
       setNewName('');
     } catch (err) {
-      setError(apiErrorMessage(err, 'Could not create it.'));
+      setError(inlineErrorMessage(err, 'Could not create it.'));
+    } finally {
+      setPending((n) => n - 1);
     }
   };
 
@@ -165,7 +178,7 @@ export function LabelPicker({
       <Button
         size={size}
         variant={buttonVariant ?? (selectedIds.size > 0 ? 'secondary' : 'tertiary')}
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => setOpen((o) => (o && pending > 0 ? o : !o))}
         aria-haspopup="dialog"
         aria-expanded={open}
       >

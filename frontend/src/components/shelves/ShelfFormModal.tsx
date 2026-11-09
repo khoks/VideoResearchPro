@@ -3,7 +3,7 @@ import type { ShelfColor } from '../../services/shelvesApi';
 import { PaletteField } from '../labels/PaletteField';
 import { Button, FormField, Input, Modal, Textarea } from '../primitives';
 import { space } from '../../theme';
-import { apiErrorMessage } from '../../utils/apiError';
+import { inlineErrorMessage } from '../../utils/apiError';
 
 export interface ShelfFormValues {
   name: string;
@@ -18,7 +18,9 @@ interface Props {
   submitLabel: string;
   /** Pre-fill for rename / recolour; omit for a new shelf. */
   initial?: ShelfFormValues | null;
-  /** Rejections surface inline (a 409 "You already have a shelf named …" reads verbatim). */
+  /** Rejections surface inline (a 409 "You already have a shelf named …" reads
+   * verbatim), and only there: the mutation behind it sets `meta`, so the global
+   * toast stands aside (T-3.4.1.22). */
   onSubmit: (values: ShelfFormValues) => Promise<unknown>;
 }
 
@@ -30,14 +32,22 @@ export function ShelfFormModal({ open, onClose, title, submitLabel, initial, onS
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  // Filled afresh on each opening. Keyed on the values, not the object: a page
+  // that builds `initial` on every render (the shelves page) would otherwise
+  // reset the form, and wipe its failure line, each time a request's state
+  // changed, and with the global toast standing aside that failure would be
+  // said nowhere (T-3.4.1.22).
+  const initialName = initial?.name ?? '';
+  const initialDescription = initial?.description ?? '';
+  const initialColor = initial?.color ?? 'default';
   useEffect(() => {
     if (!open) return;
-    setName(initial?.name ?? '');
-    setDescription(initial?.description ?? '');
-    setColor(initial?.color ?? 'default');
+    setName(initialName);
+    setDescription(initialDescription);
+    setColor(initialColor);
     setError(null);
     setBusy(false);
-  }, [open, initial]);
+  }, [open, initialName, initialDescription, initialColor]);
 
   const submit = async () => {
     const trimmed = name.trim();
@@ -55,16 +65,24 @@ export function ShelfFormModal({ open, onClose, title, submitLabel, initial, onS
       });
       onClose();
     } catch (err) {
-      setError(apiErrorMessage(err, 'Could not save the shelf.'));
+      // A 401 says nothing: the session-expiry path owns it.
+      setError(inlineErrorMessage(err, 'Could not save the shelf.'));
     } finally {
       setBusy(false);
     }
   };
 
+  // The form is where a failure is said, and the only place, so it stays open
+  // until the answer comes: Escape and the backdrop wait, as Cancel does.
+  // Closed early, a failure would be said nowhere (D-156 point 2).
+  const dismiss = () => {
+    if (!busy) onClose();
+  };
+
   return (
     <Modal
       open={open}
-      onClose={onClose}
+      onClose={dismiss}
       title={title}
       footer={
         <>

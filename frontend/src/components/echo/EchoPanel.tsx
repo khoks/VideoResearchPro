@@ -699,7 +699,8 @@ function DraftComposer() {
     try {
       updateTurn(id, { status: 'done', result: await echoApi.draft({ message }) });
     } catch (err) {
-      updateTurn(id, draftFailure(err));
+      const failure = draftFailure(err);
+      if (failure) updateTurn(id, failure);
     } finally {
       setBusy(false);
     }
@@ -725,11 +726,17 @@ function DraftComposer() {
 }
 
 /** A failed draft as a turn: S-3.4.1's own words, and the names to confirm
- * when its private-person guard stopped it. */
-function draftFailure(err: unknown): Partial<EchoTurn> {
+ * when its private-person guard stopped it. The turn is the one message (the
+ * bubble calls the API itself, so no toast speaks beside it), so any other
+ * failure says the server's words when it sent any, else the bubble's line for
+ * the status. Null for a 401: the session ends, and the thread with it, as for
+ * an ask (T-3.4.1.22). */
+function draftFailure(err: unknown): Partial<EchoTurn> | null {
   const e = draftErrorOf(err);
   if (e.code === 'names_need_confirmation') return { status: 'error', error: e.message, confirmNames: e.names };
-  return { status: 'error', error: e.code === 'error' ? requestErrorLine(err) : e.message, confirmNames: undefined };
+  if (e.code !== 'error') return { status: 'error', error: e.message, confirmNames: undefined };
+  const line = inlineErrorMessage(err, requestErrorLine(err));
+  return line === null ? null : { status: 'error', error: line, confirmNames: undefined };
 }
 
 // ---------------------------------------------------------------------------
@@ -771,7 +778,8 @@ function ConfirmNames({ turn }: { turn: EchoTurn }) {
     try {
       updateTurn(turn.id, { status: 'done', result: await echoApi.draft({ message: turn.text, acknowledge_names: names }) });
     } catch (err) {
-      updateTurn(turn.id, draftFailure(err));
+      const failure = draftFailure(err);
+      if (failure) updateTurn(turn.id, failure);
     }
   };
   return (

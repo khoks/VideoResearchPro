@@ -17,7 +17,7 @@ import { useColors } from '../hooks/useTheme';
 import { fonts, fontSize, fontWeight, lineHeight, measure, radius, space } from '../theme';
 import { formatDate } from '../utils/formatters';
 import type { Channel, SubscribeResponse } from '../services/channelsApi';
-import { apiErrorMessage } from '../utils/apiError';
+import { inlineErrorMessage } from '../utils/apiError';
 
 const CHANNELS_TAB_HREF = '/library?tab=channels';
 
@@ -88,13 +88,14 @@ export function ChannelPage() {
 
   const subscribeBusy = subscribeMut.isPending || unsubscribeMut.isPending;
   const syncBusy = syncMut.isPending || !!syncJobId;
-  // A refused subscribe or sync (a full library, T-5.2.10) is said where it
-  // was started; the next attempt clears it.
-  const actionError = subscribeMut.isError
-    ? apiErrorMessage(subscribeMut.error, 'Could not subscribe. Try again.')
-    : syncMut.isError
-      ? apiErrorMessage(syncMut.error, 'Could not start a sync. Try again.')
-      : null;
+  // A failed subscribe or sync (a full library, T-5.2.10, or any other) is said
+  // where it was started, and only there: both hooks set `meta`, so the global
+  // toast stands aside, and a 401 says nothing (T-3.4.1.22). Each has its own
+  // line, so one never hides the other; the next attempt of each clears it.
+  const actionErrors = [
+    subscribeMut.isError ? inlineErrorMessage(subscribeMut.error, 'Could not subscribe. Try again.') : null,
+    syncMut.isError ? inlineErrorMessage(syncMut.error, 'Could not start a sync. Try again.') : null,
+  ].filter((line): line is string => !!line);
 
   return (
     <div style={{ maxWidth: measure.grid, margin: '0 auto' }}>
@@ -141,7 +142,7 @@ export function ChannelPage() {
             channel={channel}
             subscribeBusy={subscribeBusy}
             syncBusy={syncBusy}
-            actionError={actionError}
+            actionErrors={actionErrors}
             syncNote={syncNote}
             onToggleSubscribe={() => handleToggleSubscribe(channel)}
             onSync={() => handleSync(channel)}
@@ -161,7 +162,7 @@ function ChannelHeader({
   channel,
   subscribeBusy,
   syncBusy,
-  actionError = null,
+  actionErrors = [],
   syncNote = null,
   onToggleSubscribe,
   onSync,
@@ -169,7 +170,7 @@ function ChannelHeader({
   channel: Channel;
   subscribeBusy: boolean;
   syncBusy: boolean;
-  actionError?: string | null;
+  actionErrors?: string[];
   syncNote?: string | null;
   onToggleSubscribe: () => void;
   onSync: () => void;
@@ -297,7 +298,7 @@ function ChannelHeader({
           )}
         </div>
       </div>
-      {actionError && (
+      {actionErrors.length > 0 && (
         <div
           role="alert"
           style={{
@@ -312,7 +313,9 @@ function ChannelHeader({
             padding: `${space['2']} ${space['3']}`,
           }}
         >
-          {actionError}
+          {actionErrors.map((line, i) => (
+            <div key={i}>{line}</div>
+          ))}
         </div>
       )}
       {syncNote && (
@@ -365,6 +368,9 @@ function TrustWeightControl({ channelId, weight }: { channelId: string; weight: 
   const standing = neutral ? 'neutral' : draft > 1 ? 'promoted' : 'demoted';
   const dirty = Math.abs(draft - weight) > 1e-9;
   const save = (value: number) => setWeight.mutate({ id: channelId, weight: value });
+  // Said here alone, in the server's words when it sent any: the hook sets
+  // `meta`, and a 401 says nothing (T-3.4.1.22).
+  const weightError = setWeight.isError ? inlineErrorMessage(setWeight.error, 'Could not save the weight. Try again.') : null;
 
   return (
     <Card sunken data-slot="trust-weight" style={{ marginBottom: space['5'], padding: `${space['3']} ${space['4']}` }}>
@@ -428,9 +434,9 @@ function TrustWeightControl({ channelId, weight }: { channelId: string; weight: 
           also narrows them toward this channel. Lowering it lets them sink; near 0 the channel
           drops out of your answers on any topic your library covers broadly. It never pulls in
           an off-topic passage, and only your answers change.
-          {setWeight.isError && (
+          {weightError && (
             <span role="alert" style={{ color: c.error, marginLeft: space['2'] }}>
-              Could not save the weight. Try again.
+              {weightError}
             </span>
           )}
         </span>

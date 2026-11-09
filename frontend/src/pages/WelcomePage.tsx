@@ -1,15 +1,23 @@
 import { useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { useIsMutating } from '@tanstack/react-query';
 import { useColors } from '../hooks/useTheme';
 import { useOnboarding, useUpdateOnboarding } from '../hooks/useOnboarding';
-import { useApproveJob, useCreateJob, useJob, useJobVideos } from '../hooks/useJobs';
+import {
+  approveJobKey,
+  createJobKey,
+  useApproveJob,
+  useCreateJob,
+  useJob,
+  useJobVideos,
+} from '../hooks/useJobs';
 import { useJobProgress } from '../hooks/useJobProgress';
 import { useJobTemplates } from '../hooks/useJobTemplates';
 import { Stepper } from '../components/onboarding/Stepper';
 import { ProgressBar } from '../components/common/ProgressBar';
 import { Button, Card, EmptyState, FormField, IconButton, Input, Skeleton } from '../components/primitives';
 import { validateChannels } from '../utils/jobForm';
-import { apiErrorMessage } from '../utils/apiError';
+import { inlineErrorMessage } from '../utils/apiError';
 import {
   FIRST_RUN_VIDEOS,
   MAX_ONBOARDING_CHANNELS,
@@ -33,21 +41,38 @@ type Step = 1 | 2 | 3;
  * not turn "see the result" into a long wait; (3) its progress, the approval
  * every run pauses for, and the report in the reader. Progress lives on the
  * server, so the wizard resumes on any device. Skip is always visible.
+ *
+ * Saving the channels, starting the run, recording it and approving say a
+ * failure under their buttons, and only there (T-3.4.1.22). While one is in
+ * flight, Back and the steps wait: each keeps the reader on this page and would
+ * take that line away before it is written (D-156 point 2). Skip never waits.
+ * It leaves the page, as the sidebar does (T-3.4.1.21's case), and a request
+ * with no timeout must not take away the page's one advertised exit. A step,
+ * Skip and finishing show no line of their own, so the global toast says theirs.
  */
 export function WelcomePage() {
   const c = useColors();
   const navigate = useNavigate();
   const { data, isLoading, isError, refetch } = useOnboarding();
   const update = useUpdateOnboarding();
+  const saveStep = useUpdateOnboarding({ inlineErrors: true });
+  const starting = useIsMutating({ mutationKey: createJobKey }) > 0;
+  const approving = useIsMutating({ mutationKey: approveJobKey }) > 0;
+  const held = saveStep.isPending || starting || approving;
   // The reader's own navigation wins; until then, the step the server kept.
   const [chosenStep, setStep] = useState<Step | null>(null);
   const step: Step | null = chosenStep ?? data?.state.step ?? null;
+  // A run that started when recording it failed: this page knows it, the server
+  // does not, so it is never offered to start again (T-3.4.1.23).
+  const [unsavedRunId, setUnsavedRunId] = useState<string | null>(null);
 
   const goTo = (n: Step) => {
+    if (held) return;
     setStep(n);
     update.mutate({ step: n });
   };
 
+  // Not held by a request in flight: skipping must never trap the reader here.
   const skip = async () => {
     if (data && !data.state.dismissed && !data.onboarded_at) {
       try {
@@ -101,10 +126,10 @@ export function WelcomePage() {
         {step === 1 && (
           <ChannelsStep
             initial={data.state.choices.channels}
-            saving={update.isPending}
+            saving={saveStep.isPending}
             onContinue={async (channels) => {
               // Wait for the save: step 2 reads the channels back from the server.
-              await update.mutateAsync({ step: 2, channels });
+              await saveStep.mutateAsync({ step: 2, channels });
               setStep(2);
             }}
           />
@@ -112,17 +137,31 @@ export function WelcomePage() {
         {step === 2 && (
           <FirstRunStep
             data={data}
+            held={held}
+            unsavedRunId={unsavedRunId}
             onBack={() => goTo(1)}
             onStarted={async (jobId) => {
-              await update.mutateAsync({ step: 3, first_job_id: jobId });
+              await saveStep.mutateAsync({ step: 3, first_job_id: jobId });
+              setUnsavedRunId(null);
               setStep(3);
             }}
-            onContinue={() => goTo(3)}
+            onUnsaved={setUnsavedRunId}
+            onContinue={() => {
+              if (held) return;
+              setStep(3);
+              // A run the page could not record gets one more try, which the
+              // global toast speaks for if it fails too.
+              if (unsavedRunId) {
+                update.mutate({ step: 3, first_job_id: unsavedRunId }, { onSuccess: () => setUnsavedRunId(null) });
+              } else {
+                update.mutate({ step: 3 });
+              }
+            }}
           />
         )}
         {step === 3 && (
           <ResultStep
-            jobId={data.state.choices.first_job_id}
+            jobId={unsavedRunId ?? data.state.choices.first_job_id}
             onBack={() => goTo(2)}
             onDone={async (href) => {
               try {
@@ -259,7 +298,8 @@ function ChannelsStep({
         <Button
           onClick={() => {
             setSaveError(null);
-            onContinue(channels).catch((err) => setSaveError(apiErrorMessage(err, 'Your channels could not be saved. Try again.')));
+            // Said here alone, and nothing on a 401 (T-3.4.1.22).
+            onContinue(channels).catch((err) => setSaveError(inlineErrorMessage(err, 'Your channels could not be saved. Try again.')));
           }}
           disabled={channels.length === 0}
           loading={saving}
@@ -278,13 +318,22 @@ const RETRYABLE = new Set(['failed', 'cancelled']);
 
 function FirstRunStep({
   data,
+  held,
+  unsavedRunId,
   onBack,
   onStarted,
+  onUnsaved,
   onContinue,
 }: {
   data: Onboarding;
+  /** A request in flight that this step says the failure of: Back waits. */
+  held: boolean;
+  /** A run this page started and could not record (T-3.4.1.23). */
+  unsavedRunId: string | null;
   onBack: () => void;
+  /** Records the run that started; rejects when recording it failed. */
   onStarted: (jobId: string) => Promise<void>;
+  onUnsaved: (jobId: string) => void;
   onContinue: () => void;
 }) {
   const c = useColors();
@@ -292,11 +341,17 @@ function FirstRunStep({
   const [picked, setChosen] = useState<string | null>(null);
   const chosen = picked && channels.includes(picked) ? picked : channels[0] ?? '';
   const [error, setError] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const templates = useJobTemplates();
-  const createJob = useCreateJob();
+  // A failed start is said under its button alone (T-3.4.1.22).
+  const createJob = useCreateJob({ inlineErrors: true });
+  // An unrecorded run's status, so one that failed can be tried again.
+  const unsaved = useJob(unsavedRunId);
 
   const existing = data.state.choices.first_job_id ? data.milestones.first_job : null;
-  const underWay = existing && existing.id === data.state.choices.first_job_id && !RETRYABLE.has(existing.status);
+  const underWay =
+    (existing && existing.id === data.state.choices.first_job_id && !RETRYABLE.has(existing.status)) ||
+    (!!unsavedRunId && !RETRYABLE.has(unsaved.data?.status ?? ''));
 
   if (channels.length === 0) {
     return (
@@ -311,9 +366,14 @@ function FirstRunStep({
   if (underWay) {
     return (
       <StepCard title="Your first run is under way" lede="It keeps going while you are away. Carry on to watch it, or come back later; this page remembers where you were.">
+        {saveError && (
+          <p role="alert" style={{ ...noteStyle(c), color: c.error }}>
+            The run started. {saveError}
+          </p>
+        )}
         <Actions>
-          <Button variant="tertiary" onClick={onBack}>Back</Button>
-          <Button onClick={onContinue}>See its progress</Button>
+          <Button variant="tertiary" onClick={onBack} disabled={held}>Back</Button>
+          <Button onClick={onContinue} disabled={held}>See its progress</Button>
         </Actions>
       </StepCard>
     );
@@ -321,6 +381,7 @@ function FirstRunStep({
 
   const start = async () => {
     setError(null);
+    setSaveError(null);
     const starter = templates.data?.find((t) => t.builtin_key === FIRST_RUN_TEMPLATE_KEY);
     const body: JobCreate = {
       job_type: 'channel',
@@ -335,11 +396,21 @@ function FirstRunStep({
     const provenance: JobProvenance | undefined = starter
       ? { templateId: starter.id, templateVersion: starter.version }
       : undefined;
+    // Each failure is said for what it is (T-3.4.1.23): a start that failed, or
+    // a run that started and could not be recorded, which is never offered to
+    // start again. A 401 says nothing: the session-expiry path owns it.
+    let jobId: string;
     try {
-      const job = await createJob.mutateAsync({ data: body, provenance });
-      await onStarted(job.id);
+      jobId = (await createJob.mutateAsync({ data: body, provenance })).id;
     } catch (err) {
-      setError(apiErrorMessage(err, 'The run could not be started. Check the channel and try again.'));
+      setError(inlineErrorMessage(err, 'The run could not be started. Check the channel and try again.'));
+      return;
+    }
+    try {
+      await onStarted(jobId);
+    } catch (err) {
+      setSaveError(inlineErrorMessage(err, 'This page could not record it, so carry on from here or find it under Active runs.'));
+      onUnsaved(jobId);
     }
   };
 
@@ -399,8 +470,8 @@ function FirstRunStep({
       )}
 
       <Actions>
-        <Button variant="tertiary" onClick={onBack}>Back</Button>
-        <Button onClick={() => void start()} loading={createJob.isPending} disabled={!chosen || templates.isLoading}>
+        <Button variant="tertiary" onClick={onBack} disabled={held}>Back</Button>
+        <Button onClick={() => void start()} loading={held} disabled={!chosen || templates.isLoading}>
           Start the run
         </Button>
       </Actions>
@@ -465,6 +536,10 @@ function ResultStep({
   if (j.status === 'awaiting_approval') {
     const list = videos.data ?? [];
     const ids = list.map((v) => v.video_id ?? v.document_id);
+    // Said here alone: `useApproveJob` sets `meta`, and a 401 says nothing (T-3.4.1.22).
+    const approveError = approve.isError
+      ? inlineErrorMessage(approve.error, 'The approval did not go through. Try again.')
+      : null;
     return (
       <StepCard
         title="Approve what it found"
@@ -481,9 +556,9 @@ function ResultStep({
             ))}
           </ol>
         )}
-        {approve.isError && (
+        {approveError && (
           <p role="alert" style={{ ...noteStyle(c), color: c.error }}>
-            {apiErrorMessage(approve.error, 'The approval did not go through. Try again.')}
+            {approveError}
           </p>
         )}
         <p style={noteStyle(c)}>To pick only some of them, use {runLink}.</p>

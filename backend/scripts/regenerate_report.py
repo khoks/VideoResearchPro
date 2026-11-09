@@ -5,6 +5,11 @@ runs `run_report_agent` exactly as the Celery worker does, and writes the
 HTML to a file of your choosing. The job's stored report is NOT replaced
 unless `--save` is passed, so this is safe for before/after measurement.
 
+Every approved document of the job is read, whatever its source type: they
+are picked by `document_id` through the job's `job_documents` rows, as the
+worker picks them (T-8.8.6.9, D-070). A document with no cached text is
+left out, and the log counts those by source type.
+
     ./venv/Scripts/python scripts/regenerate_report.py --job 0d4db8c3-... --out /tmp/after.html
 
 Costs the same as the job's original report phase (~$12 on the 200-video
@@ -17,9 +22,29 @@ import argparse
 import logging
 import sys
 import time
+from collections import Counter
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+
+def approved_documents(db, job_id: str) -> list:
+    """The job's approved documents, of every source type.
+
+    Joined on ``document_id`` through the job's ``job_documents`` rows, as
+    ``resume_job_after_approval`` joins them. The legacy ``video_id`` is NULL
+    for a PDF, a pasted page, a thread or a podcast episode, so the join on it
+    that this script made until T-8.8.6.9 left every one of them out (D-070).
+    """
+    from app.models.document import Document
+    from app.models.job_video import JobVideo
+
+    return (
+        db.query(Document)
+        .join(JobVideo, JobVideo.document_id == Document.document_id)
+        .filter(JobVideo.job_id == job_id, JobVideo.approved.is_(True))
+        .all()
+    )
 
 
 def main() -> int:
@@ -41,9 +66,7 @@ def main() -> int:
 
     from app.config import settings
     from app.database import SessionLocal
-    from app.models.document import Document
     from app.models.job import Job
-    from app.models.job_video import JobVideo
     from app.services import llm_service
     from app.tasks.job_tasks import (
         _build_video_metadata,
@@ -64,38 +87,38 @@ def main() -> int:
         if job is None:
             log.error("no job matching %r", args.job)
             return 2
-        docs = (
-            db.query(Document)
-            .join(JobVideo, JobVideo.video_id == Document.video_id)
-            .filter(JobVideo.job_id == job.id, JobVideo.approved.is_(True))
-            .all()
-        )
+        docs = approved_documents(db, job.id)
         if args.limit:
             docs = docs[: args.limit]
         log.info("job %s (%s): %d approved documents", job.id, job.topic, len(docs))
 
         chunks: list[dict] = []
-        missing = 0
+        missing: Counter[str] = Counter()
         started = time.monotonic()
-        for i, video in enumerate(docs, 1):
-            cached = _load_cached_segments(video.video_id)
+        for i, doc in enumerate(docs, 1):
+            # The cache's key first, the only one a non-video document has;
+            # the legacy video_id is the fallback, as in the worker.
+            cached = _load_cached_segments(doc.video_id, doc.document_id)
             if cached is None:
-                missing += 1
+                missing[doc.source_type or "video"] += 1
                 continue
             segments, language = cached
             if not args.no_era:
-                _ensure_era(db, video, segments, job.id)
+                _ensure_era(db, doc, segments, job.id)
             chunks.extend(chunk_transcript(
                 segments,
                 chunk_size=settings.CHUNK_SIZE,
                 chunk_overlap=settings.CHUNK_OVERLAP,
-                video_metadata=_build_video_metadata(video, language),
+                video_metadata=_build_video_metadata(doc, language),
             ))
             if i % 25 == 0:
                 log.info("chunked %d/%d documents (%d chunks)", i, len(docs), len(chunks))
+        unread = sum(missing.values())
         log.info(
-            "%d chunks from %d documents (%d without a cached transcript) in %.0fs",
-            len(chunks), len(docs) - missing, missing, time.monotonic() - started,
+            "%d chunks from %d documents (%d without cached text%s) in %.0fs",
+            len(chunks), len(docs) - unread, unread,
+            "".join(f", {n} {kind}" for kind, n in sorted(missing.items())),
+            time.monotonic() - started,
         )
 
         from app.agents.report_agent import run_report_agent

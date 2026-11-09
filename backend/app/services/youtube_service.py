@@ -25,6 +25,7 @@ from app.services.quota_service import QuotaExceededError
 from app.services.source_failure import TranscriptionCutShort, TranscriptionEmpty
 from app.utils.log_redaction import provider_error_text
 from app.utils.rate_limiter import RateLimiter
+from app.utils.shared_url_log import is_channel_id, loggable_channel_input
 from app.utils.youtube_helpers import parse_iso8601_duration
 
 logger = logging.getLogger(__name__)
@@ -132,6 +133,22 @@ def _is_quota_error(err: HttpError) -> bool:
     return "quotaexceeded" in body or "dailylimitexceeded" in body or "quota" in body
 
 
+def _http_error_label(err: HttpError) -> str:
+    """``err`` for a log line: its status and Google's reason codes
+    (``quotaExceeded``, ``keyInvalid``), never its text. An ``HttpError``'s
+    text quotes the request it answered, and a search's ``q=`` holds the
+    user's words (T-4.11.4.2): a planner query, or a channel name."""
+    reasons: list[str] = []
+    details = getattr(err, "error_details", None)
+    if isinstance(details, list):
+        for detail in details:
+            reason = detail.get("reason") if isinstance(detail, dict) else None
+            if isinstance(reason, str) and reason.isidentifier() and reason not in reasons:
+                reasons.append(reason)
+    status = getattr(getattr(err, "resp", None), "status", "?")
+    return f"HttpError {status}" + (f" ({', '.join(reasons[:3])})" if reasons else "")
+
+
 def _execute_youtube_request(request, operation: str):
     """Execute a YouTube Data API request with retries, quota tracking, and error translation.
 
@@ -149,7 +166,7 @@ def _execute_youtube_request(request, operation: str):
             last_error = err
             status = err.resp.status
             if _is_quota_error(err):
-                logger.error("YouTube API quota exceeded on operation=%s: %s", operation, err)
+                logger.error("YouTube API quota exceeded on operation=%s: %s", operation, _http_error_label(err))
                 # Still record the attempt so the daily counter reflects reality.
                 quota_service.record(operation)
                 raise QuotaExceededError(
@@ -161,7 +178,7 @@ def _execute_youtube_request(request, operation: str):
                     operation, status, attempt + 1, len(_YT_RETRY_DELAYS),
                 )
                 continue
-            logger.error("YouTube API %s failed with HttpError %s: %s", operation, status, err)
+            logger.error("YouTube API %s failed: %s", operation, _http_error_label(err))
             raise
         else:
             quota_service.record(operation)
@@ -192,8 +209,10 @@ def search_videos(
     Returns:
         List of video dicts with basic metadata.
     """
+    # The query's length, never its words: a planner writes it from the
+    # user's topic (T-4.11.4.2).
     logger.info(
-        f"search_videos: query={query!r}, max_results={max_results}, "
+        f"search_videos: query of {len(query or '')} characters, max_results={max_results}, "
         f"published_after={published_after}, video_duration={video_duration}, "
         f"channel_type={channel_type}"
     )
@@ -238,10 +257,7 @@ def search_videos(
             break
 
     videos = videos[:max_results]
-    logger.info(
-        f"search_videos: returned {len(videos)} results for query={query!r} "
-        f"({page + 1} page(s))"
-    )
+    logger.info(f"search_videos: returned {len(videos)} results ({page + 1} page(s))")
     return videos
 
 
@@ -557,21 +573,27 @@ def resolve_channel_id(channel_input: str, job_id: str = "") -> str | None:
     Resolve a channel URL, handle, or name to a channel ID.
     """
     tag = f"[job:{job_id}]" if job_id else ""
-    logger.info(f"{tag} resolve_channel_id: input={channel_input!r}")
+    # What the user typed can be a pasted link or a name to search for, so the
+    # lines below say what kind of input it is and what it resolved to, never
+    # the input itself (T-4.11.4.2). A handle and an id are public names.
+    logger.info(f"{tag} resolve_channel_id: input is {loggable_channel_input(channel_input)}")
     youtube = get_youtube_client()
 
-    # Direct channel ID
-    if channel_input.startswith("UC") and len(channel_input) == 24:
+    # Direct channel ID, by its exact shape. A name such as "UC Berkeley Data
+    # Science" is also 24 characters starting with "UC": it is the user's
+    # words, so it goes to the search below, and its line by its length.
+    if is_channel_id(channel_input):
         logger.info(f"{tag} resolve_channel_id: direct channel ID detected → {channel_input}")
         return channel_input
 
-    # Channel URL with /channel/UCxxxx
+    # Channel URL with /channel/UCxxxx. What follows `/channel/` is whatever
+    # the link held, so its line says it the way the input line does.
     if "/channel/" in channel_input:
         parts = channel_input.split("/channel/")
         if len(parts) > 1:
             cid = parts[1].split("/")[0].split("?")[0]
             if cid.startswith("UC"):
-                logger.info(f"{tag} resolve_channel_id: extracted from URL → {cid}")
+                logger.info(f"{tag} resolve_channel_id: extracted from URL → {loggable_channel_input(cid)}")
                 return cid
 
     # Handle (@username) or URL with /@handle
@@ -582,7 +604,10 @@ def resolve_channel_id(channel_input: str, job_id: str = "") -> str | None:
         handle = channel_input[1:]
 
     if handle:
-        logger.info(f"{tag} resolve_channel_id: resolving handle @{handle} via API")
+        # `@` and anything typed after it is handle-shaped only when it has no
+        # spaces; otherwise it is a name, and goes by its length.
+        named = loggable_channel_input(f"@{handle}")
+        logger.info(f"{tag} resolve_channel_id: resolving handle {named} via API")
         response = _execute_youtube_request(
             youtube.channels().list(
                 part="id",
@@ -593,12 +618,15 @@ def resolve_channel_id(channel_input: str, job_id: str = "") -> str | None:
         items = response.get("items", [])
         if items:
             channel_id = items[0]["id"]
-            logger.info(f"{tag} resolve_channel_id: @{handle} → {channel_id}")
+            logger.info(f"{tag} resolve_channel_id: {named} → {channel_id}")
             return channel_id
-        logger.warning(f"{tag} resolve_channel_id: handle @{handle} not found via API")
+        logger.warning(f"{tag} resolve_channel_id: handle {named} not found via API")
 
     # Fall back to search (costs 100 units)
-    logger.info(f"{tag} resolve_channel_id: falling back to search for {channel_input!r} (costs 100 quota units)")
+    logger.info(
+        f"{tag} resolve_channel_id: falling back to search for {loggable_channel_input(channel_input)} "
+        "(costs 100 quota units)"
+    )
     response = _execute_youtube_request(
         youtube.search().list(
             q=channel_input,
@@ -614,7 +642,7 @@ def resolve_channel_id(channel_input: str, job_id: str = "") -> str | None:
         logger.info(f"{tag} resolve_channel_id: search fallback → {channel_id}")
         return channel_id
 
-    logger.warning(f"{tag} resolve_channel_id: could not resolve {channel_input!r}")
+    logger.warning(f"{tag} resolve_channel_id: could not resolve {loggable_channel_input(channel_input)}")
     return None
 
 

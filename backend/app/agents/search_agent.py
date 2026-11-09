@@ -48,6 +48,7 @@ from app.services.quota_service import QuotaExceededError
 from app.services.source_failure import SearchFailed
 from app.sources import connector_for
 from app.sources.types import DEFAULT_AUDIO_LANGUAGE, Candidate, SourceMetadata
+from app.utils.shared_url_log import loggable_channel_input, traceback_without_text
 from app.utils.youtube_helpers import format_duration
 
 logger = logging.getLogger(__name__)
@@ -285,17 +286,23 @@ def resolve_preferred_channels(state: SearchAgentState) -> dict:
         hint = (hint or "").strip()
         if not hint:
             continue
+        # A hint is what the user typed, a pasted link or a name, so a line
+        # says what kind it is, and an exception goes by its type and frames:
+        # the search fallback's HttpError quotes the hint (T-4.11.4.2).
         try:
             cid = connector.resolve_creator_id(hint)
-        except Exception:
-            logger.exception("resolve_preferred_channels: %r raised, skipping", hint)
+        except Exception as e:
+            logger.error(
+                "resolve_preferred_channels: %s raised, skipping: %s",
+                loggable_channel_input(hint), traceback_without_text(e),
+            )
             unresolved.append(hint)
             continue
         if cid and cid not in seen:
             seen.add(cid)
             resolved.append(cid)
         elif not cid:
-            logger.warning("resolve_preferred_channels: could not resolve %r", hint)
+            logger.warning("resolve_preferred_channels: could not resolve %s", loggable_channel_input(hint))
             unresolved.append(hint)
 
     logger.info(
@@ -388,7 +395,7 @@ def _run_broad_searches(queries: list[str], target: int) -> tuple[dict[str, dict
     connector = connector_for("video")
     all_videos: dict[str, dict] = {}
     failure: Exception | None = None
-    for query in queries:
+    for number, query in enumerate(queries, start=1):
         try:
             candidates = connector.search(query, limit=per_query_max)
         except QuotaExceededError as e:
@@ -396,7 +403,12 @@ def _run_broad_searches(queries: list[str], target: int) -> tuple[dict[str, dict
             failure = e
             break
         except Exception as e:
-            logger.exception("broad search for %r failed; skipping", query)
+            # Which query by its place, never its words: a planner wrote it
+            # from the user's topic, and an HttpError quotes it (T-4.11.4.2).
+            logger.error(
+                "broad search %d of %d failed; skipping: %s",
+                number, len(queries), traceback_without_text(e),
+            )
             failure = e
             continue
         for c in candidates:

@@ -1084,7 +1084,10 @@ def _references_via_llm(
     try:
         indices = json.loads(content)
     except json.JSONDecodeError:
-        logger.warning(f"Used-sources LLM returned non-JSON content: {content[:200]!r}")
+        # Its length, not its words: a reply that is not the index list is
+        # prose about the answer, which answers the user's question, and a
+        # saved search runs this in the worker (T-4.11.4.2).
+        logger.warning("Used-sources LLM returned non-JSON content of %d characters", len(content))
         return []
 
     if not isinstance(indices, list):

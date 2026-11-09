@@ -30,6 +30,7 @@ import httpx
 from app.config import settings
 from app.sources import _http_retry
 from app.utils.rate_limiter import RateLimiter
+from app.utils.shared_url_log import shared_url_fetch
 
 logger = logging.getLogger(__name__)
 
@@ -126,6 +127,8 @@ class RedditClient:
     # ------------------------------------------------------------------
     # Convenience wrappers
     # ------------------------------------------------------------------
+    # A search's URL holds the user's words, so httpx writes no request line (T-4.11.4.2).
+    @shared_url_fetch()
     def search(self, query: str, limit: int = 25, sort: str = "relevance") -> dict:
         """Site-wide post search. Returns the raw `Listing` JSON."""
         return self.get_json(
@@ -133,6 +136,8 @@ class RedditClient:
             params={"q": query, "limit": limit, "sort": sort, "type": "link"},
         )
 
+    # A search's URL holds the user's words, so httpx writes no request line (T-4.11.4.2).
+    @shared_url_fetch()
     def search_subreddit(
         self,
         subreddit: str,

@@ -17,7 +17,7 @@ from app.services.connector_dispatch import DispatchResult, dispatch_search
 from app.sources import registry
 from app.sources.base import BaseConnector
 from app.sources.types import Candidate
-from tests.provider_errors import CASES, assert_kept_out
+from tests.provider_errors import CASES
 
 
 # ---------------------------------------------------------------------------
@@ -193,8 +193,9 @@ def test_dispatch_search_isolates_a_connector_failure(clean_registry):
     assert len(result.candidates_by_source_type["video"]) == 1
     assert result.candidates_by_source_type["reddit_post"] == []
     assert "reddit_post" in result.errors_by_source_type
-    assert "RuntimeError" in result.errors_by_source_type["reddit_post"]
-    assert "reddit on fire" in result.errors_by_source_type["reddit_post"]
+    # T-4.11.4.2: the type alone. A search's exception quotes its request
+    # URL, whose query string is the user's topic, and this is for the log.
+    assert result.errors_by_source_type["reddit_post"] == "RuntimeError"
     assert result.has_errors
 
 
@@ -255,7 +256,10 @@ def test_dispatch_search_respects_limit_per_type(clean_registry):
 @pytest.mark.parametrize("case", CASES)
 def test_a_search_failures_text_keeps_no_key(clean_registry, case):
     """T-5.6.17: `errors_by_source_type` is only logged today, but it is a
-    result any caller could keep, so it holds the same rule."""
+    result any caller could keep. Since T-4.11.4.2 it is the exception's
+    type and nothing else, so no key and no words."""
     registry.register(_RaisingConnector("reddit_post", case.make()))
     result = dispatch_search(["reddit_post"], query="x", job_id="job-1")
-    assert_kept_out(case, result.errors_by_source_type["reddit_post"])
+    text = result.errors_by_source_type["reddit_post"]
+    assert text == case.name
+    assert case.secret not in text

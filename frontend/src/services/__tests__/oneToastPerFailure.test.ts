@@ -586,7 +586,11 @@ const NOT_YET: Record<string, string> = {
   'src/components/echo/QuickShare.tsx': 'waits on the owner’s ruling',
   // T-3.4.1.24 took off the seven files the state reading found (T-3.4.1.22):
   // DraftEditor, VideoFramesPanel, PasteUrlsForm, NotesPanel,
-  // PinQuestionButton, NotesPage and SavedSearchesPage.
+  // PinQuestionButton, NotesPage and SavedSearchesPage. Mutation check, run on
+  // 2026-11-09: taking `meta` off `useDraftFeedback` fails "knows how each hook
+  // sets `meta`" and this guard's "finds no line", naming DraftEditor; `meta`
+  // on `useDeleteNote` fails the third guard's "finds no mutation whose
+  // failure is said nowhere", since neither caller of a note's delete has a line.
 };
 
 /** Stand-ins for the hooks the guards read: one with no `meta`, one that sets

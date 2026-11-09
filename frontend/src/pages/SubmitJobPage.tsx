@@ -300,7 +300,7 @@ export function SubmitJobPage() {
       return;
     }
     const unavailable =
-      form.jobType === 'topic' ? unavailableSourceTypes(form.sourceTypes, capabilities) : [];
+      form.jobType === 'topic' ? unavailableSourceTypes(form.sourceTypes, capabilities, sourceHolds) : [];
     if (unavailable.length > 0) {
       const one = unavailable.length === 1;
       setValidationError(

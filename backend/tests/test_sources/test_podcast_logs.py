@@ -13,7 +13,9 @@ the audio and transcript tests after it); logging ``e`` instead of its type on
 any feed line (``test_a_failed_feed_names_the_host_only``); putting ``feed_url``
 back on a line (the same test, and
 ``test_no_log_call_in_the_connector_takes_a_url_itself``); ``loggable_id`` left
-off the guid (``test_a_guid_that_is_a_url_stays_out``).
+off the guid (``test_a_guid_that_is_a_url_stays_out``), or off the line
+``job_tasks._fetch_text`` writes for a recording cut short
+(``test_an_episode_cut_short_in_a_job_keeps_a_url_in_its_id_out``).
 """
 from __future__ import annotations
 
@@ -223,6 +225,20 @@ def test_a_candidates_failure_in_a_job_keeps_a_url_in_its_id_out():
         job_tasks._store_non_video_candidates(MagicMock(), job, result, {"podcast_episode": 1})
     assert len(log.exception.call_args_list) == 2
     assert TOKEN not in repr(log.exception.call_args_list)
+
+
+def test_an_episode_cut_short_in_a_job_keeps_a_url_in_its_id_out():
+    """The extraction loop's line for a recording Whisper finished only part
+    of (T-1.7.1.5), which names the candidate by its id."""
+    from app.services.source_failure import TranscriptionCutShort
+
+    connector_stub = MagicMock()
+    connector_stub.fetch_text.side_effect = TranscriptionCutShort(90.0)
+    with patch.object(job_tasks, "logger") as log:
+        extracted, part_paid = job_tasks._fetch_text(connector_stub, _candidate(AUDIO), job_id="job-1")
+    assert (extracted, part_paid) == (None, 90.0)
+    line = _rendered(log)
+    assert TOKEN not in line and "cdn.example.net" in line, line
 
 
 # ---------------------------------------------------------------------------

@@ -169,6 +169,7 @@ USE_CASE_FEATURES: dict[str, str] = {
 YOUTUBE_FEATURES: dict[str, str] = {
     "search": "youtube_search",
     "videos": "video_metadata",
+    "videos_audio_language": "video_metadata",
     "channels": "channel_sync",
     "playlistItems": "channel_sync",
 }

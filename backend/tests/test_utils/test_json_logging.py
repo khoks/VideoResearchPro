@@ -29,9 +29,28 @@ call and the missing ``propagate``. Not connecting ``celeryd_after_setup``
 warning from the validator again
 (``test_a_blank_secret_warns_in_the_format_of_the_log``). Turning either banner
 off whatever the format fails its ``_keeps_its_banner_under_text`` test.
+
+Under text the API's ``app.*`` lines have a handler of their own (2026-11-09:
+uvicorn gives the root logger none, so they were dropped). Mutation checks, each
+run when this shipped: dropping the ``give_the_app_a_handler()`` call from
+``configure_logging`` fails ``test_text_writes_the_apps_own_lines_once_on_stderr``
+and the two one-handler tests; letting the handler write whatever the root
+logger holds fails ``test_the_app_handler_steps_aside_once_root_has_one``,
+``test_text_leaves_the_worker_as_it_was`` (the line twice) and
+``test_text_writes_an_app_line_once_after_a_migration``; dropping the once
+guard fails the stderr test and the one-handler tests; putting the handler on
+root fails ``test_text_leaves_root_and_uvicorn_alone`` and the same three;
+``logging.basicConfig(level=logging.INFO)`` in its place fails the stderr test
+on httpx's request line; writing to stdout fails
+``test_the_app_handler_writes_while_root_has_none`` and the stderr test; not
+putting the root logger back after an in-process migration
+(``schema_init_service._keeping_the_root_logger``) fails
+``test_text_writes_an_app_line_once_after_a_migration`` (Alembic's format,
+no time).
 """
 from __future__ import annotations
 
+import io
 import json
 import logging
 import os
@@ -45,9 +64,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from app.config import settings
+from app.config import Settings, settings
 from app.utils import json_logging
-from app.utils.json_logging import JsonFormatter, configure_logging, route_model_libraries
+from app.utils.json_logging import AppStderrHandler, JsonFormatter, configure_logging, route_model_libraries
 
 _BACKEND = Path(__file__).resolve().parents[2]
 _PYTHON = sys.executable
@@ -113,9 +132,12 @@ def root_handlers():
 
 
 @pytest.mark.parametrize("value", ["text", "TEXT", " text "])
-def test_text_touches_nothing(monkeypatch, root_handlers, value):
+def test_text_leaves_root_and_uvicorn_alone(monkeypatch, root_handlers, value):
+    """The app's handler goes on the ``app`` logger: a handler on root would
+    write every library's lines too."""
     monkeypatch.setattr(settings, "LOG_FORMAT", value)
     before = root_handlers.handlers[:]
+    level = root_handlers.level
     uvicorn_log = logging.getLogger("uvicorn")
     probe = logging.NullHandler()
     formatter = logging.Formatter("%(message)s")
@@ -124,9 +146,82 @@ def test_text_touches_nothing(monkeypatch, root_handlers, value):
     try:
         configure_logging()
         assert root_handlers.handlers == before
+        assert not any(isinstance(h, AppStderrHandler) for h in root_handlers.handlers)
+        assert root_handlers.level == level
         assert probe.formatter is formatter
     finally:
         uvicorn_log.removeHandler(probe)
+
+
+def _app_handlers() -> list[logging.Handler]:
+    return [h for h in logging.getLogger("app").handlers if isinstance(h, AppStderrHandler)]
+
+
+def test_text_gives_the_app_logger_one_handler_however_often_it_runs(monkeypatch):
+    monkeypatch.setattr(settings, "LOG_FORMAT", "text")
+    configure_logging()
+    configure_logging()
+    assert len(_app_handlers()) == 1
+
+
+def test_a_reloaded_module_adds_no_second_handler(monkeypatch):
+    """A copy of the class from a reloaded module is not an instance of this
+    one, so the handler is known by its name."""
+    monkeypatch.setattr(settings, "LOG_FORMAT", "text")
+    configure_logging()
+    stray = logging.StreamHandler()
+    stray.set_name("pratidhvani.app_stderr")
+    app_logger = logging.getLogger("app")
+    [ours] = _app_handlers()
+    app_logger.removeHandler(ours)
+    app_logger.addHandler(stray)
+    try:
+        json_logging.give_the_app_a_handler()
+        assert _app_handlers() == []
+    finally:
+        app_logger.removeHandler(stray)
+        app_logger.addHandler(ours)
+
+
+def _app_record(level=logging.INFO, msg="from the app") -> logging.LogRecord:
+    return logging.LogRecord("app.probe", level, __file__, 1, msg, (), None)
+
+
+def test_the_app_handler_writes_while_root_has_none(monkeypatch, root_handlers):
+    """As in the API, where uvicorn leaves root bare. To the stderr of the
+    moment, as ``logging.lastResort`` does."""
+    stream = io.StringIO()
+    monkeypatch.setattr(sys, "stderr", stream)
+    root_handlers.handlers[:] = []
+    handler = AppStderrHandler()
+    assert handler.level == logging.INFO
+    handler.handle(_app_record())
+    [line] = stream.getvalue().splitlines()
+    assert re.fullmatch(r"\d{4}-\d\d-\d\d \d\d:\d\d:\d\d,\d{3} INFO app\.probe: from the app", line), line
+
+
+def test_the_app_handler_steps_aside_once_root_has_one(monkeypatch, root_handlers):
+    """As in the worker, after Celery has set the root logger up: the root
+    handler writes the line, and this one must not write it again."""
+    stream = io.StringIO()
+    monkeypatch.setattr(sys, "stderr", stream)
+    root_handlers.handlers[:] = [logging.NullHandler()]
+    AppStderrHandler().handle(_app_record())
+    assert stream.getvalue() == ""
+
+
+def test_json_adds_no_app_handler(monkeypatch, root_handlers):
+    """Under json the root logger has the one handler, and the app's would
+    write each line a second time."""
+    app_logger = logging.getLogger("app")
+    saved = app_logger.handlers[:]
+    app_logger.handlers[:] = [h for h in saved if not isinstance(h, AppStderrHandler)]
+    monkeypatch.setattr(settings, "LOG_FORMAT", "json")
+    try:
+        configure_logging()
+        assert _app_handlers() == []
+    finally:
+        app_logger.handlers[:] = saved
 
 
 def test_the_default_is_text():
@@ -365,6 +460,149 @@ def test_text_leaves_the_api_as_it_was(tmp_path):
     assert any("from uvicorn" in line for line in lines), "uvicorn's own format is still there"
 
 
+# The API as the CLI starts it, then three real sources of a line: the X token
+# line the lifespan writes (T-1.5.9.1), the password-reset email the route logs
+# when SMTP is unset, and httpx's own request line, at INFO, whole URL and all.
+_API_LINES = """
+import logging
+
+import uvicorn
+
+# uvicorn's logging config, then the app's import, whose app/__init__.py sets
+# the app's logging up.
+config = uvicorn.Config("app.main:app", log_level="info")
+config.load()
+
+from app.utils.json_logging import configure_logging
+
+configure_logging()  # a second time, as Alembic's env.py does
+
+from fastapi.testclient import TestClient
+
+from app.database import Base, SessionLocal, engine
+from app.main import app
+from app.services import auth_service
+from app.sources.twitter import client as twitter_client
+
+twitter_client.log_token_presence()
+
+Base.metadata.create_all(engine)
+with SessionLocal() as db:
+    auth_service.create_user(db, email="reset@example.com", password="a-long-test-password")
+# Not entered as a context manager: that runs the lifespan, and its LLM probes.
+reply = TestClient(app).post("/api/v1/auth/password-reset/request", json={"email": "reset@example.com"})
+assert reply.status_code == 200, reply.text
+logging.getLogger("app.probe").warning("a warning from the app")
+"""
+
+_X_LINE = "X / Twitter: TWITTER_BEARER_TOKEN is not set, so tweets come by pasted URL only"
+_TEXT_LINE = re.compile(r"\d{4}-\d\d-\d\d \d\d:\d\d:\d\d,\d{3} (?P<level>[A-Z]+) (?P<logger>[\w.]+): (?P<message>.*)")
+
+
+def _kept_out(env: dict[str, str]) -> list[str]:
+    """The settings ``_API_LINES`` must not see the install's value of: every
+    provider key, the mail server (it would send the reset email for real)
+    and the X token (its line would read "is set")."""
+    names = {name for name in Settings.model_fields if name.endswith("_API_KEY")}
+    names |= {name for name in env if name.upper().endswith("_API_KEY")}
+    return sorted(names | {"SMTP_HOST", "TWITTER_BEARER_TOKEN"})
+
+
+def _api_env(tmp_path: Path, log_format: str | None) -> dict[str, str]:
+    """``_env`` with each of ``_kept_out`` set empty. Set, not removed: the
+    process runs from backend/, where ``Settings`` reads ``.env``, and a
+    variable that is missing lets that file's value in, where an empty one
+    beats it. An empty ``SMTP_HOST`` is still no mail server, so the reset
+    email takes the log fallback."""
+    env = _env(tmp_path, log_format, JWT_SECRET="a-long-random-value-for-this-test-alone")
+    for name in _kept_out(env):
+        env[name] = ""
+    return env
+
+
+def test_the_api_lines_keep_the_installs_secrets_out(tmp_path, monkeypatch):
+    """A ``backend/.env`` holding a mail server, an X token and provider keys
+    (the install's own, in the main checkout) is read by the subprocess, since
+    it runs from backend/: none of them may reach it."""
+    env = _api_env(tmp_path, None)
+    names = _kept_out(env)
+    dotenv = tmp_path / "install.env"
+    dotenv.write_text("".join(f"{name}=from-the-install\n" for name in names), encoding="utf-8")
+    for name in names:
+        if name in env:
+            monkeypatch.setenv(name, env[name])
+        else:
+            monkeypatch.delenv(name, raising=False)
+
+    loaded = Settings(_env_file=dotenv, _env_file_encoding="utf-8")
+
+    assert {"SMTP_HOST", "TWITTER_BEARER_TOKEN", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GOOGLE_API_KEY"} <= set(names)
+    seen = {name: getattr(loaded, name) for name in names if name in Settings.model_fields}
+    assert seen == dict.fromkeys(seen, ""), "the install's .env reached the process"
+
+
+def _run_split(script: str, tmp_path: Path, log_format: str | None) -> tuple[list[str], list[str]]:
+    """``_run``, keeping stdout and stderr apart, with no provider key, no
+    mail server and no X token (``_api_env``)."""
+    env = _api_env(tmp_path, log_format)
+    done = subprocess.run(
+        [_PYTHON, "-c", script], cwd=_BACKEND, env=env, capture_output=True, text=True, encoding="utf-8", timeout=900
+    )
+    assert done.returncode == 0, done.stderr[-4000:]
+    return (
+        [line for line in done.stdout.splitlines() if line.strip()],
+        [line for line in done.stderr.splitlines() if line.strip()],
+    )
+
+
+def test_text_writes_the_apps_own_lines_once_on_stderr(tmp_path):
+    """The defect: uvicorn gives the root logger no handler, so the API dropped
+    every ``app.*`` INFO line and wrote a warning bare. Each line once, with
+    the time, the level and the logger, though logging was configured twice;
+    httpx's request line, still not at all."""
+    out, err = _run_split(_API_LINES, tmp_path, None)
+    stamped = [(m["level"], m["logger"], m["message"]) for line in err if (m := _TEXT_LINE.fullmatch(line))]
+
+    assert stamped.count(("INFO", "app.sources.twitter.client", _X_LINE)) == 1, err
+    assert stamped.count(("WARNING", "app.probe", "a warning from the app")) == 1, err
+    [email] = [s for s in stamped if s[1] == "app.services.email_service"]
+    assert email[0] == "INFO" and email[2].startswith("EMAIL (SMTP unconfigured"), email
+    assert "to=reset@example.com" in email[2], "the operator has to know whom to hand it to"
+
+    # The body follows on lines of its own, the code on one indented line.
+    text = "\n".join(err)
+    assert text.count("----- BEGIN EMAIL BODY -----") == 1
+    body = text.split("----- BEGIN EMAIL BODY -----")[1].split("----- END EMAIL BODY -----")[0]
+    assert len(re.findall(r"^    \S+$", body, re.M)) == 1, body
+
+    assert not any("HTTP Request" in line for line in out + err), "httpx keeps its INFO lines to itself"
+    assert not any(_X_LINE in line or "a warning from the app" in line for line in out), "stderr, as uvicorn's own"
+
+
+def test_json_writes_each_line_once(tmp_path):
+    out, err = _run_split(_API_LINES, tmp_path, "json")
+    entries = _json_lines(out + err)
+    lines = [(e["level"], e["logger"], e["message"]) for e in entries]
+    assert lines.count(("INFO", "app.sources.twitter.client", _X_LINE)) == 1
+    assert lines.count(("WARNING", "app.probe", "a warning from the app")) == 1
+    assert sum("BEGIN EMAIL BODY" in e["message"] for e in entries) == 1
+    assert not any("HTTP Request" in e["message"] for e in entries)
+
+
+def test_text_writes_an_app_line_once_after_a_migration(tmp_path):
+    """Alembic's ``fileConfig`` gives the root logger a handler of its own while
+    it migrates, and the app's handler steps aside for it; once the migration
+    is done the root logger is as it was, so the app's line has its time."""
+    lines = _run(_MIGRATE, tmp_path, None)
+    assert "RESULT fresh_install" in lines
+    assert any(line.startswith("INFO  [alembic.runtime.migration] Running upgrade") for line in lines), (
+        "the migration's own lines, in Alembic's format, while it runs"
+    )
+    [line] = [line for line in lines if "after the migration" in line]
+    match = _TEXT_LINE.fullmatch(line)
+    assert match and (match["level"], match["logger"]) == ("INFO", "app.probe"), line
+
+
 def test_json_survives_a_migration_at_startup(tmp_path):
     """Alembic's fileConfig replaces the root logger's handlers."""
     lines = _run(_MIGRATE, tmp_path, "json")
@@ -384,9 +622,14 @@ def test_the_worker_writes_json_lines(tmp_path):
 
 
 def test_text_leaves_the_worker_as_it_was(tmp_path):
+    """Celery puts a handler on the root logger after the app has imported, and
+    the app's own handler is already on the ``app`` logger by then: the line
+    is written by Celery's, in Celery's format, once."""
     lines = _run(_WORKER, tmp_path, "text")
     assert any("from the worker" in line for line in lines)
     assert not any(line.startswith("{") for line in lines)
+    [line] = [line for line in lines if "from a task's module" in line]
+    assert line.startswith("[") and "/MainProcess]" in line, "Celery's format, not the app's"
 
 
 _REAL_WORKER = ["worker", "--pool=solo", "--loglevel=info"]

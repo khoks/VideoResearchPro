@@ -75,6 +75,11 @@ class ExtractionResult:
       - ``"trafilatura"`` — static HTML extraction (the common case).
       - ``"playwright"`` — JS-rendered DOM extraction (future fallback).
       - ``"manual"`` — caller supplied raw text (paste-mode, S-1.5.8).
+
+    `html` is the page the text came from (the rendered one after the
+    Playwright fallback), so a caller can read what trafilatura's metadata
+    pass does not: a social post's author and date (T-1.5.8.4). Not for
+    storing.
     """
 
     text: str
@@ -85,6 +90,7 @@ class ExtractionResult:
     word_count: int = 0
     source: str = "trafilatura"
     extra: dict[str, Any] = field(default_factory=dict)
+    html: str | None = field(default=None, repr=False, compare=False)
 
 
 @shared_url_fetch()
@@ -217,6 +223,7 @@ def _trafilatura_extract(url: str, html: str) -> ExtractionResult | None:
             for k in ("hostname", "sitename", "categories", "tags")
             if k in payload and payload[k]
         },
+        html=html,
     )
 
 

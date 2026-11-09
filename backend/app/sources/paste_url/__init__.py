@@ -18,9 +18,9 @@ and friends) already commits to per-platform discriminators because:
    parsing, different per-platform URL formats).
 2. Library filtering by source_type is meaningful — users want to
    browse "all my Facebook posts" without "all my random blogs".
-3. Future per-platform metadata extractors (parse FB post author from
-   meta tags, X handle from URL, etc.) can pivot on source_type
-   without re-classifying existing rows.
+3. Per-platform metadata (``platform_metadata``, T-1.5.8.4: a post's
+   author and date from its page's own tags, an X handle from the
+   URL) pivots on source_type without re-classifying existing rows.
 4. The polymorphic-plumbing claim (validated 7 times pre-S-1.5.8)
    rests on per-source-type discrimination at every layer; collapsing
    FB / IG / LI / X / generic into a single source_type would weaken

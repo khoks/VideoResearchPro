@@ -38,6 +38,7 @@ from typing import Any
 import httpx
 
 from app.config import settings
+from app.sources import _http_retry
 from app.utils.rate_limiter import RateLimiter
 
 logger = logging.getLogger(__name__)
@@ -68,14 +69,18 @@ class MastodonClient:
     def get_json(self, path: str, params: dict[str, Any] | None = None) -> Any:
         """GET ``<instance>/api/v1<path>`` and return the parsed JSON.
 
-        Rate-limited per `MASTODON_RATE_LIMIT_RPM`. Any HTTP failure
-        raises ``httpx.HTTPError``. There is no auth retry path —
+        Rate-limited per `MASTODON_RATE_LIMIT_RPM`. A timeout, a connection
+        error or a 5xx is tried once more (T-1.5.11.2); any HTTP failure
+        after that raises ``httpx.HTTPError``. There is no auth retry path —
         these endpoints are unauthenticated.
         """
         url = f"{_api_base()}/api/v1{path}"
-        self._limiter.wait()
         headers = {"User-Agent": settings.MASTODON_USER_AGENT}
-        resp = httpx.get(url, params=params, headers=headers, timeout=self._timeout)
+        resp = _http_retry.send(
+            lambda: httpx.get(url, params=params, headers=headers, timeout=self._timeout),
+            url=url,
+            limiter=self._limiter,
+        )
         resp.raise_for_status()
         return resp.json()
 

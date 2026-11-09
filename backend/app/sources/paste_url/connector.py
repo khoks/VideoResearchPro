@@ -19,6 +19,7 @@ from urllib.parse import urlparse
 
 from app.services.article_extraction import extract_text
 from app.sources import registry
+from app.sources.paste_url import platform_metadata
 from app.sources.base import BaseConnector
 from app.sources.types import Candidate, ExtractedText, SourceMetadata
 
@@ -149,6 +150,13 @@ class _PasteURLBaseConnector(BaseConnector):
         if result is None:
             return None
 
+        # T-1.5.8.4: a social post's own metadata names its author and date
+        # better than trafilatura's article pass. Whatever it leaves out
+        # keeps trafilatura's value; an unknown date stays None (D-072).
+        post = platform_metadata.read(self.source_type, url, result.html)
+        author = post.author or result.author or ""
+        published_at = post.published_at or platform_metadata.to_utc_post_date(result.published_at)
+
         # Convert ExtractionResult to canonical-shape segments. We
         # synthesise ONE segment for the whole body — articles /
         # social posts don't have natural sub-segment boundaries
@@ -162,7 +170,7 @@ class _PasteURLBaseConnector(BaseConnector):
                 "duration": float(result.word_count) / 3.0,  # 3-wps per D-013
                 "extra": {
                     "kind": "post" if self.source_type != "article" else "article_body",
-                    "author": result.author or "",
+                    "author": author,
                     "comment_id": candidate.source_id,
                     "comment_url": url,
                     "depth": 0,
@@ -177,7 +185,12 @@ class _PasteURLBaseConnector(BaseConnector):
             extra={
                 "extractor_source": result.source,
                 "extracted_title": result.title or "",
-                "extracted_author": result.author or "",
+                "extracted_author": author,
+                # "@name" where the platform has handles and the page or the
+                # address gave one; "" otherwise.
+                "extracted_handle": post.handle or "",
+                # Timezone-aware UTC, or None when nothing dated the post.
+                "extracted_published_at": published_at,
                 "url": url,
             },
         )

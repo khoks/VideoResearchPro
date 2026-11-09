@@ -176,6 +176,14 @@ test.describe('a session that expires while a page is open', () => {
     });
   }
 
+  /** The page has sent every request its first paint leads to (notes, the
+   * citation chips' channels, suggestions), so the next 401 is the one the
+   * test causes. On a slow runner one of them could start after the refusal
+   * and end the session in the middle of the ask. */
+  async function pageAtRest(page: Page) {
+    await page.waitForLoadState('networkidle');
+  }
+
   async function askAQuestion(page: Page) {
     await page.getByPlaceholder('Ask a question about the research…').fill('What does a lagoon cost?');
     await page.getByRole('button', { name: 'Ask', exact: true }).click();
@@ -197,6 +205,7 @@ test.describe('a session that expires while a page is open', () => {
     await boot(page);
     await page.goto(DEEP);
     await arriveAtTheRun(page);
+    await pageAtRest(page);
 
     await serverStopsAccepting(page);
     await askAQuestion(page);
@@ -211,6 +220,7 @@ test.describe('a session that expires while a page is open', () => {
     await boot(page, { answers: { [`POST /api/v1/jobs/${JOB}/qa/clarify`]: { interpretation: 'Lagoon costs.', clarifications: [] } } });
     await page.goto(DEEP);
     await arriveAtTheRun(page);
+    await pageAtRest(page);
     await askAQuestion(page);
 
     await serverStopsAccepting(page);

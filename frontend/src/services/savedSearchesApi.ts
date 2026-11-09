@@ -35,6 +35,8 @@ export interface SavedSearch {
   last_success_at: string | null;
   last_exchange_id: string | null;
   last_answer: string | null;
+  /** T-1.15.4.9: sent only when `last_answer` stopped at its token budget. */
+  last_answer_cut_off?: boolean;
 }
 
 /** One run (S-8.3.3). `changed` is null on the first run and when nothing was answered. */
@@ -49,7 +51,8 @@ export interface SavedSearchRun {
   changed: boolean | null;
   jaccard: number | null;
   embedding_distance: number | null;
-  decided_by: 'none' | 'agreed' | 'judged' | 'judge_failed' | 'embedding_only' | null;
+  /** `cut_off`: the answer stopped at its token budget, so nothing was compared. */
+  decided_by: 'none' | 'agreed' | 'judged' | 'judge_failed' | 'embedding_only' | 'cut_off' | null;
   added_reference_ids: string[];
   dropped_reference_ids: string[];
   diff_summary: string | null;

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Markdown } from '../components/common/Markdown';
 import { NotesPanel } from '../components/notes';
+import { AnswerCutOffNote } from '../components/qa/AnswerCutOffNote';
 import {
   useAskQAHistoryChat,
   useQAHistoryChatHistory,
@@ -369,6 +370,7 @@ function QAHistoryExchangeCard({ qa }: { qa: QAHistoryExchange }) {
       >
         <Markdown>{qa.answer}</Markdown>
       </div>
+      <AnswerCutOffNote cutOff={qa.answer_cut_off} exchangeId={qa.id} />
       {qa.references.length > 0 && (
         <div
           style={{

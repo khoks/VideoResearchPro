@@ -9,6 +9,7 @@ import {
   useSavedSearches,
   useUpdateSavedSearch,
 } from '../hooks/useSavedSearches';
+import { AnswerCutOffNote } from '../components/qa/AnswerCutOffNote';
 import { ScheduleFields } from '../components/savedSearches/ScheduleFields';
 import { Badge, Button, Card, EmptyState, Skeleton, type BadgeTone } from '../components/primitives';
 import { apiErrorMessage } from '../utils/apiError';
@@ -185,9 +186,13 @@ function SavedSearchCard({ search: s, focusRun }: { search: SavedSearch; focusRu
               {s.last_answer}
             </p>
             {s.last_exchange_id && (
-              <Link to={`/library/qa?exchange=${s.last_exchange_id}`} style={{ ...meta, color: c.accent, display: 'inline-block', marginTop: space['1'] }}>
-                Read the full answer, with citations
-              </Link>
+              <>
+                {/* A cut answer stands in only while there is no full one, so no link here may promise one. */}
+                <AnswerCutOffNote cutOff={s.last_answer_cut_off} exchangeId={s.last_exchange_id} />
+                <Link to={`/library/qa?exchange=${s.last_exchange_id}`} style={{ ...meta, color: c.accent, display: 'inline-block', marginTop: space['1'] }}>
+                  {s.last_answer_cut_off ? 'Read the answer, with citations' : 'Read the full answer, with citations'}
+                </Link>
+              </>
             )}
           </div>
         ) : (
@@ -278,6 +283,7 @@ function SavedSearchCard({ search: s, focusRun }: { search: SavedSearch; focusRu
 
 function changeLabel(r: SavedSearchRun): { text: string; tone: BadgeTone } {
   if (r.status !== 'ok') return { text: STATUS[r.status]?.label ?? r.status, tone: STATUS[r.status]?.tone ?? 'neutral' };
+  if (r.decided_by === 'cut_off') return { text: 'Cut off', tone: 'warn' };
   if (r.changed === null) return { text: 'First answer', tone: 'info' };
   return r.changed ? { text: 'Changed', tone: 'accent' } : { text: 'No change', tone: 'neutral' };
 }
@@ -333,6 +339,12 @@ function RunHistory({ searchId, focusRun }: { searchId: string; focusRun: string
               </p>
             )}
             {r.error && r.status !== 'ok' && <p style={{ ...meta, marginTop: space['1'] }}>{r.error}</p>}
+            {r.decided_by === 'cut_off' && r.exchange_id && (
+              <>
+                <AnswerCutOffNote cutOff exchangeId={r.exchange_id} />
+                <p style={{ ...meta, marginTop: space['2'] }}>It was not compared with an earlier answer, so no alert went out.</p>
+              </>
+            )}
             {(r.exchange_id || (r.changed && r.previous_exchange_id)) && (
               <p style={{ ...meta, marginTop: space['2'], display: 'flex', gap: space['4'], flexWrap: 'wrap' }}>
                 {r.exchange_id && (

@@ -26,6 +26,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { CitationLink } from '../citation';
 import { citedFileFailed } from '../citation/citedFile';
 import { Badge, Button, IconButton, Spinner, Textarea } from '../primitives';
+import { AnswerCutOffNote } from '../qa/AnswerCutOffNote';
 import { useAskLibraryQA } from '../../hooks/useLibraryQA';
 import { useAskQAHistoryChat } from '../../hooks/useQAHistoryChat';
 import { useEchoConnectors, useEchoStatus } from '../../hooks/useEcho';
@@ -797,6 +798,7 @@ function LibraryAnswer({ qa }: { qa: LibraryQAExchange }) {
   return (
     <>
       <AnswerBody>{qa.answer}</AnswerBody>
+      <AnswerCutOffNote cutOff={qa.answer_cut_off} exchangeId={qa.id} />
       {qa.references?.length > 0 && (
         <SourcesList>
           {qa.references.map((ref, i) => (
@@ -816,6 +818,7 @@ function HistoryAnswer({ qa }: { qa: QAHistoryExchange }) {
   return (
     <>
       <AnswerBody>{qa.answer}</AnswerBody>
+      <AnswerCutOffNote cutOff={qa.answer_cut_off} exchangeId={qa.id} />
       {qa.references?.length > 0 && (
         <SourcesList>
           {qa.references.map((ref, i) => (

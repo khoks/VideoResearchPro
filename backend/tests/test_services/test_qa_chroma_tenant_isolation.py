@@ -296,7 +296,7 @@ def test_qa_history_meta_chat_does_not_leak_other_users_qa(client, db, test_user
         ),
         patch(
             "app.agents.qa_history_agent._formulate_answer",
-            return_value="answer",
+            return_value=("answer", False),
         ),
     ):
         r = client.post(

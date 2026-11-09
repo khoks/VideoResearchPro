@@ -126,6 +126,7 @@ async def ask_qa_history(
         references_json=json.dumps(references),
         answer_language=request.answer_language,
         tenant_id=current_user.id,
+        answer_cut_off=bool(result.get("answer_cut_off")),
     )
     db.add(exchange)
     db.commit()
@@ -148,6 +149,7 @@ async def ask_qa_history(
         references=[QAHistoryReference(**r) for r in references],
         answer_language=exchange.answer_language,
         created_at=exchange.created_at,
+        answer_cut_off=exchange.answer_cut_off,
     )
 
 
@@ -182,6 +184,7 @@ def list_qa_history(
             references=_parse_references(qa),
             answer_language=qa.answer_language,
             created_at=qa.created_at,
+            answer_cut_off=qa.answer_cut_off,
         )
         for qa in exchanges
     ]

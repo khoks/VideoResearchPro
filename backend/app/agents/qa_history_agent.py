@@ -24,6 +24,7 @@ from app.agents.prompts.qa_history_prompts import (
     QA_HISTORY_REFINE_CONTEXT_PROMPT,
     QA_HISTORY_SYSTEM_PROMPT,
 )
+from app.agents.qa_agent import answer_cut_off
 from app.config import settings
 from app.services import chroma_service
 from app.services.llm_service import get_llm_for, response_text
@@ -197,7 +198,8 @@ def _formulate_answer(
     answer_language: str,
     allowed_sources: str,
     refined_context: str,
-) -> str:
+) -> tuple[str, bool]:
+    """The answer, and whether it stopped at its token budget (T-1.15.4.9)."""
     # S-1.12.7: user-facing synthesis answer — bound the completion.
     llm = get_llm_for("qa_history_formulate_answer", temperature=0.0, max_tokens=3000)
     system_prompt = QA_HISTORY_SYSTEM_PROMPT.format(answer_language=answer_language)
@@ -211,7 +213,7 @@ def _formulate_answer(
         SystemMessage(content=system_prompt),
         HumanMessage(content=user_prompt),
     ])
-    return response_text(response)
+    return response_text(response), answer_cut_off(response, "qa_history_formulate_answer")
 
 
 def _filter_cited_references(answer: str, refs: list[dict]) -> list[dict]:
@@ -248,9 +250,10 @@ async def run_qa_history_chat_agent(
            the full retrieval if it cited none.
 
     Returns:
-        ``{"answer": str, "references": list[dict]}`` where each reference
-        has shape ``{source_type, exchange_id, question_preview,
-        job_id, original_created_at}``.
+        ``{"answer": str, "references": list[dict], "answer_cut_off": bool}``
+        where each reference has shape ``{source_type, exchange_id,
+        question_preview, job_id, original_created_at}``, and the flag says the
+        answer stopped at its token budget.
 
     Args:
         tenant_id: REQUIRED keyword-only — the user_id of the requester.
@@ -272,22 +275,22 @@ async def run_qa_history_chat_agent(
 
     if not chunks:
         logger.info("Q&A history agent: no past exchanges retrieved")
-        answer = _formulate_answer(
+        answer, cut_off = _formulate_answer(
             question=question,
             answer_language=answer_language,
             allowed_sources=_build_allowed_sources([]),
             refined_context="",
         )
-        return {"answer": answer, "references": []}
+        return {"answer": answer, "references": [], "answer_cut_off": cut_off}
 
     raw_context = _build_raw_context(parsed, references)
     refined_context = _refine_context(question, raw_context)
     allowed_sources = _build_allowed_sources(references)
-    answer = _formulate_answer(
+    answer, cut_off = _formulate_answer(
         question=question,
         answer_language=answer_language,
         allowed_sources=allowed_sources,
         refined_context=refined_context,
     )
     cited = _filter_cited_references(answer, references)
-    return {"answer": answer, "references": cited[:10]}
+    return {"answer": answer, "references": cited[:10], "answer_cut_off": cut_off}

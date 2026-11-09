@@ -243,8 +243,12 @@ def approve_job(
         db, approved_document_ids, current_user.id, visibility_service.SOURCE_JOB
     )
 
+    # T-5.2.20: only from awaiting_approval. The resume task is already
+    # queued and may have started, or ended (a run with nothing to read fails
+    # at once), and a cancel may have landed: this write never covers theirs.
     job = job_service.update_job_status(db, job_id, "extracting", progress_pct=30,
-                                        progress_message="Starting transcript extraction...")
+                                        progress_message="Starting transcript extraction...",
+                                        only_from="awaiting_approval")
     if job is not None:
         job.celery_task_id = async_result.id
         db.commit()

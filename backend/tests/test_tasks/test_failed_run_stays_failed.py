@@ -16,12 +16,15 @@ Nothing runs a failed job again on purpose, so the guard blocks nothing that
 should run: no route retries a run in place (a new run is a new row), the
 scheduler queues no job tasks, the tasks never call ``self.retry``, and a
 redelivery after a worker died mid-run (``task_acks_late``) finds the row in
-the state that worker left, never failed. A cancelled row is not read by the
-guard (unchanged).
+the state that worker left, never failed. Since T-5.2.20 the guard reads
+``cancelled`` too (``_already_stopped``), and every status write a run makes
+is conditional on the row being neither (``test_stopped_run_stays_stopped``).
 
-Mutation check: ``test_mutation_without_the_guard_the_run_comes_back`` runs
-every case with ``_already_failed`` answering False and sees the work start;
-remove the call from any one entry point and that entry point's cases fail.
+Mutation checks: ``test_mutation_without_the_guard_the_run_comes_back`` runs
+every case with nothing read as stopped and sees the run come back;
+``test_mutation_without_the_start_guard_the_scope_opens`` takes away the start
+guard alone and sees the usage scope open, which every case above forbids.
+Remove the call from any one entry point and that entry point's cases fail.
 """
 from __future__ import annotations
 
@@ -184,7 +187,8 @@ def test_a_resume_delivered_for_a_failed_run_does_nothing(db, worker):
 
 
 def test_a_pending_run_still_runs(db, worker):
-    """The guard reads failed only: a row in any other state is a run to do."""
+    """The guard reads failed and cancelled only: a row in any other state is
+    a run to do."""
     job = Job(job_type="topic", topic="tariffs", status="pending", tenant_id="tenant-pending")
     db.add(job)
     db.commit()
@@ -219,18 +223,24 @@ def test_a_missing_row_is_still_a_warning_and_nothing_more(db, worker):
 # ---------------------------------------------------------------- mutation
 
 
-@pytest.mark.parametrize("task_name", sorted(REAL_TASKS))
-def test_mutation_without_the_guard_the_run_comes_back(db, worker, monkeypatch, task_name):
-    """With ``_already_failed`` answering False, each entry point opens the
-    usage scope, publishes and rewrites the failed row: the cases above would
-    all fail."""
-    monkeypatch.setattr(job_tasks, "_already_failed", lambda job, task: False)
+def _failed_row_for(db, task_name: str) -> str:
     job_type = {"execute_channel_job": "channel", "execute_subscription_job": "subscription"}.get(task_name, "topic")
     job_id, _ = _failed_with_approved_document(db)
     job = db.get(Job, job_id)
     job.job_type = job_type
     job.channel_list = f'["{CHANNEL}"]'
     db.commit()
+    return job_id
+
+
+@pytest.mark.parametrize("task_name", sorted(REAL_TASKS))
+def test_mutation_without_the_guard_the_run_comes_back(db, worker, monkeypatch, task_name):
+    """With no status read as stopped (no start guard, and every status write
+    unconditional, as before T-5.2.18), each entry point opens the usage
+    scope, publishes and rewrites the failed row: the cases above would all
+    fail."""
+    monkeypatch.setattr(job_tasks, "_STOPPED_STATUSES", ("no-such-status",))
+    job_id = _failed_row_for(db, task_name)
     before = _snapshot(db, job_id)
 
     REAL_TASKS[task_name].run(job_id)
@@ -238,3 +248,20 @@ def test_mutation_without_the_guard_the_run_comes_back(db, worker, monkeypatch, 
     assert worker.metered.called
     assert worker.progress.mock_calls != []
     assert _snapshot(db, job_id) != before
+
+
+@pytest.mark.parametrize("task_name", sorted(REAL_TASKS))
+def test_mutation_without_the_start_guard_the_scope_opens(db, worker, monkeypatch, task_name):
+    """With ``_already_stopped`` answering False, each entry point opens the
+    usage scope, which the cases above forbid. Its first status write is then
+    refused (T-5.2.20), so the row and the socket stay as they were: the
+    second layer, not a substitute for the first."""
+    monkeypatch.setattr(job_tasks, "_already_stopped", lambda job, task: False)
+    job_id = _failed_row_for(db, task_name)
+    before = _snapshot(db, job_id)
+
+    REAL_TASKS[task_name].run(job_id)
+
+    assert worker.metered.called
+    assert worker.progress.mock_calls == []
+    assert _snapshot(db, job_id) == before

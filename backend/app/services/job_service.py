@@ -134,17 +134,34 @@ def get_jobs(
 
 
 def update_job_status(db: Session, job_id: str, status: str, progress_pct: int | None = None,
-                      progress_message: str | None = None, error_message: str | None = None) -> Job | None:
+                      progress_message: str | None = None, error_message: str | None = None,
+                      *, only_from: str | None = None) -> Job | None:
+    """Write a job's status, and the other fields given.
+
+    ``only_from`` makes the write conditional on the row still being in that
+    status, in one ``UPDATE ... WHERE status = :only_from`` (T-5.2.20): a
+    route that writes after it dispatched a task never writes over what the
+    task, or a cancel, has written meanwhile. The row is returned as it is
+    either way.
+    """
     job = get_job(db, job_id)
     if not job:
         return None
-    job.status = status
+    values: dict = {"status": status}
     if progress_pct is not None:
-        job.progress_pct = progress_pct
+        values["progress_pct"] = progress_pct
     if progress_message is not None:
-        job.progress_message = progress_message
+        values["progress_message"] = progress_message
     if error_message is not None:
-        job.error_message = error_message
+        values["error_message"] = error_message
+    if only_from is not None:
+        db.flush()
+        db.query(Job).filter(Job.id == job_id, Job.status == only_from).update(
+            values, synchronize_session=False
+        )
+    else:
+        for key, value in values.items():
+            setattr(job, key, value)
     db.commit()
     db.refresh(job)
     return job

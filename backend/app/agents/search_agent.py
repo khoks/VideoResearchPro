@@ -53,6 +53,18 @@ from app.utils.youtube_helpers import format_duration
 
 logger = logging.getLogger(__name__)
 
+
+class SearchStopped(Exception):
+    """Raised by a ``progress_callback`` to end the search where it stands.
+
+    The one callback error ``run_search_agent`` lets through (T-5.2.20). A
+    topic run cancelled or failed during its search has no use for the nodes
+    still to come: ``execute_searches`` spends YouTube units, and
+    ``rank_and_curate`` is the search's largest model call. Every other
+    callback error is logged and the search goes on.
+    """
+
+
 # How many recent uploads we pull per preferred channel before keyword-filtering.
 # 50 hits the YouTube playlistItems page size for a single quota unit.
 PREFERRED_CHANNEL_FETCH_LIMIT = 50
@@ -1029,7 +1041,8 @@ def run_search_agent(
     ``cb(pct: int, message: str)`` after each pipeline node so the caller
     can surface sub-progress instead of a static "Searching..." for the
     whole multi-minute phase. Callback errors are swallowed — progress
-    reporting must never sink the search itself.
+    reporting must never sink the search itself — except ``SearchStopped``,
+    which a callback raises to end the search where it stands (T-5.2.20).
 
     ``published_after_days`` (S-8.6.3) is the user's relative publish window.
     It reaches the ranking prompt only, as a preference: planning, discovery
@@ -1060,6 +1073,8 @@ def run_search_agent(
             return
         try:
             progress_callback(pct, message)
+        except SearchStopped:
+            raise  # the caller's run is over: no further node runs
         except Exception:
             logger.exception("search progress_callback raised; continuing")
 

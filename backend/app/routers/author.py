@@ -38,6 +38,7 @@ All endpoints gated on ``require_feature("author_studio")``
 """
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 from typing import Any
 
@@ -71,6 +72,8 @@ from app.services.tier_service import require_feature
 from app.tasks.newsletter_tasks import issue_newsletter
 from app.tasks.output_tasks import generate_output
 from app.utils.log_redaction import error_summary
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/author", tags=["author"])
 
@@ -621,6 +624,17 @@ def send_newsletter_now(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Turn the digest on first.")
     if sync:
         return newsletter_service.deliver(db, sub.id, trigger="manual")
-    result = task_routing_service.dispatch_for_user(issue_newsletter, current_user, sub.id, trigger="manual")
+    try:
+        result = task_routing_service.dispatch_for_user(issue_newsletter, current_user, sub.id, trigger="manual")
+    except Exception:  # noqa: BLE001 - the broker is down: say so, in words
+        # T-5.2.19: as `POST /jobs` (T-5.2.17), a 503 the page can show, never
+        # the broker's error, which can hold its URL and password. Nothing is
+        # left to undo: only the worker writes the issue and its send row.
+        logger.exception("Failed to queue a newsletter issue for subscription %s", sub.id)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Could not queue the issue, so nothing was sent; the task queue is unavailable. "
+            "Try Send now again in a few minutes.",
+        )
     return {"status": "queued", "task_id": getattr(result, "id", None)}
 

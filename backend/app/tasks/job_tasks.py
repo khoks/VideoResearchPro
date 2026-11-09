@@ -28,6 +28,7 @@ from app.services import (
 )
 from app.services.quota_service import QuotaExceededError as YouTubeQuotaExceededError
 from app.sources import connector_for
+from app.sources.paste_url.platform_metadata import to_utc_post_date
 from app.sources.types import DEFAULT_AUDIO_LANGUAGE, Candidate, ExtractedText, SourceMetadata
 from app.tasks.celery_app import celery_app
 from app.utils.chunking import chunk_transcript
@@ -363,6 +364,9 @@ def _upsert_candidate_and_link(
             existing.transcript_word_count = extracted_text.word_count
             existing.transcript_language = extracted_text.language
             existing.transcript_source = extracted_text.text_source
+        # A gap only: the row is shared, and a date it has stays (D-144's
+        # "a job fills gaps"). The Candidate's date first, then the page's.
+        _fill_published_at(existing, extracted_text, candidate_date=candidate.published_at)
         document = existing
     else:
         # New row. video_id stays NULL for non-video sources; for
@@ -395,6 +399,8 @@ def _upsert_candidate_and_link(
                 extracted_text.text_source if extracted_text is not None else None
             ),
         )
+        # T-1.6.7: a Brave result has no date of its own; its page may.
+        _fill_published_at(document, extracted_text)
         db.add(document)
 
     # Create the JobVideo link with the canonical document_id.
@@ -413,6 +419,35 @@ def _upsert_candidate_and_link(
         )
 
     return document
+
+
+def _fill_published_at(document: Document, extracted, *, candidate_date: datetime | None = None) -> None:
+    """Date a document that has no ``published_at`` yet (T-1.6.7).
+
+    The order is the Candidate's date, then the date its own page states,
+    which the paste-URL connectors (articles among them) put in
+    ``extra["extracted_published_at"]`` (T-1.5.8.4). An article Brave found
+    has no Candidate date, so its page was the only place one could come
+    from, and ``job_tasks`` never looked. A date the row already has is never
+    replaced, so a page's date never goes over a Candidate's.
+
+    The page's date is kept as D-072 and D-154 set it: timezone-aware UTC, and
+    unknown (None, never a placeholder) when it is missing, not a datetime, or
+    before 1995 or after tomorrow. The chunk fields (``published_ts``,
+    ``published_year``) and the corpus statistics read the column, so they
+    follow, as they do for a Candidate's date.
+    """
+    if document.published_at is not None:
+        return
+    if candidate_date is not None:
+        document.published_at = candidate_date
+        return
+    extra = getattr(extracted, "extra", None) if extracted is not None else None
+    if not isinstance(extra, dict):
+        return
+    page_date = to_utc_post_date(extra.get("extracted_published_at"))
+    if page_date is not None:
+        document.published_at = page_date
 
 
 def _resolve_source_types(job: Job) -> list[str]:
@@ -1225,6 +1260,29 @@ def _is_cancelled(db, job_id: str) -> bool:
     return job is not None and job.status == "cancelled"
 
 
+def _already_failed(job: Job, task: str) -> bool:
+    """Is this run already failed, so a delivered task must leave it alone?
+
+    T-5.2.18: a dispatch can raise after the broker took the message (the
+    publish went out, the reply was lost). The route then fails the row,
+    ``POST /jobs`` and ``_dispatch_subscription_sync`` alike, and tells the
+    user it never started; the worker would still get the message. Each entry
+    point reads the row first and returns, before the usage scope opens and
+    before any write or publish, so the run stays failed in the words the
+    route wrote and charges nothing.
+
+    Nothing runs a failed job again on purpose: no route retries one in place
+    (a new run is a new row), the scheduler queues no job tasks, and the tasks
+    never call ``self.retry``. A redelivery after a worker died mid-run
+    (``task_acks_late``) finds the row in the state that worker left, never
+    failed, so it still runs. Cancelled is not read here (unchanged).
+    """
+    if job.status != "failed":
+        return False
+    logger.info("[job:%s] %s delivered for a failed run; leaving it failed", job.id, task)
+    return True
+
+
 @celery_app.task(bind=True, max_retries=2, default_retry_delay=60)
 def execute_topic_job(self, job_id: str) -> None:
     """Orchestrates topic-based job Phase 1: search for videos."""
@@ -1236,6 +1294,8 @@ def execute_topic_job(self, job_id: str) -> None:
         job = _get_job(db, job_id)
         if not job:
             logger.warning(f"[job:{job_id}] Job not found in DB, aborting")
+            return
+        if _already_failed(job, "execute_topic_job"):
             return
         meter.enter_context(usage_service.metered(db, job.tenant_id))
 
@@ -1477,6 +1537,8 @@ def execute_channel_job(self, job_id: str) -> None:
         if not job:
             logger.warning(f"[job:{job_id}] Job not found in DB, aborting")
             return
+        if _already_failed(job, "execute_channel_job"):
+            return
         meter.enter_context(usage_service.metered(db, job.tenant_id))
 
         channel_list = json.loads(job.channel_list) if job.channel_list else []
@@ -1599,6 +1661,8 @@ def resume_job_after_approval(self, job_id: str) -> None:
         job = _get_job(db, job_id)
         if not job:
             logger.warning(f"[job:{job_id}] Job not found in DB, aborting")
+            return
+        if _already_failed(job, "resume_job_after_approval"):
             return
         meter.enter_context(usage_service.metered(db, job.tenant_id))
 
@@ -1790,6 +1854,9 @@ def resume_job_after_approval(self, job_id: str) -> None:
                     if hasattr(video, "transcript_source"):
                         video.transcript_source = extracted.text_source
                     _record_caption_track(video, extracted)
+                    # T-1.6.7: before the chunks are built, so they carry it.
+                    # The row's Candidate date, if it had one, is already set.
+                    _fill_published_at(video, extracted)
 
                     language_profile = language_mix_service.ensure(video, transcript)
                     _ensure_era(db, video, transcript, job_id)
@@ -2319,6 +2386,8 @@ def execute_subscription_job(self, job_id: str) -> None:
         job = _get_job(db, job_id)
         if not job:
             logger.warning(f"[job:{job_id}] Job not found in DB, aborting")
+            return
+        if _already_failed(job, "execute_subscription_job"):
             return
         meter.enter_context(usage_service.metered(db, job.tenant_id))
 

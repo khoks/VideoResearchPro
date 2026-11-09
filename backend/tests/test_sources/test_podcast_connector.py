@@ -1160,6 +1160,89 @@ def test_a_split_episode_leaves_neither_audio_nor_chunks(podcast, fake_client, a
 
 
 # ---------------------------------------------------------------------------
+# T-1.7.1.8: Whisper's words with no segments
+#
+# A verbose_json answer can carry the whole text and an empty `segments`.
+# YouTube's path has always kept such an answer as pseudo-segments spread over
+# what Whisper heard (`_synthesize_pseudo_segments`); the podcast single-file
+# path dropped it, and since #430 raised `TranscriptionEmpty`, so the episode
+# was paid for and lost. It now goes through the same helper. Whisper is
+# `_whisper_transcribe_with_retry`, patched: the client it would use is built
+# and never called, so no request leaves.
+#
+# Mutation check: take the `_synthesize_pseudo_segments` fallback out of
+# `_whisper_transcribe_audio` and the first two tests fail on
+# `TranscriptionEmpty`.
+# ---------------------------------------------------------------------------
+TWENTY_MINUTES_OF_WORDS = " ".join(f"word{i}" for i in range(400))
+
+
+def _whisper_text_only(text: str, duration: float) -> SimpleNamespace:
+    """The SDK's verbose_json model with the text and no segments."""
+    return SimpleNamespace(language="en", duration=duration, segments=[], text=text)
+
+
+def test_whisper_text_with_no_segments_is_kept_as_pseudo_segments(podcast, fake_client, audio_dirs):
+    fake_client.fetch_audio_to_file.side_effect = _writes(b"mp3")
+    answer = _whisper_text_only(TWENTY_MINUTES_OF_WORDS, 1200.0)
+    with patch.object(youtube_service, "_whisper_transcribe_with_retry", return_value=answer) as whisper:
+        out = podcast.fetch_text(_candidate_for_ep1(), job_id="j1")
+
+    whisper.assert_called_once()
+    assert isinstance(out, ExtractedText)
+    assert out.text_source == "podcast_whisper"
+    assert out.word_count == 400, "every word is kept"
+    assert " ".join(s["text"] for s in out.segments) == TWENTY_MINUTES_OF_WORDS
+    # The way YouTube does it, by the same helper: 30 s pseudo-segments over
+    # the 1,200 s Whisper reported, the last ending where the audio does.
+    youtube_segments, _, _ = youtube_service._whisper_response_to_segments(answer, "[test]", "ep1")
+    assert [{k: s[k] for k in ("text", "start", "duration")} for s in out.segments] == youtube_segments
+    assert len(out.segments) == 40
+    assert out.segments[-1]["start"] + out.segments[-1]["duration"] == 1200.0
+    # Each pseudo-segment carries the episode's provenance like a real one.
+    assert out.segments[1]["extra"]["comment_url"].endswith("#t=30")
+
+
+def test_an_older_sdks_dict_answer_with_only_text_is_kept_too(podcast, fake_client, audio_dirs):
+    fake_client.fetch_audio_to_file.side_effect = _writes(b"mp3")
+    answer = {"language": "en", "duration": 20.0, "segments": [], "text": "  A short clip.  "}
+    with patch.object(youtube_service, "_whisper_transcribe_with_retry", return_value=answer):
+        out = podcast.fetch_text(_candidate_for_ep1(), job_id="j1")
+
+    assert [(s["text"], s["start"], s["duration"]) for s in out.segments] == [("A short clip.", 0.0, 20.0)]
+
+
+@pytest.mark.parametrize("text", ["", "   \n ", None], ids=["empty", "blank", "absent"])
+def test_an_answer_with_no_words_at_all_is_still_transcription_empty(podcast, fake_client, audio_dirs, text):
+    """T-1.7.1.7 unchanged: billed, no words, and the job's limits hear it."""
+    fake_client.fetch_audio_to_file.side_effect = _writes(b"mp3")
+    answer = SimpleNamespace(language="en", duration=300.0, segments=[])
+    if text is not None:
+        answer.text = text
+    with (
+        patch.object(youtube_service, "_whisper_transcribe_with_retry", return_value=answer),
+        pytest.raises(source_failure.TranscriptionEmpty) as empty,
+    ):
+        podcast.fetch_text(_candidate_for_ep1(), job_id="j1")
+    assert empty.value.seconds == 300.0
+
+
+def test_real_segments_still_win_over_the_text(podcast, fake_client, audio_dirs):
+    """An answer with both keeps its own timings; the text is not read."""
+    fake_client.fetch_audio_to_file.side_effect = _writes(b"mp3")
+    answer = SimpleNamespace(
+        language="en",
+        duration=60.0,
+        segments=[{"text": "Timed words.", "start": 4.0, "end": 9.0}],
+        text="Timed words. And text that is not in any segment.",
+    )
+    with patch.object(youtube_service, "_whisper_transcribe_with_retry", return_value=answer):
+        out = podcast.fetch_text(_candidate_for_ep1(), job_id="j1")
+
+    assert [(s["text"], s["start"], s["duration"]) for s in out.segments] == [("Timed words.", 4.0, 5.0)]
+
+
+# ---------------------------------------------------------------------------
 # Which episodes a show contributes (T-1.7.1.3)
 # ---------------------------------------------------------------------------
 def _episode(n: int, title: str, summary: str = "") -> dict:

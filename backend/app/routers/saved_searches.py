@@ -4,6 +4,8 @@ Plan: docs/plans/m3-saved-searches-alerts.md. Every route acts on the
 caller's own rows and needs the ``saved_searches`` tier feature (Pro and
 Studio). The schedule is a ``scheduled_runs`` row the service keeps in step.
 """
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session
 
@@ -19,6 +21,8 @@ from app.schemas.saved_search import (
 )
 from app.services import quota_metering_service, saved_search_service, task_routing_service
 from app.services.tier_service import require_feature
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/saved-searches", tags=["saved-searches"])
 
@@ -138,7 +142,18 @@ def run_saved_search_now(
     quota_metering_service.enforce_quota_or_raise(db, current_user, saved_search_service.QUOTA_RESOURCE)
     from app.tasks.saved_search_tasks import run_saved_search
 
-    task_routing_service.dispatch_for_user(run_saved_search, current_user, ss.id, trigger="manual")
+    try:
+        task_routing_service.dispatch_for_user(run_saved_search, current_user, ss.id, trigger="manual")
+    except Exception:  # noqa: BLE001 - the broker is down: say so, in words
+        # T-5.2.19: as `POST /jobs` (T-5.2.17), a 503 the page can show, never
+        # the broker's error, which can hold its URL and password. Nothing is
+        # left to undo: the quota check above only reads, and the run counts
+        # toward it when it answers.
+        logger.exception("Failed to queue a run of saved search %s", ss.id)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Could not queue the run; the task queue is unavailable. Try Run now again in a few minutes.",
+        )
     return RunNowResponse(status="queued")
 
 

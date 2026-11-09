@@ -429,11 +429,32 @@ def _whisper_transcribe_audio(
             elif isinstance(s, dict):
                 normalised.append(s)
         segments = podcast_flatten.whisper_segments_to_canonical(normalised)
+        heard = youtube_service._whisper_duration(response)
+        if not segments:
+            # T-1.7.1.8: words with no `segments`, which YouTube's path has
+            # always kept as pseudo-segments spread over what Whisper heard.
+            # The same helper, so the episode is an ordinary transcription,
+            # charged once by the job like any other.
+            segments = youtube_service._synthesize_pseudo_segments(_whisper_text(response), heard)
+            if segments:
+                logger.info(
+                    "%s Whisper returned text with no segments for %s: %d pseudo-segments",
+                    tag,
+                    label,
+                    len(segments),
+                )
         if not segments:
             # Answered and billed, with no words (T-1.7.1.7): up to the job,
             # whose Whisper limits count it as they count a cut-short one.
-            raise TranscriptionEmpty(youtube_service._whisper_duration(response))
+            raise TranscriptionEmpty(heard)
         return segments
+
+
+def _whisper_text(response: Any) -> str:
+    """The whole-text field of a verbose_json answer, by attribute (the SDK's
+    model) or by key (an older SDK's dict); "" when there is none."""
+    text = response.get("text") if isinstance(response, dict) else getattr(response, "text", None)
+    return text.strip() if isinstance(text, str) else ""
 
 
 class PodcastConnector(BaseConnector):

@@ -26,7 +26,11 @@ Mutation checks (each failed the named test when this shipped):
   (``test_from_none_is_not_a_refusal``);
 - ``_is_refusal`` without the package check
   (``test_our_own_class_of_the_same_name_keeps_its_words``);
-- ``_map_args`` dropping the mapping branch (``test_a_task_that_raises_a_refusal``).
+- ``_map_args`` dropping the mapping branch (``test_a_task_that_raises_a_refusal``);
+- ``_safe`` leaving an argument that is neither text nor an exception as it is
+  (``test_an_argument_that_is_not_text_is_judged_by_its_text``);
+- ``_safe`` replacing such an argument by its text when it held no key
+  (``test_an_ordinary_record_is_left_exactly_as_it_was``).
 """
 from __future__ import annotations
 
@@ -305,6 +309,25 @@ def test_every_way_a_log_call_can_carry_an_exception():
     assert text.count("AuthenticationError") >= 3
 
 
+def test_an_argument_that_is_not_text_is_judged_by_its_text():
+    """A dict, a list, bytes or a tuple is formatted after the record is made,
+    by its text. A lone flat dict was already safe (logging makes it the
+    record's mapping), so each line here is a shape that was not."""
+    log = logging.getLogger("app.redaction.probe")
+    body = {"message": f"Incorrect API key provided: {FRAGMENT}. You can find", "code": "invalid_api_key"}
+    with written() as stream:
+        log.warning("provider said %s", {"error": body})  # nested, as `e.response.json()` is
+        log.warning("%s said %s", "openai", body)  # one of several arguments
+        log.warning("failures: %s", [_openai_401()])  # an exception inside a list
+        log.warning("raw: %r", b"x Incorrect API key provided: " + FRAGMENT.encode() + b" y")
+        log.warning("youtube: %s", ("search", {"uri": f"https://x/?part=a&key={YOUTUBE_KEY}"}))
+    text = stream.getvalue()
+    assert FRAGMENT[:12] not in text
+    assert YOUTUBE_KEY not in text
+    assert text.count("Incorrect API key provided") == 4, "the rest of each line stands"
+    assert "invalid_api_key" in text and "youtube: " in text
+
+
 @pytest.mark.parametrize("kind", ["exception", "exc_info_true", "exc_info_value", "chained"])
 @pytest.mark.parametrize("formatter", sorted(FORMATTERS))
 def test_a_traceback_is_scrubbed_by_every_formatter(formatter, kind):
@@ -357,18 +380,20 @@ def test_an_ordinary_record_is_left_exactly_as_it_was():
 
     handler = Keep()
     argument = ValueError("plain")
+    container = {"ids": [1, 2], "note": "nothing secret"}
     with written():
         log.addHandler(handler)
         try:
             try:
                 raise ValueError("boom")
             except ValueError:
-                log.exception("failed %d %s", 3, argument)
+                log.exception("failed %d %s %s", 3, argument, container)
         finally:
             log.removeHandler(handler)
     [record] = seen
     assert record.exc_info is not None
-    assert record.args == (3, argument) and record.args[1] is argument
+    assert record.args == (3, argument, container)
+    assert record.args[1] is argument and record.args[2] is container
 
 
 def test_an_exception_with_no_readable_text_cannot_break_a_log_call():

@@ -20,13 +20,16 @@ message has run. So this works on the record as it is made
 - An exception from a model SDK that means "this key may not be used", or one
   caused by it, is named by its type alone (``provider_error_text``), the rule
   the Whisper path has followed since T-5.6.13.
-- Any other text has the shapes of a key taken out (``scrub_keys``).
+- Any other text has the shapes of a key taken out (``scrub_keys``). An
+  argument that is not text, a dict, a list, bytes, is judged by the text the
+  line will show for it, and replaced by that text scrubbed when it held one.
 - A traceback is rendered here, scrubbed the same way, and left on the record as
   ``exc_text``, which every formatter writes as it stands.
 
 Not covered: anything that is not a log record (``print``, a file a library
-writes), and a key in a shape ``scrub_keys`` does not know, inside an exception
-that is not a refusal, or inside a dict or list passed as an argument.
+writes), and a key in a shape ``scrub_keys`` does not know anywhere but in a
+refusal itself: a refusal's words copied into a dict or a string go by shape
+alone. So a log line passes the exception, never ``e.body`` or a response.
 """
 from __future__ import annotations
 
@@ -121,6 +124,10 @@ def provider_error_text(exc: BaseException) -> str:
     return scrub_keys(_text_of(exc))
 
 
+# What cannot hold a key, so is left alone without being rendered.
+_PLAIN = (int, float, bool, type(None))
+
+
 def _safe(value: object) -> object:
     """``value`` as a log line may show it: itself, unless it holds a key."""
     if isinstance(value, str):
@@ -128,7 +135,13 @@ def _safe(value: object) -> object:
     if isinstance(value, BaseException):
         text = provider_error_text(value)
         return value if text == _text_of(value) else text
-    return value
+    if isinstance(value, _PLAIN):
+        return value
+    # A dict, a list, bytes, a response: the line will show its text, so its
+    # text is what is judged. A provider's body nested in a dict is caught here.
+    text = _text_of(value)
+    safe = scrub_keys(text)
+    return value if safe == text else safe
 
 
 def _map_args(args: object, change: Callable[[object], object]) -> object:

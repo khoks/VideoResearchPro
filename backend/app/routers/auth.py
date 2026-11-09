@@ -32,6 +32,7 @@ from app.schemas.auth import (
 from app.services import audit_service, auth_service, email_service, mfa_service
 from app.services.audit_service import Event
 from app.utils.client_ip import client_ip
+from app.utils.shared_url_log import traceback_without_text
 
 logger = logging.getLogger(__name__)
 
@@ -67,9 +68,11 @@ def register(
         )
     try:
         user = auth_service.create_user(db, email=payload.email, password=payload.password)
-    except IntegrityError:
+    except IntegrityError as e:
         db.rollback()
-        logger.exception("Failed to create user due to integrity error")
+        # T-4.11.4.4: by its frames and type. The database's text quotes the
+        # INSERT's values, the address and the password's hash among them.
+        logger.error("Failed to create user due to integrity error: %s", traceback_without_text(e))
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Email already registered",

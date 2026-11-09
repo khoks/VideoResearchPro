@@ -51,6 +51,7 @@ from app.models.voice_signal import VoiceSignal
 from app.models.voice_signal_input import VoiceSignalInput
 from app.services import echo_signal_service as signals
 from app.services import echo_stylometry as stylo
+from app.utils.shared_url_log import exception_kind, traceback_without_text
 
 logger = logging.getLogger(__name__)
 
@@ -907,7 +908,11 @@ def _run(db: Session, tenant_id: str, *, llm: LLMCall | None, model: str | None,
                 report.tokens_out += t_out or _tokens(raw)
                 candidates, dropped = parse_reply(raw, ids)
             except Exception as e:  # noqa: BLE001 — fail-soft: the batch stays pending
-                logger.warning("echo signals: batch of %d failed for tenant %s: %s", len(batch), tenant_id[:8], e)
+                # T-4.11.4.4: by its kind. The prompt is the user's own words,
+                # and reading the reply, which quotes them, can fail on them.
+                logger.warning(
+                    "echo signals: batch of %d failed for tenant %s (%s)", len(batch), tenant_id[:8], exception_kind(e)
+                )
                 report.calls_failed += 1
                 report.batches += 1
                 continue
@@ -1022,8 +1027,14 @@ def maybe_queue(db: Session, tenant_id: str, *, force: bool = False) -> str:
 
         task_routing_service.dispatch_for_user(extract_signals_task, user, tenant_id)
         return "queued"
-    except Exception:  # noqa: BLE001
-        logger.exception("echo signals: could not queue extraction for tenant %s", tenant_id[:8])
+    except Exception as e:  # noqa: BLE001
+        # T-4.11.4.4: by its frames and type. In the inline mode the whole run
+        # is in here, and a database error's text quotes a signal's examples,
+        # which are the user's words verbatim.
+        logger.error(
+            "echo signals: could not queue or run extraction for tenant %s: %s",
+            tenant_id[:8], traceback_without_text(e),
+        )
         return "queue_failed"
 
 

@@ -81,6 +81,7 @@ from app.config import settings
 from app.models.echo_voice_test import OPEN_STATUSES, EchoVoiceTest
 from app.models.user import User
 from app.models.voice_signal import VoiceSignal
+from app.utils.shared_url_log import exception_kind, traceback_without_text
 
 logger = logging.getLogger(__name__)
 
@@ -620,7 +621,8 @@ def _drafter(db: Session, tenant_id: str) -> Ask:
             except Exception as e:  # noqa: BLE001
                 if attempt == 2:
                     raise
-                logger.warning("voice test: retry after %s: %s", type(e).__name__, e)
+                # T-4.11.4.4: by its kind. The prompt holds the user's notes.
+                logger.warning("voice test: retry after %s", exception_kind(e))
                 time.sleep(5 * (attempt + 1))
         raise RuntimeError("unreachable")
 
@@ -680,8 +682,10 @@ def generate(db: Session, test_id: str, *, ask: Ask | None = None) -> EchoVoiceT
         logger.info("voice test: %s was closed while it was being written", test_id)
     except NotEnoughNotes:
         _fail(db, test_id, f"The test needs {MIN_NOTES} of your notes; some were deleted while it was being written.")
-    except Exception:  # noqa: BLE001
-        logger.exception("voice test: could not write %s", test_id)
+    except Exception as e:  # noqa: BLE001
+        # T-4.11.4.4: by its frames and type. A database error's text quotes
+        # the pairs, the user's held-out notes beside the drafts.
+        logger.error("voice test: could not write %s: %s", test_id, traceback_without_text(e))
         _fail(db, test_id, "Echo could not write the test. Start a new one.")
     finally:
         if card is not None:

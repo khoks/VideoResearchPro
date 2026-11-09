@@ -20,6 +20,11 @@ httpx writes a line of its own for every request, whole URL included, at INFO,
 and a Celery worker logs at INFO. ``shared_url_fetch`` silences that line
 around a fetch of a shared link, or a search, and leaves every other caller's
 alone.
+
+The API's own warnings and errors follow the same rule (T-4.11.4.4): a file
+name the user chose goes by ``loggable_filename``, and a failure whose text
+can restate what the user wrote, a model's reply over an incoming message or
+a draft for one, goes by ``exception_kind``.
 """
 from __future__ import annotations
 
@@ -83,6 +88,43 @@ def loggable_channel_input(channel_input: object) -> str:
     if _BARE_LINK.match(value):
         return f"a link on {host_of('https://' + value)}"
     return f"a name of {len(value)} characters"
+
+
+# A file's extension, as an operator would want to read it: short, plain.
+_EXTENSION = re.compile(r"\.([A-Za-z0-9]{1,8})$")
+
+
+def loggable_filename(name: object) -> str:
+    """A file name a user chose, for a log line (T-4.11.4.4): its extension
+    and its length, never the name. An export is often named after the person
+    it is with ("WhatsApp Chat with Asha.txt"), and a renamed one after
+    whatever the user had in mind."""
+    value = str(name or "")
+    base = value.replace("\\", "/").rsplit("/", 1)[-1]
+    found = _EXTENSION.search(base)
+    if found is None:
+        return f"a file name of {len(value)} characters with no extension"
+    return f"a .{found[1].lower()} file name of {len(value)} characters"
+
+
+def _http_status(exc: BaseException) -> int | None:
+    status = getattr(exc, "status_code", None)
+    if not isinstance(status, int) or isinstance(status, bool):
+        status = getattr(getattr(exc, "response", None), "status_code", None)
+    return status if isinstance(status, int) and not isinstance(status, bool) else None
+
+
+def exception_kind(exc: BaseException) -> str:
+    """``exc`` for a log line by what it is, never by what it says
+    (T-4.11.4.4): its type, and the HTTP status a provider's error carries,
+    as ``RateLimitError (HTTP 429)``. For a fail-soft line over a model call
+    whose prompt holds the user's own words or an incoming message: the
+    exception can come from reading the reply, which restates them, as well
+    as from the provider. What a provider says about a model it will not
+    serve is on ``/health/llm``, from the startup probe's one-word prompt."""
+    status = _http_status(exc)
+    name = type(exc).__name__
+    return f"{name} (HTTP {status})" if status is not None else name
 
 
 _CAUSE = "\nThe above exception was the direct cause of the following exception:\n\n"

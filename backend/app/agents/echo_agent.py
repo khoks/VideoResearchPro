@@ -64,6 +64,7 @@ from app.agents.prompts.echo_draft_prompts import (
 )
 from app.config import settings
 from app.services import echo_stylometry as stylo
+from app.utils.shared_url_log import exception_kind
 
 logger = logging.getLogger(__name__)
 
@@ -275,7 +276,9 @@ def build_graph(deps: DraftDeps):
                 if isinstance(p, dict) and str(p.get("name", "")).strip()
             ]
         except Exception as e:  # noqa: BLE001 — fail-soft: draft without the classification
-            logger.warning("echo draft: classify failed: %s", e)
+            # T-4.11.4.4: by its kind. Reading the reply can fail on what the
+            # model wrote about the incoming message, which is someone's words.
+            logger.warning("echo draft: classify failed (%s); drafting without its reading", exception_kind(e))
         language = update.get("language") or state.get("language") or deps.language_of(message)
         update["language"] = language if language in LANGUAGE_NAMES else "en"
         acknowledged = {n.casefold() for n in state.get("acknowledge_names") or []}
@@ -345,7 +348,9 @@ def build_graph(deps: DraftDeps):
             latest = {**latest, "scores": scores, "notes": [str(n)[:300] for n in data.get("notes") or [] if str(n).strip()][:8]}
             spent = charge(state, t_in, t_out)
         except Exception as e:  # noqa: BLE001 — fail-soft: keep the draft, say the check did not run
-            logger.warning("echo draft: critique failed: %s", e)
+            # T-4.11.4.4: by its kind. A score the model wrote as words, read
+            # with float(), puts those words, often the draft's, in the error.
+            logger.warning("echo draft: critique failed (%s); the draft keeps no scores", exception_kind(e))
             latest = {**latest, "scores": None, "notes": ["The voice check could not run for this draft."]}
             spent = {}
         candidates[-1] = latest

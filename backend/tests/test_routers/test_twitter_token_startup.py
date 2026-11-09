@@ -14,6 +14,7 @@ from fastapi.testclient import TestClient
 
 from app.config import settings
 from app.main import app
+from app.services import source_refusal_service
 from app.sources.twitter import client as twitter_client
 
 # Invented, shaped like a bearer token, distinctive enough to find.
@@ -41,8 +42,9 @@ def test_startup_says_once_that_the_token_is_set_and_never_what_it_is(monkeypatc
 
     lines = _token_lines(log)
     assert len(lines) == 1, lines
-    assert "is set" in lines[0] and "search is on" in lines[0]
+    assert "is set" in lines[0] and "configured" in lines[0]
     assert "paid call" in lines[0], "says the token was not checked against X"
+    assert "source_holds" in lines[0], "says where a refusal of the token shows"
     every_line = " ".join(str(c) for c in log.method_calls)
     for fragment in (FAKE_TOKEN, FAKE_TOKEN[:8], FAKE_TOKEN[-8:], "FakeForTest"):
         assert fragment not in every_line
@@ -61,11 +63,31 @@ def test_startup_says_once_that_the_token_is_not_set(monkeypatch):
 
 
 def test_the_line_agrees_with_health(monkeypatch, client):
-    """The same test as ``/health``'s ``twitter_search_enabled``."""
+    """Without a hold, the token's presence is ``/health``'s
+    ``twitter_search_enabled``."""
     for token, enabled in ((FAKE_TOKEN, True), ("", False)):
         monkeypatch.setattr(settings, "TWITTER_BEARER_TOKEN", token)
         with patch.object(twitter_client, "logger") as log:
             twitter_client.log_token_presence()
-        said_on = "is set" in log.info.call_args.args[0]
-        assert said_on is enabled
+        said_set = "is set" in log.info.call_args.args[0]
+        assert said_set is enabled
         assert client.get("/api/v1/health").json()["capabilities"]["twitter_search_enabled"] is enabled
+
+
+def test_the_line_never_says_search_is_on_while_x_is_held(monkeypatch, client, db):
+    """X refused the token (D-141): ``/health`` turns tweet search off for 24
+    hours. The startup line, which reads no hold, must not contradict it."""
+    monkeypatch.setattr(settings, "TWITTER_BEARER_TOKEN", FAKE_TOKEN)
+    source_refusal_service.record(db, "tweet", 401)
+    db.commit()
+
+    health = client.get("/api/v1/health").json()
+    assert health["capabilities"]["twitter_search_enabled"] is False
+    assert "tweet" in health["source_holds"]
+
+    with patch.object(twitter_client, "logger") as log:
+        twitter_client.log_token_presence()
+    line = log.info.call_args.args[0]
+    assert "is set" in line
+    assert "is on" not in line and "enabled" not in line, line
+    assert "source_holds" in line, "points at where the hold shows"

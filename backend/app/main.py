@@ -104,7 +104,8 @@ async def lifespan(app: FastAPI):
     # bad entry in it is logged here, at startup, not at the first request.
     logger.info("App origins (CORS and OAuth sign-in): %s", app_origins.describe())
 
-    # T-1.5.9.1: whether X search is on, from the token's presence alone.
+    # T-1.5.9.1: whether X search is configured, from the token's presence
+    # alone (a D-141 hold is /health's to report, not this line's).
     twitter_client.log_token_presence()
 
     # Idempotent one-shot backfill of the Q&A library Chroma collection.

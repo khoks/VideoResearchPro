@@ -162,16 +162,19 @@ class TwitterClient:
 def log_token_presence() -> None:
     """Say at API startup whether ``TWITTER_BEARER_TOKEN`` is set (T-1.5.9.1).
 
-    Presence only: the line holds neither the token nor any part of it, and
-    the same test as ``/health``'s ``twitter_search_enabled``. Whether X
-    accepts the token is not checked, because that takes a call X bills
-    (D-009, D-139); the first search says so, and a refusal holds the
-    source (D-141).
+    Presence only: the line holds neither the token nor any part of it. It
+    says the token is configured, not that tweet search is on: ``/health``'s
+    ``twitter_search_enabled`` is also false while X is on hold for refusing
+    the token (D-141, ``source_holds``), which this line does not read.
+    Whether X accepts the token is not checked, because that takes a call X
+    bills (D-009, D-139); the first search says so, and a refusal holds the
+    source.
     """
     if TwitterClient.is_enabled():
         logger.info(
-            "X / Twitter: TWITTER_BEARER_TOKEN is set, so tweet search is on "
-            "(not checked against X here: that takes a paid call)"
+            "X / Twitter: TWITTER_BEARER_TOKEN is set, so tweet search is "
+            "configured (not checked against X here: that takes a paid call; "
+            "/api/v1/health's source_holds says whether X has refused it)"
         )
     else:
         logger.info(

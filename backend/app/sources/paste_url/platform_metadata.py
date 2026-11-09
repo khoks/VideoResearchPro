@@ -77,6 +77,12 @@ _IG_TITLE_NAME = re.compile(r"^(?P<name>.+?)\s+on\s+Instagram\s*:", re.IGNORECAS
 
 # "Name (@handle)" in an Open Graph title, on X and Instagram.
 _TITLE_HANDLE = re.compile(r"\(@(?P<handle>[A-Za-z0-9_.]{1,30})\)")
+# Where the poster's part of that title ends: at " on X" / " on Instagram",
+# or at the quote that opens the caption. A "(@name)" after it is someone
+# the caption mentions, not the poster.
+_TITLE_CAPTION_START = re.compile(
+    r"\s+on\s+(?:Instagram|X|Twitter)\b|[\"“”«]", re.IGNORECASE
+)
 
 _MAX_AUTHOR_CHARS = 200
 
@@ -156,7 +162,12 @@ def _x(url: str, meta: dict[str, str], objects: list[dict]) -> PostMetadata:
     handle, status_id = _x_address(url)
     handle = handle or _handle(meta.get("twitter:creator"), _X_HANDLE)
     name, ld_handle = _json_ld_author(objects)
-    handle = handle or _handle(ld_handle, _X_HANDLE) or _title_handle(meta, _X_HANDLE)
+    ld_handle = _handle(ld_handle, _X_HANDLE)
+    handle = handle or ld_handle or _title_handle(meta, _X_HANDLE)
+    if name and ld_handle and handle and ld_handle.lower() != handle.lower():
+        # The JSON-LD author is another account (a quoted or parent post):
+        # its name is not this post's poster's, so the handle stands alone.
+        name = None
     published = _x_snowflake_time(status_id) or _json_ld_date(objects) or _meta_date(meta)
     return PostMetadata(author=name or handle, handle=handle, published_at=published)
 
@@ -299,8 +310,11 @@ def _json_ld_author(objects: list[dict]) -> tuple[str | None, str | None]:
             continue
         if isinstance(author, dict):
             name = _clean_name(author.get("name"))
-            handle = author.get("alternateName") or author.get("identifier")
-            handle = handle if isinstance(handle, str) else None
+            handle = author.get("alternateName")
+            if not isinstance(handle, str) or not handle.strip():
+                handle = author.get("identifier")
+            # A bare number is the account's id, not its handle.
+            handle = handle if isinstance(handle, str) and not handle.strip().isdigit() else None
             if name or handle:
                 return name, handle
     return None, None
@@ -332,7 +346,11 @@ def _meta_date(meta: dict[str, str]) -> datetime | None:
 
 
 def _title_handle(meta: dict[str, str], pattern: re.Pattern) -> str | None:
-    match = _TITLE_HANDLE.search(meta.get("og:title", ""))
+    """The ``(@handle)`` in the poster's part of the Open Graph title only:
+    the caption that follows can mention anyone."""
+    title = meta.get("og:title", "")
+    caption = _TITLE_CAPTION_START.search(title)
+    match = _TITLE_HANDLE.search(title[: caption.start()] if caption else title)
     return _handle(match.group("handle"), pattern) if match else None
 
 

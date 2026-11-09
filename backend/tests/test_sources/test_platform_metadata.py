@@ -89,20 +89,70 @@ def test_an_x_address_that_names_no_post_time_gives_no_date(url):
     assert read("tweet", url, None).published_at is None
 
 
-def test_a_name_the_x_page_gives_is_shown_and_the_address_keeps_the_handle():
-    page = _page(
+def _x_post_by(author: dict) -> str:
+    return _page(
         json_ld={
             "@context": "https://schema.org",
             "@type": "SocialMediaPosting",
-            "author": {"@type": "Person", "name": "Quill Featherstone", "alternateName": "@someone_else"},
+            "author": {"@type": "Person", **author},
             "datePublished": "2020-01-01T00:00:00Z",
         }
     )
-    got = read("tweet", f"https://x.com/quill_feather/status/{X_STATUS_ID}", page)
+
+
+@pytest.mark.parametrize(
+    "author",
+    [
+        {"name": "Quill Featherstone", "alternateName": "@Quill_Feather"},  # case differs only
+        {"name": "Quill Featherstone", "identifier": "quill_feather"},
+        {"name": "Quill Featherstone"},  # no handle to check against
+        {"name": "Quill Featherstone", "identifier": "783214"},  # an account number, not a handle
+        {"name": "Quill Featherstone", "alternateName": "Quill F."},  # an alias, not a handle
+    ],
+)
+def test_a_name_the_x_page_gives_for_the_same_account_is_shown(author):
+    got = read("tweet", f"https://x.com/quill_feather/status/{X_STATUS_ID}", _x_post_by(author))
 
     assert got.author == "Quill Featherstone"
-    assert got.handle == "@quill_feather", "the address names the post's author; it wins"
+    assert got.handle == "@quill_feather"
     assert got.published_at == X_STATUS_TIME, "the id is exact; it wins over the page"
+
+
+@pytest.mark.parametrize("key", ["alternateName", "identifier"])
+def test_a_name_the_x_page_gives_for_another_account_is_not_shown(key):
+    """A quoted or parent post's author: one account's name must never sit
+    beside another account's handle."""
+    page = _x_post_by({"name": "Other Person", key: "@someone_else"})
+    got = read("tweet", f"https://x.com/quill_feather/status/{X_STATUS_ID}", page)
+
+    assert got.author == "@quill_feather"
+    assert got.handle == "@quill_feather", "the address names the post's author; it wins"
+
+
+def test_a_json_ld_name_that_disagrees_with_twitter_creator_is_not_shown():
+    page = _page(
+        meta={"twitter:creator": "@quill_feather"},
+        json_ld={
+            "@type": "SocialMediaPosting",
+            "author": {"name": "Other Person", "alternateName": "someone_else"},
+        },
+    )
+    got = read("tweet", f"https://x.com/i/web/status/{X_STATUS_ID}", page)
+    assert got.author == "@quill_feather"
+    assert got.handle == "@quill_feather"
+
+
+def test_a_handle_the_caption_mentions_is_not_the_x_posters():
+    page = _page(meta={"og:title": 'Quill on X: "lunch with (@other_person) today"'})
+    got = read("tweet", f"https://x.com/i/web/status/{X_STATUS_ID}", page)
+    assert got.handle is None
+    assert got.author is None
+
+
+def test_a_handle_beside_the_name_in_the_x_title_is_read():
+    page = _page(meta={"og:title": 'Quill Featherstone (@quill_feather) on X: "lunch with (@other_person)"'})
+    got = read("tweet", f"https://x.com/i/web/status/{X_STATUS_ID}", page)
+    assert got.handle == "@quill_feather"
 
 
 def test_twitter_creator_names_the_handle_when_the_address_does_not():
@@ -133,6 +183,29 @@ def test_an_instagram_post_reads_its_open_graph_title_and_description():
         handle="@marisol.quintero",
         published_at=datetime(2024, 3, 3, tzinfo=UTC),
     )
+
+
+@pytest.mark.parametrize(
+    "title,author",
+    [
+        ('Marisol on Instagram: "dinner with (@tidepool.notes)"', "Marisol"),
+        ('Marisol on Instagram: dinner with (@tidepool.notes)', "Marisol"),
+        ('"dinner with (@tidepool.notes)"', None),  # no name part at all
+    ],
+)
+def test_a_handle_the_instagram_caption_mentions_is_not_the_posters(title, author):
+    """The description is in a form the pattern does not read, so the title
+    is the only place left: the friend tagged in the caption is not the poster."""
+    page = _page(meta={"og:title": title, "og:description": "Les publications de Marisol"})
+    got = read("ig_post", "https://www.instagram.com/p/C4xYzAbCdEf/", page)
+    assert got.handle is None
+    assert got.author == author
+
+
+def test_a_handle_beside_the_name_in_the_instagram_title_is_read():
+    page = _page(meta={"og:title": "Marisol Quintero (@marisol.quintero) • Instagram photos and videos"})
+    got = read("ig_post", "https://www.instagram.com/p/C4xYzAbCdEf/", page)
+    assert got.handle == "@marisol.quintero"
 
 
 def test_an_instagram_page_with_only_a_handle_shows_the_handle():

@@ -3,7 +3,7 @@ import re
 from datetime import datetime, timezone
 from typing import Any
 
-import tiktoken
+from app.utils import tiktoken_cache
 
 logger = logging.getLogger(__name__)
 
@@ -12,7 +12,7 @@ _SENTENCE_BOUNDARY_RE = re.compile(r"(?<=[.!?])\s+")
 
 
 def _count_tokens(text: str, encoding_name: str = "cl100k_base") -> int:
-    encoding = tiktoken.get_encoding(encoding_name)
+    encoding = tiktoken_cache.encoding(encoding_name)
     return len(encoding.encode(text))
 
 

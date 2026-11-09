@@ -7,7 +7,6 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 
-import tiktoken
 from langchain_core.messages import HumanMessage
 from langgraph.graph import END, StateGraph
 
@@ -49,7 +48,7 @@ from app.services.llm_routing import (
 )
 from app.services import output_length as output_length_policy
 from app.services import temporal_service
-from app.utils import html_balance
+from app.utils import html_balance, tiktoken_cache
 from app.utils.youtube_helpers import format_timestamp
 
 logger = logging.getLogger(__name__)
@@ -91,7 +90,7 @@ _MAX_COMPOSE_INPUT_TOKENS = 1_000_000
 
 def _count_tokens(text: str) -> int:
     try:
-        enc = tiktoken.get_encoding("cl100k_base")
+        enc = tiktoken_cache.encoding()
         return len(enc.encode(text))
     except Exception:
         logger.exception("Token counting via tiktoken failed; falling back to whitespace split")
@@ -109,7 +108,7 @@ def _batch_budget(use_case: str, fraction: float = _WINDOW_SAFETY_FRACTION) -> i
 def _truncate_to_tokens(text: str, max_tokens: int) -> str:
     """Hard-truncate ``text`` to ``max_tokens`` (cl100k count)."""
     try:
-        enc = tiktoken.get_encoding("cl100k_base")
+        enc = tiktoken_cache.encoding()
         tokens = enc.encode(text)
         if len(tokens) <= max_tokens:
             return text

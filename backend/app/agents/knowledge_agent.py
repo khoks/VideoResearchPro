@@ -21,7 +21,6 @@ import json
 import logging
 from typing import Any
 
-import tiktoken
 from langchain_core.messages import HumanMessage
 from langgraph.graph import END, StateGraph
 
@@ -43,6 +42,7 @@ from app.services.llm_service import (
     thinking_reserve_tokens,
 )
 from app.services.llm_routing import UseCaseConfig, max_output_for, resolve_config
+from app.utils import tiktoken_cache
 
 logger = logging.getLogger(__name__)
 
@@ -71,7 +71,7 @@ EXTRACT_BATCH_MAX_COMPLETION_TOKENS = 3_000
 
 def _count_tokens(text: str) -> int:
     try:
-        enc = tiktoken.get_encoding("cl100k_base")
+        enc = tiktoken_cache.encoding()
         return len(enc.encode(text))
     except Exception:
         logger.exception("Token counting via tiktoken failed; falling back to whitespace split")
@@ -81,7 +81,7 @@ def _count_tokens(text: str) -> int:
 def _truncate_to_tokens(text: str, max_tokens: int) -> str:
     """Truncate `text` to roughly `max_tokens` using cl100k_base encoding."""
     try:
-        enc = tiktoken.get_encoding("cl100k_base")
+        enc = tiktoken_cache.encoding()
         tokens = enc.encode(text)
         if len(tokens) <= max_tokens:
             return text

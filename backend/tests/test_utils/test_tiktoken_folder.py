@@ -20,6 +20,7 @@ dropping the copy from the temp folder (``test_an_earlier_copy_needs_no_download
 """
 from __future__ import annotations
 
+import errno
 import os
 import shutil
 import socket
@@ -34,6 +35,7 @@ import tiktoken.load
 import tiktoken.registry
 import tiktoken_ext.openai_public
 
+from app.agents import knowledge_agent, report_agent
 from app.config import settings
 from app.utils import chunking, tiktoken_cache
 from tests import tiktoken_cache as suite_cache
@@ -276,6 +278,82 @@ def test_a_folder_that_cannot_be_written_leaves_tiktokens_default(nothing_chosen
 
     assert "TIKTOKEN_CACHE_DIR" not in os.environ
     logger.warning.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# Two processes downloading at once (review of #427)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "count",
+    [chunking._count_tokens, knowledge_agent._count_tokens, report_agent._count_tokens],
+    ids=["chunking", "knowledge_agent", "report_agent"],
+)
+def test_the_second_writer_counts_from_the_first_writers_copy(nothing_chosen, tmp_path, monkeypatch, count) -> None:
+    """A fresh install: the API and the worker both miss the folder and
+    download. The other one renames its copy into place while this one is
+    still fetching, and this one's rename then meets a file, which on Windows
+    raises (stood in for here, so the test means the same on every runner).
+    tiktoken re-raises it for a folder the app chose. The count must still be
+    right: chunking has no fallback and fails, and the agents' fallback counts
+    words (3 here, not 5).
+
+    Mutation check: calling ``tiktoken.get_encoding`` directly again in
+    chunking, knowledge_agent or report_agent fails that case."""
+    real = _real_encoding().read_bytes()
+    folder = tmp_path / "encodings"
+    assert tiktoken_cache.use_app_folder(str(folder)) == str(folder.resolve())
+    copy = folder / tiktoken_cache.cache_file()
+    downloads: list[str] = []
+
+    def download(url):
+        downloads.append(url)
+        copy.write_bytes(real)  # the other process got there first
+        return real
+
+    rename = os.rename
+
+    def rename_without_replacing(src, dst):
+        if os.path.exists(dst):
+            raise FileExistsError(errno.EEXIST, "Cannot create a file when that file already exists", src, None, dst)
+        rename(src, dst)
+
+    monkeypatch.setattr(tiktoken.registry, "ENCODINGS", {})
+    monkeypatch.setattr(tiktoken.load, "read_file", download)
+    monkeypatch.setattr(tiktoken.load.os, "rename", rename_without_replacing)
+
+    assert count(TEXT) == TOKENS
+    assert downloads == [tiktoken_cache.ENCODING_URL], "read from the folder, not fetched again"
+    assert [p.name for p in folder.iterdir()] == [copy.name], "the spare download is not left behind"
+
+
+def test_the_same_collision_twice_is_raised(nothing_chosen, tmp_path, monkeypatch) -> None:
+    """One more load, not a loop and not a guess: a folder that keeps refusing
+    the write fails the count."""
+    folder = tmp_path / "encodings"
+    tiktoken_cache.use_app_folder(str(folder))
+    calls: list[str] = []
+
+    def refuse(name):
+        calls.append(name)
+        raise FileExistsError(errno.EEXIST, "exists", str(folder / "x.tmp"), None, str(folder / "x"))
+
+    monkeypatch.setattr(tiktoken, "get_encoding", refuse)
+    with pytest.raises(FileExistsError):
+        chunking._count_tokens(TEXT)
+    assert calls == ["cl100k_base", "cl100k_base"]
+
+
+def test_every_count_in_the_app_loads_through_the_one_helper() -> None:
+    """A new ``tiktoken.get_encoding`` call would miss the collision above."""
+    app = _BACKEND / "app"
+    callers = sorted(
+        str(path.relative_to(app)).replace(os.sep, "/")
+        for path in app.rglob("*.py")
+        if "tiktoken.get_encoding(" in path.read_text(encoding="utf-8")
+    )
+    assert callers == ["utils/tiktoken_cache.py"]
 
 
 def test_this_repos_url_is_tiktokens(monkeypatch) -> None:

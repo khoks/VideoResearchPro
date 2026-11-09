@@ -66,6 +66,10 @@ from app.models.document import Document  # noqa: E402
 from app.models.transcript_cache import TranscriptCache  # noqa: E402
 from app.services import youtube_service  # noqa: E402
 from app.services.youtube_service import primary_language  # noqa: E402
+from app.utils import tiktoken_cache  # noqa: E402
+
+# T-8.8.6.6: the encoding in TIKTOKEN_ENCODINGS_DIR, as the API and the worker keep it.
+tiktoken_cache.use_app_folder(settings.TIKTOKEN_ENCODINGS_DIR)
 
 # A BCP-47-ish code ("hi", "en-US", "zh-Hans", "es-419"). Anything else —
 # "english", "welsh" — is a language NAME, which only Whisper ever wrote.

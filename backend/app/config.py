@@ -752,7 +752,8 @@ class Settings(BaseSettings):
     CHUNK_SIZE: int = 256
     CHUNK_OVERLAP: int = 32
     # T-8.8.6.5: where tiktoken keeps its encoding (cl100k_base, about 1.7 MB)
-    # in the API and the worker, instead of the temp folder a cleanup empties.
+    # in the API, the worker and the scripts that count tokens (T-8.8.6.6),
+    # instead of the temp folder a cleanup empties.
     # A TIKTOKEN_CACHE_DIR or DATA_GYM_CACHE_DIR already in the environment
     # wins. Empty: tiktoken's temp default. See app/utils/tiktoken_cache.py.
     TIKTOKEN_ENCODINGS_DIR: str = "./data/tiktoken"

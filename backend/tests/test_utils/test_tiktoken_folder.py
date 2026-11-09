@@ -1,12 +1,14 @@
 """T-8.8.6.5 — the API and the worker keep tiktoken's encoding in
-TIKTOKEN_ENCODINGS_DIR, not in the temp folder.
+TIKTOKEN_ENCODINGS_DIR, not in the temp folder; T-8.8.6.6 — so do the scripts
+that count tokens.
 
 The first two tests are the production callers, each in a fresh interpreter
 started the way that process starts: nothing in the environment names a
 folder, the temp folder is empty, and every lookup fails as in a DNS drop. The
 real encoding is only in the app's folder, so a count that comes back right
 was read from there. The rest cover what ``use_app_folder`` decides, in this
-process, with the suite's own choice set aside and put back after.
+process, with the suite's own choice set aside and put back after, and the
+scripts: ``regenerate_report`` run offline, and every script that counts.
 
 Mutation checks (each failed the named test when this shipped): dropping the
 call from ``app/tasks/celery_app.py`` (``test_the_worker_counts_offline_from_the_folder``);
@@ -17,9 +19,14 @@ every router imports); overriding a variable that is already set
 (``test_a_folder_the_environment_chose_is_left_alone``); dropping the write
 probe (``test_a_folder_that_cannot_be_written_leaves_tiktokens_default``);
 dropping the copy from the temp folder (``test_an_earlier_copy_needs_no_download``).
+For T-8.8.6.6: dropping the call from ``scripts/regenerate_report.py``
+(``test_regenerate_report_counts_offline_from_the_folder``, and the next one);
+dropping it from ``scripts/eval_code_mixing_e2e.py``
+(``test_every_script_that_counts_tokens_uses_the_apps_folder``).
 """
 from __future__ import annotations
 
+import ast
 import errno
 import os
 import shutil
@@ -27,6 +34,7 @@ import socket
 import subprocess
 import sys
 import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -367,3 +375,141 @@ def test_this_repos_url_is_tiktokens(monkeypatch) -> None:
     tiktoken_ext.openai_public.cl100k_base()
     assert asked == [tiktoken_cache.ENCODING_URL]
     assert tiktoken_cache.cache_file() == suite_cache.cache_file()
+
+
+# ---------------------------------------------------------------------------
+# The scripts that count tokens (T-8.8.6.6)
+# ---------------------------------------------------------------------------
+
+_SCRIPTS = _BACKEND / "scripts"
+# What a script counts tokens through: the counting functions, and the work
+# that counts (the report and knowledge agents, era extraction).
+_COUNTING = {
+    "chunk_transcript", "_count_tokens", "sample_transcript", "ensure_discussed_era",
+    "extract_discussed_era", "_ensure_era", "report_agent", "run_report_agent",
+    "knowledge_agent", "run_knowledge_extract_agent",
+}
+_SEGMENTS = [
+    {"text": f"Sentence number {i} says how an echo comes back from a far wall.", "start": i * 5.0, "duration": 5.0}
+    for i in range(40)
+]
+
+
+def _names(tree: ast.AST) -> set[str]:
+    """Every name the code uses, its imports included. A docstring is not code."""
+    names: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name):
+            names.add(node.id)
+        elif isinstance(node, ast.Attribute):
+            names.add(node.attr)
+        elif isinstance(node, ast.alias):
+            names.update(node.name.split("."))
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            names.update(node.module.split("."))
+    return names
+
+
+def _uses_the_apps_folder(tree: ast.AST) -> bool:
+    return any(
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "use_app_folder"
+        and [ast.unparse(arg) for arg in node.args] == ["settings.TIKTOKEN_ENCODINGS_DIR"]
+        for node in ast.walk(tree)
+    )
+
+
+def test_every_script_that_counts_tokens_uses_the_apps_folder() -> None:
+    """Six of these import the worker's module before they count, which sets
+    the folder too, but only by the way: a script names it itself. The list is
+    pinned so a new script that counts shows up here."""
+    trees = {path.stem: ast.parse(path.read_text(encoding="utf-8")) for path in sorted(_SCRIPTS.glob("*.py"))}
+    used = {stem: _names(tree) for stem, tree in trees.items()}
+    counting = {stem for stem, names in used.items() if names & _COUNTING}
+    # A script that imports one of these counts through it.
+    while more := {stem for stem, names in used.items() if names & counting} - counting:
+        counting |= more
+
+    assert counting == {
+        "eval_code_mixed_retrieval_heldout",
+        "eval_code_mixing_e2e",
+        "measure_code_mixed_retrieval",
+        "measure_map_coverage",
+        "measure_original_verification",
+        "refetch_dubbed_transcripts",
+        "regenerate_report",
+        "replay_visual_ab",
+        "retry_unavailable_transcripts",
+    }
+    assert sorted(stem for stem in counting if not _uses_the_apps_folder(trees[stem])) == []
+
+
+def test_regenerate_report_counts_offline_from_the_folder(nothing_chosen, db, test_user, tmp_path, monkeypatch) -> None:
+    """The script run as the owner runs it, minus the model: nothing names a
+    folder, the temp folder is empty, every lookup fails, and the encoding is
+    only in the app's folder, so chunks cut to size were counted from there.
+
+    The worker's module was imported here long ago, while the suite's folder
+    was set, so its own call cannot be what names the folder: the script's
+    call is. Run as a script, ``regenerate_report`` would get the folder from
+    that import too, through ``job_tasks``; the call keeps it from depending on
+    one."""
+    import app.database
+    from app.models.document import Document
+    from app.models.job import Job
+    from app.models.job_video import JobVideo
+    from app.tasks import job_tasks
+    from app.utils import html_builder
+    from tests import conftest as _conftest
+
+    monkeypatch.syspath_prepend(str(_SCRIPTS))
+    import regenerate_report
+
+    folder = tmp_path / "encodings"
+    folder.mkdir()
+    shutil.copyfile(_real_encoding(), folder / tiktoken_cache.cache_file())
+    now = datetime.now(timezone.utc)
+    db.add_all([
+        Document(video_id="echoesfold1", title="Echoes", channel_id="UC" + "A" * 22,
+                 url="https://www.youtube.com/watch?v=echoesfold1", duration_seconds=200,
+                 published_at=now, transcript_status="fetched", created_at=now),
+        Job(id="tiktoken-folder-job", tenant_id=test_user.id, job_type="topic", topic="echoes",
+            status="completed", created_at=now),
+    ])
+    db.commit()
+    db.add(JobVideo(job_id="tiktoken-folder-job", video_id="echoesfold1", approved=True))
+    db.commit()
+
+    reports: list[list[dict]] = []
+
+    def report(**kwargs):
+        reports.append(kwargs["transcript_chunks"])
+        return {"video_count": 1}, "<p>An echo.</p>"
+
+    asked: list[str] = []
+
+    def refuse(url, *args, **kwargs):
+        asked.append(str(url))
+        raise OSError(f"no network: {url}")
+
+    monkeypatch.setattr(app.database, "SessionLocal", _conftest.TestingSessionLocal)
+    monkeypatch.setattr(job_tasks, "_load_cached_segments", lambda video_id, document_id=None: (_SEGMENTS, "en"))
+    monkeypatch.setattr(report_agent, "run_report_agent", report)
+    monkeypatch.setattr(html_builder, "build_report_html", lambda **kwargs: "<html>An echo.</html>")
+    monkeypatch.setattr(settings, "TIKTOKEN_ENCODINGS_DIR", str(folder))
+    # A fresh registry, or this reads the copy an earlier test left in memory.
+    monkeypatch.setattr(tiktoken.registry, "ENCODINGS", {})
+    monkeypatch.setattr(tiktoken.load, "read_file", refuse)
+    monkeypatch.setattr(socket, "getaddrinfo", refuse)
+    out = tmp_path / "after.html"
+    monkeypatch.setattr(sys, "argv", ["regenerate_report.py", "--job", "tiktoken-folder-job", "--out", str(out), "--no-era"])
+
+    assert regenerate_report.main() == 0
+
+    assert os.environ["TIKTOKEN_CACHE_DIR"] == str(folder.resolve())
+    assert asked == []
+    assert not (nothing_chosen / "data-gym-cache").exists()
+    (chunks,) = reports
+    assert len(chunks) >= 2, "about 600 tokens of transcript, cut at 256"
+    assert out.read_text(encoding="utf-8") == "<html>An echo.</html>"

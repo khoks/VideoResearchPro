@@ -55,7 +55,12 @@ def load_env(env_file: Path) -> None:
 
 
 def build_pool(db: Path, videos: list[str]) -> list[dict]:
+    from app.config import settings
+    from app.utils import tiktoken_cache
     from app.utils.chunking import chunk_transcript
+
+    # T-8.8.6.6: the encoding in TIKTOKEN_ENCODINGS_DIR, as the API and the worker keep it.
+    tiktoken_cache.use_app_folder(settings.TIKTOKEN_ENCODINGS_DIR)
 
     c = sqlite3.connect(db)
     pool = []

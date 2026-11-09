@@ -22,8 +22,9 @@ class Settings(BaseSettings):
     # App
     APP_NAME: str = "Pratidhvani"
     DEBUG: bool = False
-    # T-4.11.2.2: `text` leaves the API's and the worker's logs as they have
-    # always been; `json` writes one object per line (app/utils/json_logging.py).
+    # T-4.11.2.2: `text` keeps uvicorn's and Celery's formats, and gives the
+    # app's own lines a handler in the API; `json` writes one object per line
+    # (app/utils/json_logging.py).
     LOG_FORMAT: str = "text"
 
     # Database

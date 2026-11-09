@@ -310,6 +310,27 @@ def test_password_reset_response_never_carries_the_secret(
     assert secret not in r.text
 
 
+def test_a_reset_sent_by_smtp_logs_neither_the_address_nor_the_subject(unauthenticated_client, db, monkeypatch):
+    """With SMTP set, the email reached its reader, so the API's log needs no
+    address; a subject can hold the user's own words (a saved search's
+    alert). The log fallback is the one line that names the recipient."""
+    auth_service.create_user(db, email="smtp-reader@x.com", password="oldpw12345")
+    monkeypatch.setattr(settings, "SMTP_HOST", "smtp.example.com")
+    sent: list[tuple[str, str]] = []
+    monkeypatch.setattr(email_service, "_send_via_smtp", lambda to, subject, body, **kw: sent.append((to, subject)))
+    log = MagicMock()
+    monkeypatch.setattr(email_service, "logger", log)
+
+    r = unauthenticated_client.post(RESET_REQUEST, json={"email": "smtp-reader@x.com"})
+
+    assert r.status_code == 200
+    [(to, subject)] = sent
+    said = " ".join(str(a) for call in log.method_calls for a in call.args)
+    assert "delivered by SMTP" in said
+    assert to not in said and "smtp-reader" not in said
+    assert subject not in said
+
+
 def test_password_reset_response_is_the_same_for_unknown_and_known_addresses(
     unauthenticated_client, db, monkeypatch
 ):

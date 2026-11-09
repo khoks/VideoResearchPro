@@ -288,7 +288,9 @@ def complete_connect(db: Session, tenant_id: str, name: str, *, state: str, code
         except Exception:
             logger.exception("echo: could not schedule %s syncs for %s", name, tenant_id[:8])
     enqueue_sync(grant.id)
-    logger.info("echo: tenant %s connected %s as %s", tenant_id[:8], name, tokens.account_label)
+    # Not the account label: the page shows it, and a connector may label an
+    # account by its email address.
+    logger.info("echo: tenant %s connected %s", tenant_id[:8], name)
     return grant
 
 

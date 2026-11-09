@@ -11,6 +11,8 @@ Three things the router tests cannot show because they patch the write:
 3. ``document_ids=[]`` returns nothing. It used to fall through to an
    unrestricted search, because the filter was built with a truthiness test.
 """
+from unittest.mock import MagicMock
+
 import pytest
 
 from app.models.document import Document
@@ -104,6 +106,20 @@ def test_query_scoped_by_document_ids_across_source_types():
     assert scope(["doc-b-page"]) == {"doc-b-page"}
     assert scope(["doc-a-pdf", "doc-c-vid"]) == {"doc-a-pdf", "doc-c-vid"}
     assert scope(None) == {"doc-a-pdf", "doc-b-page", "doc-c-vid"}
+
+
+def test_a_query_is_logged_by_its_length_not_its_words(monkeypatch):
+    """Every Q&A route and saved search queries through here with the user's
+    own question, and the line reaches the API's log at INFO."""
+    chroma_service.insert_chunks(_chunks_for(_pdf("doc-q", "Q"), "Quantum computing text."))
+    log = MagicMock()
+    monkeypatch.setattr(chroma_service, "logger", log)
+    question = "What did Priya say about my quantum computing plans?"
+    chroma_service.query_collection(question, n_results=5, document_ids=["doc-q"], distance_threshold=float("inf"))
+    said = " ".join(str(a) for call in log.method_calls for a in call.args)
+    assert f"query of {len(question)} characters" in said
+    for words in ("Priya", "quantum computing plans", question[:20]):
+        assert words not in said
 
 
 def test_empty_document_scope_retrieves_nothing():

@@ -133,7 +133,10 @@ def send_email(
 
     try:
         _send_via_smtp(to, subject, body, html=html, message_id=message_id)
-        logger.info("send_email: delivered to=%s subject=%r", to, subject)
+        # Neither the address nor the subject, which can hold a user's own
+        # question (a saved search's alert). The log fallback below is the
+        # one place an address belongs: the operator has to deliver it.
+        logger.info("send_email: delivered by SMTP")
         return True
     except Exception:
         logger.exception(

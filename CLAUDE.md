@@ -440,7 +440,7 @@ Copy `.env.example` to `backend/.env` and fill in required keys. The repository 
 | **App and infrastructure** | | | |
 | `APP_NAME` | No | `Pratidhvani` | Title of the FastAPI app, shown on the API docs page |
 | `DEBUG` | No | `False` | Logs every SQL statement (`echo` on the SQLAlchemy engine) |
-| `LOG_FORMAT` | No | `text` | `text` leaves the logs as they have always been. `json` writes one object per line (`time`, `level`, `logger`, `message`, `exception`) for the API, the worker and beat, whose start banners go off (T-4.11.3.2); a record's `extra` fields stay out (T-4.11.2.2). Anything else reads as `text`, with a warning |
+| `LOG_FORMAT` | No | `text` | `text` keeps uvicorn's and Celery's own formats, and the API writes the app's own lines (`app.*`, INFO and up) to stderr as `time LEVEL logger: message`. uvicorn gives the root logger no handler, so until 2026-11-09 the API dropped those INFO lines and wrote its warnings bare. `json` writes one object per line (`time`, `level`, `logger`, `message`, `exception`) for the API, the worker and beat, whose start banners go off (T-4.11.3.2); a record's `extra` fields stay out (T-4.11.2.2). Anything else reads as `text`, with a warning |
 | `DATABASE_URL` | No | `sqlite:///./data/videoresearchpro.db` | SQLAlchemy connection string |
 | `REDIS_URL` | No | `redis://localhost:6379/0` | Redis for pub/sub |
 | `CELERY_BROKER_URL` | No | `redis://localhost:6379/1` | Celery broker |
@@ -614,7 +614,7 @@ Copy `.env.example` to `backend/.env` and fill in required keys. The repository 
 | `MFA_ISSUER_NAME` | No | `Pratidhvani` | Issuer label shown by the user's authenticator app. |
 | `ADMIN_EMAILS` | No | (empty) | The install's operators, comma-separated and case-insensitive (T-5.2.8 / D-111). Only operators may switch tiers (`PUT /auth/me/tier`) or restart the services (`POST /admin/restart`); anyone else gets 403. Empty: the earliest-registered account is the operator, so a single-user install needs nothing. A multi-user install should name its operators. **Register the account before listing it**: sign-up verifies no email, so password registration refuses a listed address (403); Google or GitHub sign-in with that address, verified by the provider, still works, and startup warns about every listed address with no account |
 | **Email (SMTP)** | | | |
-| `SMTP_HOST` | No | (unset) | SMTP server for password-reset emails. When unset, the reset email (with its code) goes to the server log for the operator to hand over out-of-band. The code is never in the API response: it was until 2026-11-03 (T-5.4.8's `debug_secret`), which let anyone reset any account by its address. |
+| `SMTP_HOST` | No | (unset) | SMTP server for password-reset emails. When unset, the reset email (with its code) goes to the server log for the operator to hand over out-of-band: the API's stderr, `.uvicorn.err.log` under the launchers. The code is never in the API response: it was until 2026-11-03 (T-5.4.8's `debug_secret`), which let anyone reset any account by its address. |
 | `SMTP_PORT` | No | `587` | SMTP port. |
 | `SMTP_USERNAME` / `SMTP_PASSWORD` | No | (unset) / (unset) | SMTP auth. Both required, or both unset for anonymous relays. |
 | `SMTP_FROM_ADDRESS` | No | (unset) | Sender envelope. |

@@ -31,12 +31,33 @@ three cases plus the conflict-recovery path.
 """
 from __future__ import annotations
 
+import functools
 import logging
-from typing import Iterable
+from typing import Callable, Iterable
 
 from sqlalchemy import MetaData, create_engine, inspect
 
 logger = logging.getLogger(__name__)
+
+
+def _keeping_the_root_logger(alembic_command: Callable) -> Callable:
+    """``alembic_command`` with the root logger's handlers and level put back
+    after it. Alembic's ``env.py`` runs ``fileConfig``, which replaces them in
+    this process, and the app's lines would go through Alembic's handler for
+    the rest of its life: in the API under ``LOG_FORMAT=text``, without their
+    time. The migration's own lines still go out while it runs."""
+
+    @functools.wraps(alembic_command)
+    def run(*args, **kwargs):
+        root = logging.getLogger()
+        handlers, level = root.handlers[:], root.level
+        try:
+            return alembic_command(*args, **kwargs)
+        finally:
+            root.handlers[:] = handlers
+            root.setLevel(level)
+
+    return run
 
 
 def _alembic_config():
@@ -270,8 +291,8 @@ def ensure_schema_at_head(
     # raises. `alembic/env.py` reads the value back through it, which undoes
     # the doubling (T-4.11.2.7).
     cfg.set_main_option("sqlalchemy.url", db_url.replace("%", "%%"))
-    upgrade_fn = upgrade_fn or command.upgrade
-    stamp_fn = stamp_fn or command.stamp
+    upgrade_fn = _keeping_the_root_logger(upgrade_fn or command.upgrade)
+    stamp_fn = _keeping_the_root_logger(stamp_fn or command.stamp)
 
     engine = create_engine(db_url)
     try:

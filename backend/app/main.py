@@ -60,8 +60,10 @@ from app.utils import app_origins, tiktoken_cache
 # app/tasks/celery_app.py; whichever runs first decides, the other agrees.
 tiktoken_cache.use_app_folder(settings.TIKTOKEN_ENCODINGS_DIR)
 
-# Ensure all app.* loggers emit at INFO level.
-# uvicorn sets up root logger handlers; this just lowers the threshold for our loggers.
+# The API's app.* loggers at INFO; the worker's follow Celery's --loglevel.
+# uvicorn gives the root logger no handler, so this level alone wrote nothing:
+# under LOG_FORMAT=text the "app" logger has a handler of its own, and under
+# json the root logger has one (app/utils/json_logging.py, from app/__init__.py).
 logging.getLogger("app").setLevel(logging.INFO)
 
 logger = logging.getLogger(__name__)

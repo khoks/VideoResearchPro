@@ -6,10 +6,12 @@
  * under their buttons and in the global toast. Now each is said there alone: the
  * wizard's two line-bearing saves and its start take `{ inlineErrors: true }`,
  * `useApproveJob` sets `meta` (both its callers show a line), and a 401 says
- * nothing. While one is in flight, Back, the steps and Skip wait, since each
- * would take the line away before it is written. The wizard's other saves (a
- * step, Skip, finishing) and the jobs page's checklist show no line, so the
- * global toast still says theirs.
+ * nothing. While one is in flight, Back and the steps wait, since each keeps
+ * the reader on the page and would take the line away before it is written.
+ * Skip never waits: it leaves the page, as the sidebar does, and a request with
+ * no timeout must not take away the page's one advertised exit. The wizard's
+ * other saves (a step, Skip, finishing) and the jobs page's checklist show no
+ * line, so the global toast still says theirs.
  *
  * T-3.4.1.23: one `catch` caught a failed start and a failed save of the step
  * after it, and said "The run could not be started" for both, with "Start the
@@ -29,8 +31,9 @@
  * - The old single `catch` around the start and the record fails every "records
  *   the run" row ("Start the run" is offered again), "lets the reader carry on"
  *   and "back on the step".
- * - The Back button without `held` fails "waits for a start in flight"; Skip
- *   without `skipHeld` fails all three "waits for" tests.
+ * - The Back button without `held` fails "waits for a start in flight"; `skip`
+ *   returning early while `held` (as the first cut of this change had it) fails
+ *   all three "Skip still leaves" tests.
  * - `meta` set on every `useUpdateOnboarding` fails "a step's failed save" and
  *   "the jobs page checklist" with no message at all, and the guard's third half.
  */
@@ -373,53 +376,63 @@ describe('saves that show no line', () => {
 // ---------------------------------------------------------------------------
 
 describe('while a request is in flight', () => {
-  it('waits for a start in flight: Back, the steps and Skip, then says its failure', async () => {
+  it('waits for a start in flight: Back and the steps, then says its failure', async () => {
     getMock.mockResolvedValue(STEP_TWO);
     const request = held<Job>();
     createMock.mockReturnValueOnce(request.promise);
     await mount();
     await click(button('Start the run'));
     expect(button('Back')!.disabled).toBe(true);
-    expect(button('Skip for now')!.disabled).toBe(true);
     await click(stepButton('Choose channels'));
-    await click(button('Skip for now'));
     expect(heading()).toBe('Start a small run');
-    expect(where()).toBe('/welcome');
     expect(patchMock).not.toHaveBeenCalled();
     await act(async () => request.fail(failures.noWords()));
     await flush();
     expect(messages()).toEqual(['The run could not be started. Check the channel and try again.']);
     expect(button('Back')!.disabled).toBe(false);
-    expect(button('Skip for now')!.disabled).toBe(false);
+  });
+});
+
+// Skip leaves the page, as the sidebar does: a request with no timeout must not
+// take away the page's one advertised exit.
+describe('Skip still leaves while a request is in flight', () => {
+  async function skipNow() {
+    const skip = button('Skip for now');
+    expect(skip!.disabled).toBe(false);
+    await click(skip);
+    expect(patchMock).toHaveBeenLastCalledWith({ dismissed: true });
+    expect(where()).toBe('/submit');
+  }
+
+  it('a start', async () => {
+    getMock.mockResolvedValue(STEP_TWO);
+    createMock.mockReturnValueOnce(held<Job>().promise);
+    await mount();
+    await click(button('Start the run'));
+    expect(button('Back')!.disabled).toBe(true);
+    await skipNow();
   });
 
-  it('waits for the run to be recorded before Skip goes', async () => {
+  it('the run being recorded', async () => {
     getMock.mockResolvedValue(STEP_TWO);
     createMock.mockResolvedValue(job({}));
     jobGetMock.mockResolvedValue(job({}));
-    const record = held<Onboarding>();
-    patchMock.mockReturnValueOnce(record.promise);
+    patchMock.mockReturnValueOnce(held<Onboarding>().promise);
     await mount();
     await click(button('Start the run'));
-    expect(button('Skip for now')!.disabled).toBe(true);
-    await act(async () => record.fail(failures.words()));
-    await flush();
-    expect(messages()).toEqual([`The run started. ${SERVER_WORDS}`]);
-    expect(button('Skip for now')!.disabled).toBe(false);
+    expect(patchMock).toHaveBeenCalledWith({ step: 3, first_job_id: 'job-9' });
+    expect(button('Back')!.disabled).toBe(true);
+    await skipNow();
   });
 
-  it('waits for an approval in flight before Skip goes', async () => {
+  it('an approval', async () => {
     getMock.mockResolvedValue(STEP_THREE);
     jobGetMock.mockResolvedValue(job({ id: 'job-1', status: 'awaiting_approval' }));
     videosMock.mockResolvedValue([{ id: 'r1', video_id: 'v1', document_id: 'd1', title: 'First video' }]);
-    const request = held<Job>();
-    approveMock.mockReturnValueOnce(request.promise);
+    approveMock.mockReturnValueOnce(held<Job>().promise);
     await mount();
     await click(button('Approve this video'));
-    expect(button('Skip for now')!.disabled).toBe(true);
-    await act(async () => request.fail(failures.noAnswer()));
-    await flush();
-    expect(messages()).toEqual(['The approval did not go through. Try again.']);
-    expect(button('Skip for now')!.disabled).toBe(false);
+    expect(approveMock).toHaveBeenCalledTimes(1);
+    await skipNow();
   });
 });

@@ -44,9 +44,11 @@ type Step = 1 | 2 | 3;
  *
  * Saving the channels, starting the run, recording it and approving say a
  * failure under their buttons, and only there (T-3.4.1.22). While one is in
- * flight, Back, the steps and Skip wait, since each would take that line away
- * before it is written (D-156 point 2). A step, Skip and finishing show no line
- * of their own, so the global toast says theirs.
+ * flight, Back and the steps wait: each keeps the reader on this page and would
+ * take that line away before it is written (D-156 point 2). Skip never waits.
+ * It leaves the page, as the sidebar does (T-3.4.1.21's case), and a request
+ * with no timeout must not take away the page's one advertised exit. A step,
+ * Skip and finishing show no line of their own, so the global toast says theirs.
  */
 export function WelcomePage() {
   const c = useColors();
@@ -70,8 +72,8 @@ export function WelcomePage() {
     update.mutate({ step: n });
   };
 
+  // Not held by a request in flight: skipping must never trap the reader here.
   const skip = async () => {
-    if (held) return;
     if (data && !data.state.dismissed && !data.onboarded_at) {
       try {
         await update.mutateAsync({ dismissed: true });
@@ -113,7 +115,7 @@ export function WelcomePage() {
   const skipLabel = finished || data.state.dismissed ? 'Close' : 'Skip for now';
 
   return (
-    <Shell onSkip={skip} skipLabel={skipLabel} skipHeld={held}>
+    <Shell onSkip={skip} skipLabel={skipLabel}>
       {finished && (
         <p style={{ ...noteStyle(c), marginTop: 0 }}>
           You finished this on {new Date(data.onboarded_at!).toLocaleDateString()}. It is here if you want to run it again.
@@ -639,18 +641,7 @@ function ResultStep({
 // ──────────────────────────────────────────────────────────────
 // Chrome
 
-function Shell({
-  children,
-  onSkip,
-  skipLabel,
-  skipHeld = false,
-}: {
-  children: ReactNode;
-  onSkip: () => void;
-  skipLabel: string;
-  /** A request in flight whose failure a step says on a line: Skip waits. */
-  skipHeld?: boolean;
-}) {
+function Shell({ children, onSkip, skipLabel }: { children: ReactNode; onSkip: () => void; skipLabel: string }) {
   const c = useColors();
   return (
     <div style={{ maxWidth: '720px', margin: '0 auto' }}>
@@ -691,7 +682,7 @@ function Shell({
             Choose voices you trust, let Pratidhvani read a few of their videos, then read what they said.
           </p>
         </div>
-        <Button variant="tertiary" onClick={onSkip} disabled={skipHeld} style={{ minHeight: 44 }}>
+        <Button variant="tertiary" onClick={onSkip} style={{ minHeight: 44 }}>
           {skipLabel}
         </Button>
       </header>

@@ -16,11 +16,17 @@ from app.services import usage_service
 logger = logging.getLogger(__name__)
 
 
+# The audio-language lookup is a ``videos.list`` call, with its own name in
+# ``api_quota_log`` so the log can tell it from ``get_video_details``
+# (T-1.11.11.5). Same price, same feature in ``usage_service.YOUTUBE_FEATURES``.
+OPERATION_VIDEOS_AUDIO_LANGUAGE = "videos_audio_language"
+
 # Known YouTube Data API v3 costs per call. See:
 # https://developers.google.com/youtube/v3/determine_quota_cost
 OPERATION_COSTS: dict[str, int] = {
     "search": 100,
     "videos": 1,
+    OPERATION_VIDEOS_AUDIO_LANGUAGE: 1,
     "channels": 1,
     "playlistItems": 1,
 }

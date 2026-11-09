@@ -84,31 +84,61 @@ export function offeredSourceTypes(capabilities: Record<string, boolean> | null)
   });
 }
 
+/** Sources on hold for refusing this install, in canonical order (T-1.5.14.1). */
+export function heldSourceTypes(holds: Record<string, SourceHold>): SourceType[] {
+  return canonicalSourceTypes(Object.keys(holds));
+}
+
 /**
  * Why a source is not on offer although it is set up: it refused this install
- * (T-1.5.14.1). Null when nothing is on hold.
+ * (T-1.5.14.1). One the reader has put in this run anyway (T-1.5.14.6) gets
+ * the same plain statement, and what its answer will do. Null when nothing is
+ * on hold.
  */
-export function heldSourcesNote(holds: Record<string, SourceHold>): string | null {
-  const held = Object.keys(holds);
-  if (held.length === 0) return null;
-  const one = held.length === 1;
-  return `${held.map((v) => sourceTypeLabel(v)).join(', ')} refused ${
-    one ? 'its' : 'their'
-  } last search from this install, so ${one ? 'it is' : 'they are'} not offered for now.`;
+export function heldSourcesNote(
+  holds: Record<string, SourceHold>,
+  selected: readonly string[] = [],
+): string | null {
+  const held = heldSourceTypes(holds);
+  const labels = (types: SourceType[]) => types.map((v) => sourceTypeLabel(v)).join(', ');
+  const waiting = held.filter((v) => !selected.includes(v));
+  const tried = held.filter((v) => selected.includes(v));
+  const parts: string[] = [];
+  if (waiting.length > 0) {
+    const one = waiting.length === 1;
+    parts.push(
+      `${labels(waiting)} refused ${one ? 'its' : 'their'} last search from this install, so ${
+        one ? 'it is' : 'they are'
+      } not offered for now.`,
+    );
+  }
+  if (tried.length > 0) {
+    const one = tried.length === 1;
+    parts.push(
+      `${labels(tried)} refused ${one ? 'its' : 'their'} last search from this install. This run tries ${
+        one ? 'it' : 'them'
+      } anyway: an answer puts ${one ? 'it' : 'them'} back on offer, and another refusal keeps ${
+        one ? 'it' : 'them'
+      } off for now.`,
+    );
+  }
+  return parts.length > 0 ? parts.join(' ') : null;
 }
 
 /**
  * Selected types the install cannot search (a run or template saved while a
  * source was set up). Empty until capabilities are known, so a slow first
- * poll never flags anything.
+ * poll never flags anything. A source on hold is not one: the server takes
+ * it, and a run is how it gets another chance (T-1.5.14.6).
  */
 export function unavailableSourceTypes(
   selected: readonly string[],
   capabilities: Record<string, boolean> | null,
+  holds: Record<string, SourceHold> = {},
 ): SourceType[] {
   if (capabilities === null) return [];
   const offered: readonly string[] = offeredSourceTypes(capabilities).map((o) => o.value);
-  return canonicalSourceTypes(selected).filter((v) => !offered.includes(v));
+  return canonicalSourceTypes(selected).filter((v) => !offered.includes(v) && !(v in holds));
 }
 
 /**

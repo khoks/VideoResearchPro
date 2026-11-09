@@ -14,11 +14,23 @@ from app.schemas.channel_intelligence import ChannelIntelligenceResponse
 from app.services import (
     channel_intelligence_service,
     document_cap_service,
+    job_service,
     subscription_service,
     visibility_service,
 )
 
 logger = logging.getLogger(__name__)
+
+# Why no sync started, for the reader. Subscribing has already happened by the
+# time either of the first two is said, and "Sync now" is the way to start it.
+_FIRST_SYNC_WAITS = (
+    "You are subscribed to {name}, but the first sync has not started. {why} "
+    "Then use Sync now to start it."
+)
+_FIRST_SYNC_NOT_QUEUED = (
+    "You are subscribed to {name}, but the first sync could not be queued. Use Sync now to start it."
+)
+_SYNC_NOT_QUEUED = "The sync could not be queued. Try Sync now again in a moment."
 
 router = APIRouter(
     prefix="/channels",
@@ -122,8 +134,23 @@ def subscribe_channel(
 
     subscription_service.set_subscribed(db, channel.channel_id, current_user.id, True)
 
+    # T-5.2.15: subscribing is not a job, so the limit never refuses it. It
+    # only keeps the first sync from starting, and the response says so.
+    name = channel.name or "this channel"
+    try:
+        job_service.refuse_if_at_limit(db, current_user.id)
+    except ValueError as refused:
+        return SubscribeResponse(
+            channel_id=channel.channel_id,
+            sync_note=_FIRST_SYNC_WAITS.format(name=name, why=refused),
+        )
+
     job_id = _dispatch_subscription_sync(db, channel, tenant_id=current_user.id)
-    return SubscribeResponse(channel_id=channel.channel_id, job_id=job_id)
+    return SubscribeResponse(
+        channel_id=channel.channel_id,
+        job_id=job_id,
+        sync_note=None if job_id else _FIRST_SYNC_NOT_QUEUED.format(name=name),
+    )
 
 
 @router.post("/{channel_id}/unsubscribe", response_model=ChannelResponse)
@@ -172,9 +199,17 @@ def sync_channel(
     if not channel:
         raise HTTPException(status_code=404, detail="Channel not found")
     document_cap_service.refuse_if_full(db, current_user)  # T-5.2.10
+    try:
+        job_service.refuse_if_at_limit(db, current_user.id)  # T-5.2.15
+    except ValueError as refused:
+        raise HTTPException(status_code=429, detail=str(refused))
 
     job_id = _dispatch_subscription_sync(db, channel, tenant_id=current_user.id)
-    return SubscribeResponse(channel_id=channel.channel_id, job_id=job_id)
+    return SubscribeResponse(
+        channel_id=channel.channel_id,
+        job_id=job_id,
+        sync_note=None if job_id else _SYNC_NOT_QUEUED,
+    )
 
 
 @router.get("/{channel_id}/intelligence", response_model=ChannelIntelligenceResponse)
@@ -203,7 +238,12 @@ def _dispatch_subscription_sync(
 
     Returns the new job_id, or ``None`` when dispatch fails. Dispatch is
     best-effort — a failure to reach the Celery broker must not wedge the
-    subscribe/sync endpoints.
+    subscribe/sync endpoints. A row nothing will run is failed on the way
+    out: left pending it would hold one of its owner's places for good.
+
+    The per-user job limit is the caller's to check (T-5.2.15): at the limit
+    ``sync_channel`` refuses and ``subscribe_channel`` subscribes without a
+    sync. Nothing else calls this.
 
     `tenant_id` (E-5.1 phase 2a) — caller threads `current_user.id`
     through; default ``None`` preserves back-compat for any internal
@@ -232,13 +272,15 @@ def _dispatch_subscription_sync(
         async_result = dispatch_for_tenant_id(
             execute_subscription_job, db, tenant_id, job.id
         )
-        job.celery_task_id = async_result.id
-        db.commit()
-        db.refresh(job)
     except Exception:
         logger.exception(
             f"Failed to dispatch subscription sync task for channel {channel.channel_id}"
         )
-        return job.id
+        job.status = "failed"
+        job.error_message = "The sync could not be queued."
+        db.commit()
+        return None
 
+    job.celery_task_id = async_result.id
+    db.commit()
     return job.id

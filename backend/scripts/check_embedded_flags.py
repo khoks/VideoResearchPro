@@ -17,7 +17,7 @@ sorts them by where their text lives:
   one re-chunks it from there and inserts it, with no fetch.
 * fetch again: their text lived only in the chunks that never got written, so
   only a fresh fetch brings it back. A job that selects one already does that;
-  a PDF or a pasted page is selected by no job.
+  a PDF is selected by no job, a pasted page only when a search finds it.
 * empty: cached text with no words. Nothing to embed; left flagged.
 
 It prints ids and counts, never text, and loads no embedding model, makes no

@@ -34,13 +34,14 @@ brings them back:
   that selects one (after an approval, or a subscription sync) re-chunks it
   from there and inserts it, with no fetch, and flags it once it is in.
 * ``fetch_again`` — no usable cached text: their text lived only in the
-  chunks that never reached Chroma (PDFs, pasted pages, threads and podcast
-  episodes cached theirs nowhere before ``job_tasks._cache_document_text``;
-  see ``document_text_service``). Only a fresh fetch brings it back. A job
-  that selects one already fetches it again, flagged or not, because a flagged
-  document with no cached text falls through to a fetch; a PDF or a pasted
-  page is selected by no job, and its re-upload or re-paste is a dedup hit
-  that embeds nothing. Clearing the flag makes it say what is true.
+  chunks that never reached Chroma (PDFs and pasted pages keep theirs nowhere
+  else, and threads and podcast episodes did not before
+  ``job_tasks._cache_document_text``; see ``document_text_service``). Only a
+  fresh fetch brings it back. A job that selects one already fetches it
+  again, flagged or not, because a flagged document with no cached text falls
+  through to a fetch. A PDF is selected by no job, a pasted page only when a
+  search finds the same page, and a re-upload or re-paste is a dedup hit that
+  embeds nothing. Clearing the flag makes it say what is true.
 * ``empty`` — cached text with no words. There is nothing to embed, and the
   next job would flag it again, so ``write`` leaves these alone.
 

@@ -5,7 +5,7 @@ import { useTierCapabilities } from '../../hooks/useTierCapabilities';
 import { useCreateSavedSearch } from '../../hooks/useSavedSearches';
 import { Button, Modal } from '../primitives';
 import { ScheduleFields } from './ScheduleFields';
-import { apiErrorMessage } from '../../utils/apiError';
+import { inlineErrorMessage } from '../../utils/apiError';
 import { defaultCadence, describeCadence } from '../../utils/cadence';
 import type { Cadence } from '../../services/savedSearchesApi';
 import { fonts, fontSize, lineHeight, space } from '../../theme';
@@ -35,10 +35,15 @@ export function PinQuestionButton({
 
   if (!has('saved_searches')) return null;
 
+  // The dialog is where a failed pin is said, and the only place: the hook sets
+  // `meta`, so the global toast stands aside. So it stays open until the answer
+  // comes: Cancel, Escape and the backdrop wait (T-3.4.1.24, D-156 point 2).
   const close = () => {
+    if (create.isPending) return;
     setOpen(false);
     create.reset();
   };
+  const failure = create.isError ? inlineErrorMessage(create.error, 'The question could not be pinned. Try again.') : null;
 
   const save = async () => {
     try {
@@ -69,7 +74,7 @@ export function PinQuestionButton({
         title="Pin this question"
         footer={
           <>
-            <Button variant="tertiary" onClick={close}>
+            <Button variant="tertiary" onClick={close} disabled={create.isPending}>
               Cancel
             </Button>
             <Button onClick={() => void save()} loading={create.isPending}>
@@ -91,9 +96,9 @@ export function PinQuestionButton({
           Email me when the answer changes
         </label>
         <p style={{ fontFamily: fonts.ui, fontSize: fontSize.xs, color: c.textMuted, margin: `${space['2']} 0 0` }}>{describeCadence(cadence)}</p>
-        {create.isError && (
+        {failure && (
           <p role="alert" style={{ fontFamily: fonts.ui, fontSize: fontSize.sm, color: c.error, margin: `${space['3']} 0 0` }}>
-            {apiErrorMessage(create.error, 'The question could not be pinned. Try again.')}
+            {failure}
           </p>
         )}
       </Modal>

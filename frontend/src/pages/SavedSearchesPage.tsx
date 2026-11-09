@@ -12,7 +12,7 @@ import {
 import { AnswerCutOffNote } from '../components/qa/AnswerCutOffNote';
 import { ScheduleFields } from '../components/savedSearches/ScheduleFields';
 import { Badge, Button, Card, EmptyState, Skeleton, type BadgeTone } from '../components/primitives';
-import { apiErrorMessage } from '../utils/apiError';
+import { inlineErrorMessage } from '../utils/apiError';
 import { describeCadence, parseUtc } from '../utils/cadence';
 import type { Cadence, SavedSearch, SavedSearchRun, SavedSearchStatus } from '../services/savedSearchesApi';
 import { fonts, fontSize, fontWeight, lineHeight, measure, radius, space } from '../theme';
@@ -136,7 +136,21 @@ function SavedSearchCard({ search: s, focusRun }: { search: SavedSearch; focusRu
   const [draft, setDraft] = useState<Cadence | null>(s.cadence);
   const [queued, setQueued] = useState(false);
   const status = s.last_status ? STATUS[s.last_status] : null;
-  const error = update.error ?? runNow.error ?? remove.error;
+  // Each action says its own failure on its own line, and only there: the hooks
+  // set `meta`, so the global toast stands aside, and a 401 says nothing
+  // (T-3.4.1.24). One line for all three let one failure hide another.
+  const failures = [
+    update.isError ? inlineErrorMessage(update.error, 'Could not save the change. Try again.') : null,
+    runNow.isError ? inlineErrorMessage(runNow.error, 'Could not start a run. Try again.') : null,
+    remove.isError ? inlineErrorMessage(remove.error, 'Could not delete the saved search. Try again.') : null,
+  ].filter((line): line is string => !!line);
+  // A line follows its mutation's last press, so while a change is out the
+  // other changes wait, or the first one's failure would be said nowhere. A
+  // delete takes the card and its lines with it, so it waits for any request
+  // on the card, and everything waits for a delete (D-159 points 2 and 3).
+  const deleting = remove.isPending;
+  const changing = update.isPending || deleting;
+  const busy = update.isPending || runNow.isPending || deleting;
 
   const meta = { fontFamily: fonts.ui, fontSize: fontSize.sm, color: c.textSecondary, margin: 0 } as const;
 
@@ -209,11 +223,11 @@ function SavedSearchCard({ search: s, focusRun }: { search: SavedSearch; focusRu
           </div>
         )}
 
-        {error && (
-          <p role="alert" style={{ ...meta, color: c.error, marginTop: space['3'] }}>
-            {apiErrorMessage(error, 'That did not go through. Try again.')}
+        {failures.map((line, i) => (
+          <p key={i} role="alert" style={{ ...meta, color: c.error, marginTop: space['3'] }}>
+            {line}
           </p>
-        )}
+        ))}
 
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: space['2'], marginTop: space['4'], justifyContent: 'flex-end' }}>
           {editing ? (
@@ -224,6 +238,7 @@ function SavedSearchCard({ search: s, focusRun }: { search: SavedSearch; focusRu
               <Button
                 size="sm"
                 loading={update.isPending}
+                disabled={deleting}
                 onClick={() =>
                   draft &&
                   update.mutate({ id: s.id, body: { cadence: draft } }, { onSuccess: () => setEditing(false) })
@@ -237,12 +252,13 @@ function SavedSearchCard({ search: s, focusRun }: { search: SavedSearch; focusRu
               <Button size="sm" variant="tertiary" aria-expanded={historyOpen} onClick={() => setHistoryOpen((o) => !o)}>
                 {historyOpen ? 'Hide history' : 'History'}
               </Button>
-              <Button size="sm" variant="tertiary" onClick={() => setEditing(true)} disabled={!s.cadence}>
+              <Button size="sm" variant="tertiary" onClick={() => setEditing(true)} disabled={!s.cadence || changing}>
                 Change schedule
               </Button>
               <Button
                 size="sm"
                 variant="tertiary"
+                disabled={changing}
                 onClick={() => update.mutate({ id: s.id, body: { notify_email: !s.notify_email } })}
               >
                 {s.notify_email ? 'Stop emails' : 'Email me'}
@@ -251,6 +267,7 @@ function SavedSearchCard({ search: s, focusRun }: { search: SavedSearch; focusRu
                 size="sm"
                 variant="secondary"
                 loading={update.isPending && update.variables?.body.enabled !== undefined}
+                disabled={changing}
                 onClick={() => update.mutate({ id: s.id, body: { enabled: !s.enabled } })}
               >
                 {s.enabled ? 'Pause' : 'Resume'}
@@ -259,6 +276,7 @@ function SavedSearchCard({ search: s, focusRun }: { search: SavedSearch; focusRu
                 size="sm"
                 variant="secondary"
                 loading={runNow.isPending}
+                disabled={deleting}
                 onClick={() => runNow.mutate(s.id, { onSuccess: () => setQueued(true) })}
               >
                 Run now
@@ -267,6 +285,7 @@ function SavedSearchCard({ search: s, focusRun }: { search: SavedSearch; focusRu
                 size="sm"
                 variant="danger"
                 loading={remove.isPending}
+                disabled={busy}
                 onClick={() => {
                   if (window.confirm('Delete this saved search? Its past answers stay in your library Q&A.')) remove.mutate(s.id);
                 }}

@@ -42,6 +42,7 @@ import type { JobTemplate } from '../../services/jobTemplatesApi';
 import type { Shelf, ShelfDetail } from '../../services/shelvesApi';
 import { createQueryClient } from '../../services/queryClient';
 import { useJobStore } from '../../stores/jobStore';
+import { MAX_PUBLISHED_AFTER_DAYS } from '../../utils/jobForm';
 import {
   FAILURE_KINDS,
   SERVER_WORDS,
@@ -493,6 +494,51 @@ describe.each([
     pressEscape();
     await flush();
     expect(dialog()).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The submit form's own words in the template dialog (T-3.4.1.25)
+// ---------------------------------------------------------------------------
+//
+// "Save as template" checks the form before it opens the dialog, and again
+// when the dialog saves, since the form can change behind it. That second
+// check threw a plain `Error`, whose text `inlineErrorMessage` never shows, so
+// the dialog said "Could not save the template." Now it throws a
+// `FormValidationError`, whose words are the form's own.
+//
+// Mutation check, run on 2026-11-09: a plain `Error` back in
+// `saveFormAsTemplate` fails "says the form's own words" with "Could not save
+// the template.".
+
+describe('the submit form’s template dialog', () => {
+  const windowField = () => {
+    const label = Array.from(host.querySelectorAll('label')).find((l) => l.textContent?.includes('Prefer sources from the last (days)'));
+    return host.querySelector<HTMLInputElement>(`[id="${label!.htmlFor}"]`)!;
+  };
+
+  it('says the form’s own words when the form went wrong behind it, and saves nothing', async () => {
+    window.localStorage.setItem('vrp:submit-form', JSON.stringify({ jobType: 'topic', topic: 'Tidal energy storage' }));
+    await submitPage();
+    await press('Save as template');
+    expect(dialog()).not.toBeNull();
+    typeInto(windowField(), '0');
+    typeInto(nameField(), 'Tides');
+    await press('Save template');
+    expect(api.createTemplate).not.toHaveBeenCalled();
+    expect(dialog()).not.toBeNull();
+    expect(messages()).toEqual([
+      `Enter a whole number of days from 1 to ${MAX_PUBLISHED_AFTER_DAYS} for the publish window, or leave it empty.`,
+    ]);
+  });
+
+  it('says the form’s own words before it opens, on the form', async () => {
+    window.localStorage.setItem('vrp:submit-form', JSON.stringify({ jobType: 'topic', topic: 'Tidal energy storage' }));
+    await submitPage();
+    typeInto(windowField(), '0');
+    await press('Save as template');
+    expect(dialog()).toBeNull();
+    expect(host.textContent).toContain('for the publish window, or leave it empty.');
   });
 });
 

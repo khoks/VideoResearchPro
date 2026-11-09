@@ -18,18 +18,18 @@
  * the top bar, so it never covers the docked Q&A composer (S-8.12.1), and the
  * panel fills the screen.
  */
-import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Markdown } from '../common/Markdown';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useIsMutating, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CitationLink } from '../citation';
 import { citedFileFailed } from '../citation/citedFile';
 import { Badge, Button, IconButton, Spinner, Textarea } from '../primitives';
 import { AnswerCutOffNote } from '../qa/AnswerCutOffNote';
 import { useAskLibraryQA } from '../../hooks/useLibraryQA';
 import { useAskQAHistoryChat } from '../../hooks/useQAHistoryChat';
-import { useEchoConnectors, useEchoStatus } from '../../hooks/useEcho';
+import { draftFeedbackKey, useEchoConnectors, useEchoStatus } from '../../hooks/useEcho';
 import { useFeatureAvailable } from '../../hooks/useFeatureAvailable';
 import { isMacPlatform, useShortcuts } from '../../hooks/useShortcuts';
 import { useColors, useShadows } from '../../hooks/useTheme';
@@ -69,12 +69,35 @@ function nextTurnId(): string {
 // Openers
 // ---------------------------------------------------------------------------
 
+/**
+ * Whether a draft's save made in the panel is in flight. The draft's own line
+ * is the only place its failure is said (T-3.4.1.24), and closing the panel
+ * takes the line with it, so the panel stays open until the answer comes:
+ * its close button, Escape, Clear, the openers and the shortcut all wait
+ * (D-156 point 2, D-159 point 2). Leaving the page is the app's own navigation
+ * and does not wait (T-3.4.1.21's case).
+ */
+function useSavingInPanel(): boolean {
+  return useIsMutating({ mutationKey: draftFeedbackKey('bubble') }) > 0;
+}
+
+/** Opens or closes the panel; a close waits while `useSavingInPanel`. */
+function usePanelToggle(): () => void {
+  const open = useEchoPanelStore((st) => st.open);
+  const toggle = useEchoPanelStore((st) => st.toggle);
+  const saving = useSavingInPanel();
+  return useCallback(() => {
+    if (open && saving) return;
+    toggle();
+  }, [open, saving, toggle]);
+}
+
 /** The floating bubble (desktop). Hidden under 960 px by index.css. */
 export function EchoBubble() {
   const c = useColors();
   const s = useShadows();
   const open = useEchoPanelStore((st) => st.open);
-  const toggle = useEchoPanelStore((st) => st.toggle);
+  const toggle = usePanelToggle();
   return (
     <button
       type="button"
@@ -117,7 +140,7 @@ export function EchoBubble() {
 export function EchoHeaderButton() {
   const c = useColors();
   const open = useEchoPanelStore((st) => st.open);
-  const toggle = useEchoPanelStore((st) => st.toggle);
+  const toggle = usePanelToggle();
   return (
     <IconButton
       label="Echo"
@@ -147,7 +170,7 @@ export function EchoHeaderButton() {
 /** Mounted once in AppLayout for Studio users: the shortcut and the panel. */
 export function EchoPanelHost() {
   const open = useEchoPanelStore((st) => st.open);
-  const toggle = useEchoPanelStore((st) => st.toggle);
+  const toggle = usePanelToggle();
   // A chord with modifiers, so it works from inside a text field too.
   useShortcuts([{ keys: ECHO_SHORTCUT, run: toggle, allowInInputs: true }]);
   if (!open) return null;
@@ -169,6 +192,7 @@ export function EchoPanel() {
   const setMode = useEchoPanelStore((st) => st.setMode);
   const turns = useEchoPanelStore((st) => st.turns);
   const clearTurns = useEchoPanelStore((st) => st.clearTurns);
+  const saving = useSavingInPanel();
   const panelRef = useRef<HTMLDivElement>(null);
   const opener = useRef<HTMLElement | null>(null);
   const location = useLocation();
@@ -199,7 +223,7 @@ export function EchoPanel() {
   const onKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
     if (e.key === 'Escape') {
       e.stopPropagation();
-      setOpen(false);
+      if (!saving) setOpen(false);
       return;
     }
     if (e.key !== 'Tab' || !panelRef.current) return;
@@ -250,13 +274,14 @@ export function EchoPanel() {
           <Badge tone="neutral" size="sm">AI</Badge>
           <span style={{ flex: 1 }} />
           {turns.length > 0 && (
-            <Button size="sm" variant="tertiary" onClick={clearTurns}>
+            <Button size="sm" variant="tertiary" onClick={clearTurns} disabled={saving}>
               Clear
             </Button>
           )}
           <IconButton
             label="Close Echo"
             data-echo-first=""
+            disabled={saving}
             onClick={() => setOpen(false)}
             style={{
               width: 36,
@@ -856,7 +881,7 @@ function DraftAnswer({ draft }: { draft: DraftResponse }) {
   return (
     <>
       {/* S-3.4.2: the same edit-and-save view as the Echo page (one contract). */}
-      <DraftEditor draft={draft} compact meta={match && <Badge tone="neutral" size="sm">{match}</Badge>} />
+      <DraftEditor draft={draft} compact surface="bubble" meta={match && <Badge tone="neutral" size="sm">{match}</Badge>} />
       {(draft.flags ?? []).length > 0 && (
         <ul data-echo-draft-flags="" style={{ margin: 0, paddingLeft: space['4'], fontFamily: fonts.ui, fontSize: fontSize.xs, color: c.warn }}>
           {draft.flags!.map((f, i) => (

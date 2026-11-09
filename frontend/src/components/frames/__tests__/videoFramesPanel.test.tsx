@@ -2,6 +2,7 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { AxiosError, AxiosHeaders } from 'axios';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { VideoFramesPanel } from '../VideoFramesPanel';
 import type { FramesResponse } from '../../../utils/frames';
@@ -106,7 +107,15 @@ describe('VideoFramesPanel', () => {
 
   it('explains a spent monthly quota', async () => {
     listMock.mockResolvedValue({ document_id: 'd1', video_id: 'vid1', visual_enabled: true, in_progress: false, frames: [] });
-    extractMock.mockRejectedValueOnce({ response: { status: 429, data: { detail: 'quota' } } });
+    // The quota's refusal as the server sends it (`QuotaExceededError`). The
+    // rate limiter's 429 says its own words instead (stateLinesOneMessage).
+    const headers = new AxiosHeaders();
+    extractMock.mockRejectedValueOnce(
+      new AxiosError('Request failed with status code 429', 'ERR_BAD_REQUEST', undefined, undefined, {
+        status: 429, statusText: '429', headers, config: { headers },
+        data: { detail: { error: 'quota_exceeded', resource: 'visual_extractions', consumed: 5, limit: 5, retry_after_sec: 60, retry_at: null } },
+      }),
+    );
     await mount();
     act(() => captureButton()!.click());
     await flush();

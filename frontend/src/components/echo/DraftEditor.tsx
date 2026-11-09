@@ -1,10 +1,11 @@
 import { useState, type ReactNode } from 'react';
-import { useDraftFeedback } from '../../hooks/useEcho';
+import { useDraftFeedback, type DraftSurface } from '../../hooks/useEcho';
 import type { DraftResponse } from '../../services/echoApi';
 import { Button, FormField, Textarea } from '../primitives';
 import { useColors } from '../../hooks/useTheme';
 import { fonts, fontSize, lineHeight, space } from '../../theme';
 import { learnedLine, withDisclosure } from '../../utils/echoDrafts';
+import { inlineErrorMessage } from '../../utils/apiError';
 
 /**
  * A "speak as me" draft as the user's own version (S-3.4.2): edit it in
@@ -12,12 +13,18 @@ import { learnedLine, withDisclosure } from '../../utils/echoDrafts';
  * `POST /echo/drafts/{id}/feedback`; the words the user typed are all Echo
  * learns from, never its own words or the sender's (D-104). One view for the
  * Echo page card and the Echo bubble, which share one contract.
+ *
+ * A failed save is said on this view's own line, in the server's words, and
+ * only there: the global toast stands aside, and a 401 says nothing
+ * (T-3.4.1.24). The surface around it waits while a save is in flight
+ * (`draftFeedbackKey`).
  */
 export function DraftEditor({
   draft,
   compact = false,
   onCopy,
   meta,
+  surface = 'page',
 }: {
   draft: DraftResponse;
   /** The bubble: a shorter box and no hint line. */
@@ -25,9 +32,11 @@ export function DraftEditor({
   onCopy?: () => void;
   /** Shown beside the buttons (the voice score). */
   meta?: ReactNode;
+  /** Which surface holds still while a save is in flight. */
+  surface?: DraftSurface;
 }) {
   const c = useColors();
-  const feedback = useDraftFeedback();
+  const feedback = useDraftFeedback(surface);
   const disclosure = draft.disclosure ?? '';
   const [version, setVersion] = useState(draft.final_text ?? draft.draft);
   const [keep, setKeep] = useState(draft.disclosure_kept ?? true);
@@ -35,6 +44,7 @@ export function DraftEditor({
   const [copied, setCopied] = useState(false);
   const small: React.CSSProperties = { fontFamily: fonts.ui, fontSize: fontSize.xs, color: c.textMuted };
   const dirty = !saved || version.trim() !== (saved.final_text ?? '') || keep !== saved.disclosure_kept;
+  const failure = feedback.isError ? inlineErrorMessage(feedback.error, "Couldn't save your version. Try again.") : null;
 
   const copy = async () => {
     try {
@@ -91,9 +101,9 @@ export function DraftEditor({
           {learnedLine(saved.edit)}
         </p>
       )}
-      {feedback.isError && (
+      {failure && (
         <p role="alert" style={{ ...small, margin: 0, color: c.error }}>
-          Couldn't save your version. Try again.
+          {failure}
         </p>
       )}
     </div>

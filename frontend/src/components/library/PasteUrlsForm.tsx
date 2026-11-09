@@ -2,15 +2,14 @@ import { useMemo, useState } from 'react';
 import { usePasteUrls } from '../../hooks/useLibraryIngest';
 import { PASTE_URLS_MAX, type PasteUrlResult } from '../../services/libraryApi';
 import {
-  detailFromErrorBody,
   guessSourceType,
   parseUrlLines,
   pasteSummaryLine,
   sourceTypeLabel,
   summarizePaste,
   toPasteRowView,
-  type HttpErrorLike,
 } from '../../utils/ingestResults';
+import { inlineErrorMessage } from '../../utils/apiError';
 import { Badge, Button, Textarea } from '../primitives';
 import { useColors } from '../../hooks/useTheme';
 import { fonts, fontSize, fontWeight, lineHeight, radius, space } from '../../theme';
@@ -46,9 +45,10 @@ export function PasteUrlsForm({ onViewShelf }: Props) {
     });
   };
 
+  // Said here, and only here: the hook sets `meta`, so the global toast stands
+  // aside, and a 401 says nothing (T-3.4.1.24).
   const batchError = paste.isError
-    ? detailFromErrorBody((paste.error as HttpErrorLike).response?.data) ??
-      'The batch was rejected before any URL was processed. Try again.'
+    ? inlineErrorMessage(paste.error, 'The batch was rejected before any URL was processed. Try again.')
     : null;
 
   const summary = results ? summarizePaste(results) : null;
@@ -147,7 +147,15 @@ export function PasteUrlsForm({ onViewShelf }: Props) {
               {pasteSummaryLine(summary)}
             </span>
             {summary.created + summary.deduped > 0 && (
-              <Button size="sm" variant="tertiary" onClick={onViewShelf} trailingIcon={<span aria-hidden>→</span>}>
+              // Leaving for the shelf takes this form, and a batch's line, with
+              // it, so it waits while the next batch is out (T-3.4.1.24).
+              <Button
+                size="sm"
+                variant="tertiary"
+                onClick={onViewShelf}
+                disabled={paste.isPending}
+                trailingIcon={<span aria-hidden>→</span>}
+              >
                 See them on the shelf
               </Button>
             )}

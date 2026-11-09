@@ -61,12 +61,27 @@ export function isSessionEnded(err: unknown): boolean {
 }
 
 /**
- * What a failure line on the page says, where the reader acted: the server's
- * words, else `fallback`. Null for a 401, which the session-expiry path owns,
- * as the toasts do (T-3.4.1.18). The mutation behind such a line sets
+ * A failure the app words for the reader itself, such as a form's own
+ * validation ("Choose at least one source to search."). `inlineErrorMessage`
+ * shows its message as written. Any other exception's text stays off the page,
+ * since nobody wrote it for the reader (T-3.4.1.25).
+ */
+export class FormValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'FormValidationError';
+  }
+}
+
+/**
+ * What a failure line on the page says, where the reader acted: a
+ * `FormValidationError`'s own words, else the server's words, else
+ * `fallback`. Null for a 401, which the session-expiry path owns, as the
+ * toasts do (T-3.4.1.18). The mutation behind such a line sets
  * `meta: ERRORS_SHOWN_HERE`, or the global toast says the failure a second time.
  */
 export function inlineErrorMessage(err: unknown, fallback: string): string | null {
+  if (err instanceof FormValidationError) return err.message;
   return isSessionEnded(err) ? null : apiErrorMessage(err, fallback);
 }
 

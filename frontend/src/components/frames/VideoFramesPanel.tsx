@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { isAxiosError } from 'axios';
 import { Button, Spinner } from '../primitives';
 import { useExtractFrames, useFrameImages, useVideoFrames } from '../../hooks/useVideoFrames';
 import { useFeatureAvailable } from '../../hooks/useFeatureAvailable';
@@ -6,17 +7,29 @@ import { useColors } from '../../hooks/useTheme';
 import { fonts, fontSize, fontWeight, lineHeight, radius, space } from '../../theme';
 import { usableFrames } from '../../utils/frames';
 import { featureFlags } from '../../config/features';
+import { inlineErrorMessage } from '../../utils/apiError';
 
 interface Props {
   videoId: string;
 }
 
-function errorText(err: unknown): string {
-  const e = err as { response?: { status?: number; data?: { detail?: string } }; message?: string } | null;
-  const status = e?.response?.status;
-  const detail = e?.response?.data?.detail;
-  if (status === 429) return 'You have used this month\'s frame captures. They reset at the start of next month.';
-  return detail ?? e?.message ?? 'The capture could not be started.';
+/** The monthly `visual_extractions` quota's refusal: a 429 whose detail names
+ * the quota, not the rate limiter's, which says its own words. */
+function isMonthlyQuota(err: unknown): boolean {
+  if (!isAxiosError(err) || err.response?.status !== 429) return false;
+  const detail: unknown = err.response.data?.detail;
+  return !!detail && typeof detail === 'object' && (detail as { error?: unknown }).error === 'quota_exceeded';
+}
+
+/**
+ * What the panel's line says for a failed capture, and the only place it is
+ * said: the hook sets `meta`, so the global toast stands aside. The server's
+ * words, else the panel's sentence, never axios's "Network Error", and nothing
+ * for a 401, which the session-expiry path owns (T-3.4.1.24).
+ */
+function errorText(err: unknown): string | null {
+  if (isMonthlyQuota(err)) return 'You have used this month\'s frame captures. They reset at the start of next month.';
+  return inlineErrorMessage(err, 'The capture could not be started. Try again.');
 }
 
 /**
@@ -48,6 +61,7 @@ export function VideoFramesPanel({ videoId }: Props) {
   // D-105: capture starts visual analysis, so it hides with the opt-in; the
   // stills of frames that already exist still show.
   const captureShown = featureFlags.visualAnalysis;
+  const failure = captureShown && extract.isError ? errorText(extract.error) : null;
 
   if (isLoading) return null;
   if (!data) return null;
@@ -79,9 +93,9 @@ export function VideoFramesPanel({ videoId }: Props) {
           <Spinner size={14} /> Capturing frames. This downloads the video once and takes a few minutes.
         </div>
       )}
-      {captureShown && extract.isError && (
+      {failure && (
         <div role="alert" style={{ color: c.error, fontSize: fontSize.sm, marginBottom: space['3'] }}>
-          {errorText(extract.error)}
+          {failure}
         </div>
       )}
       {captureShown && !frames.length && !running && (

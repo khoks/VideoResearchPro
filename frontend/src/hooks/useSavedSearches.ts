@@ -4,6 +4,7 @@ import {
   type SavedSearchCreate,
   type SavedSearchUpdate,
 } from '../services/savedSearchesApi';
+import { ERRORS_SHOWN_HERE } from '../services/queryClient';
 import { useTierCapabilities } from './useTierCapabilities';
 
 export const savedSearchesKey = ['savedSearches'] as const;
@@ -27,9 +28,17 @@ function useInvalidate() {
   return () => void qc.invalidateQueries({ queryKey: savedSearchesKey });
 }
 
+// Each mutation below has one caller, which says a failure on its own line:
+// the pin dialog for a new one, a saved search's card for the rest. So the
+// global toast stands aside (T-3.4.1.24).
+
 export function useCreateSavedSearch() {
   const invalidate = useInvalidate();
-  return useMutation({ mutationFn: (body: SavedSearchCreate) => savedSearchesApi.create(body), onSuccess: invalidate });
+  return useMutation({
+    mutationFn: (body: SavedSearchCreate) => savedSearchesApi.create(body),
+    onSuccess: invalidate,
+    meta: ERRORS_SHOWN_HERE,
+  });
 }
 
 export function useUpdateSavedSearch() {
@@ -37,12 +46,17 @@ export function useUpdateSavedSearch() {
   return useMutation({
     mutationFn: ({ id, body }: { id: string; body: SavedSearchUpdate }) => savedSearchesApi.update(id, body),
     onSuccess: invalidate,
+    meta: ERRORS_SHOWN_HERE,
   });
 }
 
 export function useDeleteSavedSearch() {
   const invalidate = useInvalidate();
-  return useMutation({ mutationFn: (id: string) => savedSearchesApi.remove(id), onSuccess: invalidate });
+  return useMutation({
+    mutationFn: (id: string) => savedSearchesApi.remove(id),
+    onSuccess: invalidate,
+    meta: ERRORS_SHOWN_HERE,
+  });
 }
 
 /** A saved search's last runs (S-8.3.3), fetched when its history is open. */
@@ -57,5 +71,9 @@ export function useSavedSearchRuns(id: string, enabled: boolean) {
 
 export function useRunSavedSearchNow() {
   const invalidate = useInvalidate();
-  return useMutation({ mutationFn: (id: string) => savedSearchesApi.runNow(id), onSuccess: invalidate });
+  return useMutation({
+    mutationFn: (id: string) => savedSearchesApi.runNow(id),
+    onSuccess: invalidate,
+    meta: ERRORS_SHOWN_HERE,
+  });
 }

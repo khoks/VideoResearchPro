@@ -7,6 +7,7 @@ import { useColors } from '../../hooks/useTheme';
 import { fonts, fontSize, fontWeight, lineHeight, space } from '../../theme';
 import { NoteCard } from './NoteCard';
 import { NoteEditor } from './NoteEditor';
+import { inlineErrorMessage } from '../../utils/apiError';
 
 interface Props {
   targetType: NoteTargetType;
@@ -25,14 +26,17 @@ interface Props {
   description?: string;
 }
 
-function errorMessage(err: unknown): string {
-  if (axios.isAxiosError(err)) {
-    const detail = err.response?.data?.detail;
-    if (typeof detail === 'string') return detail;
-    if (err.response?.status === 404) return 'That target is no longer visible to you.';
-    if (err.response?.status === 422) return 'The note could not be saved as written.';
-  }
-  return 'Could not save the note. Try again.';
+/**
+ * What a note's editor says for a failed save, and the only place it is said:
+ * both hooks set `meta`, so the global toast stands aside (T-3.4.1.24). The
+ * server's words, else a sentence for the status, and nothing for a 401, which
+ * the session-expiry path owns.
+ */
+function errorMessage(err: unknown): string | null {
+  const status = axios.isAxiosError(err) ? err.response?.status : undefined;
+  if (status === 404) return inlineErrorMessage(err, 'That target is no longer visible to you.');
+  if (status === 422) return inlineErrorMessage(err, 'The note could not be saved as written.');
+  return inlineErrorMessage(err, 'Could not save the note. Try again.');
 }
 
 /**
@@ -64,8 +68,28 @@ export function NotesPanel({
 
   const count = notes.length;
   const expanded = variant === 'section' || open || adding;
+  // While a note is being saved, nothing here may close its editor: the editor
+  // is where a failed save is said, and the only place. So adding, editing
+  // another note and folding the list wait for the answer (T-3.4.1.24,
+  // D-159 point 2).
+  const saving = createNote.isPending || updateNote.isPending;
 
   const stop = (e: MouseEvent | KeyboardEvent) => e.stopPropagation();
+
+  // A new editor starts clean: an earlier failure belongs to the editor it
+  // was said in.
+  const startAdding = () => {
+    setEditingId(null);
+    updateNote.reset();
+    createNote.reset();
+    setAdding(true);
+  };
+  const startEditing = (id: string) => {
+    setAdding(false);
+    createNote.reset();
+    updateNote.reset();
+    setEditingId(id);
+  };
 
   const handleCreate = (body: string) => {
     createNote.mutate(
@@ -115,10 +139,8 @@ export function NotesPanel({
           <NoteCard
             key={n.id}
             note={n}
-            onEdit={() => {
-              setAdding(false);
-              setEditingId(n.id);
-            }}
+            onEdit={() => startEditing(n.id)}
+            editHeld={saving}
             onDelete={() => deleteNote.mutate(n.id)}
             deleting={deleteNote.isPending && deleteNote.variables === n.id}
           />
@@ -181,10 +203,8 @@ export function NotesPanel({
             <Button
               size="sm"
               variant="secondary"
-              onClick={() => {
-                setEditingId(null);
-                setAdding(true);
-              }}
+              onClick={startAdding}
+              disabled={saving}
               style={{ marginLeft: 'auto' }}
             >
               Add a note
@@ -220,13 +240,14 @@ export function NotesPanel({
           <button
             type="button"
             onClick={() => setOpen((v) => !v)}
+            disabled={saving}
             aria-expanded={expanded}
             style={{
               ...labelStyle,
               background: 'transparent',
               border: 'none',
               padding: 0,
-              cursor: 'pointer',
+              cursor: saving ? 'default' : 'pointer',
               color: c.accent,
             }}
           >
@@ -236,16 +257,14 @@ export function NotesPanel({
         {!adding && (
           <button
             type="button"
-            onClick={() => {
-              setEditingId(null);
-              setAdding(true);
-            }}
+            onClick={startAdding}
+            disabled={saving}
             style={{
               ...labelStyle,
               background: 'transparent',
               border: 'none',
               padding: 0,
-              cursor: 'pointer',
+              cursor: saving ? 'default' : 'pointer',
               color: count > 0 ? c.textMuted : c.accent,
             }}
           >

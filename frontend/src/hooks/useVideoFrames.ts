@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { framesApi } from '../services/framesApi';
+import { ERRORS_SHOWN_HERE } from '../services/queryClient';
 import { nearestFrame, type FramesResponse, type VideoFrame } from '../utils/frames';
 import type { CitationStill } from '../components/reader/CitationCard';
 import type { CitationIndex, ResolvedCitation } from '../components/reader/citations';
@@ -18,11 +19,14 @@ export function useVideoFrames(videoId: string | null | undefined) {
   });
 }
 
+/** Capture on demand. The frames panel, its one caller, says a failure on its
+ * own line, so the global toast stands aside (T-3.4.1.24). */
 export function useExtractFrames(videoId: string | null | undefined) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (force: boolean = false) => framesApi.extract(videoId as string, force),
     onSuccess: () => qc.invalidateQueries({ queryKey: framesKey(videoId ?? '') }),
+    meta: ERRORS_SHOWN_HERE,
   });
 }
 

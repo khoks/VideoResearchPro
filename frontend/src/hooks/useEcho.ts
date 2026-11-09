@@ -445,14 +445,27 @@ export function useDeleteDraft() {
   });
 }
 
-export function useDraftFeedback() {
+/** Where a draft is edited: the Echo page's card, or a turn in the Echo bubble. */
+export type DraftSurface = 'page' | 'bubble';
+
+// The draft view, the one caller of `useDraftFeedback`, says a failed save on
+// its own line, so the global toast stands aside (T-3.4.1.24). The surface it
+// sits on holds still while a save made there is in flight (`useIsMutating` on
+// this key): the bubble stays open, and the Echo page's card keeps the draft on
+// screen. Otherwise the line would go before it is written, and the failure be
+// said nowhere (D-156 point 2, D-159 point 2).
+export const draftFeedbackKey = (surface: DraftSurface) => ['echo', 'draft-feedback', surface] as const;
+
+export function useDraftFeedback(surface: DraftSurface) {
   const qc = useQueryClient();
   return useMutation({
+    mutationKey: draftFeedbackKey(surface),
     mutationFn: ({ id, ...payload }: { id: string } & DraftFeedbackPayload) => echoApi.draftFeedback(id, payload),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: DRAFTS_KEY });
       qc.invalidateQueries({ queryKey: ['echo', 'signals'] });
     },
+    meta: ERRORS_SHOWN_HERE,
   });
 }
 

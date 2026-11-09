@@ -12,10 +12,12 @@ function toastError(error: unknown): void {
 /**
  * The app's one client, with the global error toast.
  *
- * `meta: { errorsShownHere: true }` on a mutation says it answers every failure
- * itself, so the toast stays out of the way: both would otherwise speak
- * (T-3.4.1.15). That answer goes in the hook's own `onError`. A per-call one on
+ * `meta: { errorsShownHere: true }` on a mutation says every failure is answered
+ * already, so the toast stays out of the way: both would otherwise speak
+ * (T-3.4.1.15). A toast goes in the hook's own `onError`. A per-call one on
  * `mutate` is dropped once its component has unmounted, and nothing would be said.
+ * A line on the page, where the reader acted, needs no toast beside it
+ * (T-3.4.1.18): see `ERRORS_SHOWN_HERE`.
  */
 export function createQueryClient(): QueryClient {
   return new QueryClient({
@@ -32,8 +34,14 @@ export function createQueryClient(): QueryClient {
 }
 
 /**
- * `meta` for a mutation whose hook says every failure itself with
- * `toastMutationError` in its own `onError` (D-148 point 5, T-3.4.1.17).
+ * `meta` for a mutation whose every failure is said once already, in one of two
+ * ways:
+ * - its hook toasts it with `toastMutationError` in its own `onError` (D-148
+ *   point 5, T-3.4.1.17);
+ * - every caller shows it on the page, where the reader acted, through
+ *   `inlineErrorMessage`, which says nothing for a 401 (T-3.4.1.18). Such a
+ *   hook sets this and no toast. A hook whose callers differ takes an option
+ *   (D-153 point 2), and only the callers with a line of their own pass it.
  */
 export const ERRORS_SHOWN_HERE = { errorsShownHere: true } as const;
 

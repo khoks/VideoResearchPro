@@ -12,7 +12,7 @@ import { Badge, Button, Card, EmptyState, Skeleton, Spinner } from '../component
 import { useColors } from '../hooks/useTheme';
 import { fonts, fontSize, fontWeight, lineHeight, measure, space } from '../theme';
 import { formatDate } from '../utils/formatters';
-import { apiErrorMessage } from '../utils/apiError';
+import { inlineErrorMessage } from '../utils/apiError';
 import { isDefaultSourceTypes, sourceTypeLabel, windowLabel } from '../utils/jobForm';
 import type { JobTemplate, TemplateParameters } from '../services/jobTemplatesApi';
 
@@ -254,8 +254,9 @@ function TemplateCard({
                     variant="danger"
                     loading={del.isPending}
                     onClick={() =>
+                      // Said here alone: the hook sets `meta`, and a 401 says nothing (T-3.4.1.18).
                       del.mutate(template.id, {
-                        onError: (err) => setError(apiErrorMessage(err, 'Could not delete the template.')),
+                        onError: (err) => setError(inlineErrorMessage(err, 'Could not delete the template.')),
                       })
                     }
                   >

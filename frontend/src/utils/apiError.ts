@@ -60,6 +60,16 @@ export function isSessionEnded(err: unknown): boolean {
   return isAxiosError(err) && err.response?.status === 401;
 }
 
+/**
+ * What a failure line on the page says, where the reader acted: the server's
+ * words, else `fallback`. Null for a 401, which the session-expiry path owns,
+ * as the toasts do (T-3.4.1.18). The mutation behind such a line sets
+ * `meta: ERRORS_SHOWN_HERE`, or the global toast says the failure a second time.
+ */
+export function inlineErrorMessage(err: unknown, fallback: string): string | null {
+  return isSessionEnded(err) ? null : apiErrorMessage(err, fallback);
+}
+
 const UNEXPECTED = 'An unexpected error occurred.';
 
 /**

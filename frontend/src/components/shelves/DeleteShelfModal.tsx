@@ -4,7 +4,7 @@ import { useDeleteShelf } from '../../hooks/useShelves';
 import { Button, Modal } from '../primitives';
 import { useColors } from '../../hooks/useTheme';
 import { fonts, fontSize } from '../../theme';
-import { apiErrorMessage } from '../../utils/apiError';
+import { inlineErrorMessage } from '../../utils/apiError';
 
 interface Props {
   shelf: Pick<Shelf, 'id' | 'name' | 'job_count'> | null;
@@ -18,6 +18,21 @@ export function DeleteShelfModal({ shelf, onClose, onDeleted }: Props) {
   const del = useDeleteShelf();
   const [error, setError] = useState<string | null>(null);
 
+  // A line from one opening never shows on the next, for this shelf or another:
+  // both pages keep the modal mounted and only change `shelf`.
+  const [shownFor, setShownFor] = useState(shelf?.id);
+  if (shelf?.id !== shownFor) {
+    setShownFor(shelf?.id);
+    setError(null);
+  }
+
+  // The modal is where a failure is said, and the only place (T-3.4.1.18), so it
+  // stays open until the answer comes: Escape and the backdrop wait, as
+  // "Keep it" does. Closed early, a failure would be said nowhere.
+  const dismiss = () => {
+    if (!del.isPending) onClose();
+  };
+
   const confirm = () => {
     if (!shelf) return;
     setError(null);
@@ -26,7 +41,8 @@ export function DeleteShelfModal({ shelf, onClose, onDeleted }: Props) {
         onClose();
         onDeleted?.();
       },
-      onError: (err) => setError(apiErrorMessage(err, 'Could not delete the shelf.')),
+      // Said here alone: the hook sets `meta`, and a 401 says nothing (T-3.4.1.18).
+      onError: (err) => setError(inlineErrorMessage(err, 'Could not delete the shelf.')),
     });
   };
 
@@ -34,7 +50,7 @@ export function DeleteShelfModal({ shelf, onClose, onDeleted }: Props) {
   return (
     <Modal
       open={!!shelf}
-      onClose={onClose}
+      onClose={dismiss}
       title="Delete this shelf?"
       footer={
         <>

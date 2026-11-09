@@ -214,7 +214,7 @@ Redis pub/sub → WebSocket Manager → Frontend React Query cache update
 | `backend/app/sources/paste_url/platform_metadata.py` | A pasted Facebook, Instagram, LinkedIn or X post's author, handle and date, from its page's metadata and its address (T-1.5.8.4) |
 | `backend/app/services/run_notes.py` | What a run tells its reader about its sources and limits (`jobs.run_notes_json`) |
 | `backend/app/services/document_text_service.py` | A document's full text by `document_id`: transcript cache, else its Chroma chunks reassembled with the overlap removed (knowledge extraction) |
-| `backend/scripts/regenerate_report.py` | Re-run a completed job's report phase from cached transcripts (before/after measurement) |
+| `backend/scripts/regenerate_report.py` | Re-run a completed job's report phase from cached text (before/after measurement). Picks the job's documents by `document_id`, so PDFs, pasted pages and threads come too (T-8.8.6.9) |
 | `backend/scripts/judge_report_sections.py` | Split a report into sections and judge each in full — replaces the 180,000-char judging cap |
 | `backend/scripts/audit_report_intermediates.py` | Read a job's persisted map/reduce intermediates back: batch statuses, item counts, reduce accounting |
 | `backend/app/agents/echo_agent.py` | "Speak as me" LangGraph agent; the verbatim, citation, private-name and nothing-behind-it guards live here in code (S-3.4.1, T-3.4.1.11) |

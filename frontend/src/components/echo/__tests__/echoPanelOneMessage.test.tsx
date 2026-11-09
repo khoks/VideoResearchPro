@@ -14,11 +14,17 @@
  * setting `meta` for every caller of `useAskLibraryQA` fails "the library page
  * keeps its toast"; taking out the bubble's 401 check fails both
  * `sessionEnded` rows with "Something went wrong. Try again." in the turn.
+ *
+ * The turn being the one message, it says the server's words when there are
+ * any, as the toast beside it used to. Mutation check, run on 2026-11-09:
+ * putting back `requestErrorLine(err)` alone fails both `words` rows and the
+ * rate limit, quota, plan and missing-source rows of "what the turn says".
  */
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { MemoryRouter } from 'react-router-dom';
 import { QueryClientProvider } from '@tanstack/react-query';
+import { AxiosError, AxiosHeaders } from 'axios';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { EchoStatus } from '../../../services/echoApi';
 import { createQueryClient } from '../../../services/queryClient';
@@ -26,6 +32,7 @@ import { useEchoPanelStore } from '../../../stores/echoPanelStore';
 import { useAskLibraryQA } from '../../../hooks/useLibraryQA';
 import {
   FAILURE_KINDS,
+  SERVER_WORDS,
   clearToasts,
   failures,
   flush,
@@ -105,9 +112,10 @@ async function ask(question: string) {
   await flush();
 }
 
-/** What the turn says for each failure (`requestErrorLine`). */
+/** What the turn says for each failure: the server's words, else the bubble's
+ * line for the status (`requestErrorLine`). */
 const TURN_SAYS: Record<FailureKind, string[]> = {
-  words: ['Not available for you yet.'],
+  words: [SERVER_WORDS],
   noWords: ['Something went wrong. Try again.'],
   noAnswer: ['Could not reach the server.'],
   sessionEnded: [],
@@ -142,6 +150,40 @@ describe.each(TARGETS)('asking over $target', ({ target, call }) => {
     expect(call()).toHaveBeenCalledTimes(1);
     expect(toastMessages()).toEqual([]);
     expect(messages()).toEqual(TURN_SAYS[kind]);
+  });
+});
+
+function answered(status: number, data: unknown): AxiosError {
+  const headers = new AxiosHeaders();
+  return new AxiosError(`Request failed with status code ${status}`, 'ERR_BAD_REQUEST', undefined, undefined, {
+    status, statusText: String(status), headers, config: { headers }, data,
+  });
+}
+
+// The turn is the only message, so the server's reason must reach it: the
+// global toast used to carry it beside the turn's generic line.
+describe('what the turn says', () => {
+  it.each([
+    [
+      'a rate limit, with its cooldown',
+      answered(429, { detail: 'Too many requests. Please retry after the cooldown period.', retry_after_sec: 30 }),
+      'Too many requests. Please retry after the cooldown period.',
+    ],
+    [
+      'a quota refusal, with its message',
+      answered(429, { detail: { resource: 'library_qa', message: 'You have asked today’s 20 questions.' } }),
+      'You have asked today’s 20 questions.',
+    ],
+    ['a plan’s refusal, in its words', answered(403, { detail: 'Library Q&A is on the Pro plan.' }), 'Library Q&A is on the Pro plan.'],
+    ['a scoped source that is gone', answered(404, { detail: 'Source not found' }), 'Source not found'],
+    ['a 429 with no words', answered(429, {}), 'You have reached today’s limit for this. It resets tomorrow.'],
+    ['a 403 with no words', answered(403, {}), 'Your plan does not include this.'],
+  ])('%s', async (_label, error, line) => {
+    askLibrary.mockRejectedValueOnce(error);
+    await mount();
+    await ask('What raises tariffs?');
+    expect(askLibrary).toHaveBeenCalledTimes(1);
+    expect(messages()).toEqual([line]);
   });
 });
 

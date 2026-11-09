@@ -39,7 +39,7 @@ import { suggestionsApi, type SuggestionContext } from '../../services/suggestio
 import { useEchoPanelStore, type AskTarget, type EchoTurn } from '../../stores/echoPanelStore';
 import { fonts, fontSize, fontWeight, lineHeight, radius, space, target as touch, z } from '../../theme';
 import type { LibraryQAExchange, QAHistoryExchange } from '../../types/qa';
-import { isSessionEnded } from '../../utils/apiError';
+import { inlineErrorMessage } from '../../utils/apiError';
 import { computeReadiness } from '../../utils/echoReadiness';
 import { citationLabel, draftErrorOf } from '../../utils/echoDrafts';
 import { DraftEditor } from './DraftEditor';
@@ -599,9 +599,13 @@ function AskComposer() {
           : await askHistory.mutateAsync({ question });
       updateTurn(id, { status: 'done', result });
     } catch (err) {
-      // A 401 says nothing: the session ends, and the thread with it (D-148 point 2).
-      if (isSessionEnded(err)) return;
-      updateTurn(id, { status: 'error', error: requestErrorLine(err) });
+      // The turn is the one message, so it says the server's words when there are
+      // any (a rate limit's cooldown, a plan's refusal), else the bubble's line
+      // for the status. A 401 says nothing: the session ends, and the thread with
+      // it (D-148 point 2).
+      const line = inlineErrorMessage(err, requestErrorLine(err));
+      if (line === null) return;
+      updateTurn(id, { status: 'error', error: line });
     }
   };
 

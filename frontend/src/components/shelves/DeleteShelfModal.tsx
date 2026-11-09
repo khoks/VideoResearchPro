@@ -18,6 +18,21 @@ export function DeleteShelfModal({ shelf, onClose, onDeleted }: Props) {
   const del = useDeleteShelf();
   const [error, setError] = useState<string | null>(null);
 
+  // A line from one opening never shows on the next, for this shelf or another:
+  // both pages keep the modal mounted and only change `shelf`.
+  const [shownFor, setShownFor] = useState(shelf?.id);
+  if (shelf?.id !== shownFor) {
+    setShownFor(shelf?.id);
+    setError(null);
+  }
+
+  // The modal is where a failure is said, and the only place (T-3.4.1.18), so it
+  // stays open until the answer comes: Escape and the backdrop wait, as
+  // "Keep it" does. Closed early, a failure would be said nowhere.
+  const dismiss = () => {
+    if (!del.isPending) onClose();
+  };
+
   const confirm = () => {
     if (!shelf) return;
     setError(null);
@@ -35,7 +50,7 @@ export function DeleteShelfModal({ shelf, onClose, onDeleted }: Props) {
   return (
     <Modal
       open={!!shelf}
-      onClose={onClose}
+      onClose={dismiss}
       title="Delete this shelf?"
       footer={
         <>

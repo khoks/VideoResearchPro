@@ -1,6 +1,7 @@
 import { useState } from 'react';
+import { useIsMutating } from '@tanstack/react-query';
 import type { Tag } from '../../services/tagsApi';
-import { useDeleteTag, useTags, useUpdateTag } from '../../hooks/useTags';
+import { tagEditsKey, useDeleteTag, useTags, useUpdateTag } from '../../hooks/useTags';
 import { PaletteField } from '../labels/PaletteField';
 import { Button, Input, LabelPill, Modal, Select, Spinner } from '../primitives';
 import { useColors } from '../../hooks/useTheme';
@@ -18,9 +19,26 @@ export function TagsManagerModal({ open, onClose }: { open: boolean; onClose: ()
   const c = useColors();
   const tagsQuery = useTags();
   const tags = tagsQuery.data ?? [];
+  // Each row says its own failure, and only there (T-3.4.1.18). Closing would
+  // take the row and its line with it, so while a save, merge or delete is in
+  // flight, Close, Escape and the backdrop wait for the answer.
+  const busy = useIsMutating({ mutationKey: tagEditsKey }) > 0;
+  const dismiss = () => {
+    if (!busy) onClose();
+  };
 
   return (
-    <Modal open={open} onClose={onClose} title="Your tags" footer={null} maxWidth={640}>
+    <Modal
+      open={open}
+      onClose={dismiss}
+      title="Your tags"
+      maxWidth={640}
+      footer={
+        <Button variant="secondary" onClick={dismiss} disabled={busy}>
+          Close
+        </Button>
+      }
+    >
       {tagsQuery.isLoading ? (
         <Spinner size={18} />
       ) : tags.length === 0 ? (

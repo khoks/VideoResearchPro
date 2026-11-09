@@ -15,7 +15,7 @@
  * `oneToastPerFailure.test.ts`. `inlineErrorMessage` without its 401 check fails
  * every `sessionEnded` row here, with "Not authenticated" on the page.
  */
-import { act } from 'react';
+import { act, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { MemoryRouter } from 'react-router-dom';
 import { QueryClientProvider } from '@tanstack/react-query';
@@ -25,6 +25,7 @@ import type { JobTemplate } from '../../services/jobTemplatesApi';
 import { createQueryClient } from '../../services/queryClient';
 import {
   FAILURE_KINDS,
+  SERVER_WORDS,
   clearToasts,
   expectedToasts,
   failures,
@@ -210,5 +211,149 @@ describe('merging a tag', () => {
     chooseMergeTarget(BETA.id);
     await press('Merge');
     expect(api.removeTag).toHaveBeenCalledWith(ALPHA.id, BETA.id);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Closing before the answer
+// ---------------------------------------------------------------------------
+//
+// With the global toast standing aside, the modal's line is the only word on a
+// failure. Closed before the answer, the line would go with it (the tags
+// manager unmounts its rows) or sit hidden (the shelf pages keep the modal
+// mounted), and the failure would be said nowhere. So each waits for the answer:
+// Escape, the backdrop and Close do nothing while the request is in flight.
+//
+// Mutation checks, run on 2026-11-09: letting `DeleteShelfModal`'s `dismiss`
+// close while the delete is pending fails "waits for a pending delete" with no
+// dialog and no message; taking out its reset fails "shows no line from an
+// earlier opening" with the stale line under Energy's name; letting the tags
+// manager's `dismiss` close while busy, or dropping `mutationKey` from
+// `useUpdateTag` or `useDeleteTag`, fails "waits for a pending save" or "waits
+// for a pending delete" with no dialog and no message.
+
+function pressEscape() {
+  act(() => {
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  });
+}
+
+function clickBackdrop() {
+  const backdrop = document.querySelector<HTMLElement>('[role="presentation"]');
+  if (!backdrop) throw new Error('No modal backdrop');
+  act(() => backdrop.click());
+}
+
+const dialogOpen = () => !!document.querySelector('[role="dialog"]');
+
+/** A request that answers when the test says. */
+function held<T>() {
+  let fail: (reason: unknown) => void = () => undefined;
+  let land: (value: T) => void = () => undefined;
+  const promise = new Promise<T>((resolve, reject) => {
+    land = resolve;
+    fail = reject;
+  });
+  return { promise, fail, land };
+}
+
+/** Both shelf pages keep the modal mounted and change only `shelf`. */
+const TRADE = { id: 'shelf-1', name: 'Trade', job_count: 2 };
+const ENERGY = { id: 'shelf-2', name: 'Energy', job_count: 0 };
+
+function ShelvesHost() {
+  const [shelf, setShelf] = useState<typeof TRADE | null>(TRADE);
+  return (
+    <>
+      <button type="button" onClick={() => setShelf(TRADE)}>
+        Open Trade
+      </button>
+      <button type="button" onClick={() => setShelf(ENERGY)}>
+        Open Energy
+      </button>
+      <DeleteShelfModal shelf={shelf} onClose={() => setShelf(null)} />
+    </>
+  );
+}
+
+function TagsHost() {
+  const [open, setOpen] = useState(true);
+  return <TagsManagerModal open={open} onClose={() => setOpen(false)} />;
+}
+
+describe('the delete-shelf modal', () => {
+  it('waits for a pending delete, then says its failure', async () => {
+    const request = held<void>();
+    api.removeShelf.mockReturnValueOnce(request.promise);
+    await mount(<ShelvesHost />);
+    await press('Delete shelf');
+    pressEscape();
+    clickBackdrop();
+    await flush();
+    expect(dialogOpen()).toBe(true);
+    await act(async () => request.fail(failures.noWords()));
+    await flush();
+    expect(dialogOpen()).toBe(true);
+    expect(messages()).toEqual(['Could not delete the shelf.']);
+  });
+
+  it('closes on Escape once the answer is in', async () => {
+    api.removeShelf.mockRejectedValueOnce(failures.noWords());
+    await mount(<ShelvesHost />);
+    await press('Delete shelf');
+    pressEscape();
+    await flush();
+    expect(dialogOpen()).toBe(false);
+  });
+
+  it('shows no line from an earlier opening', async () => {
+    api.removeShelf.mockRejectedValueOnce(failures.noWords());
+    await mount(<ShelvesHost />);
+    await press('Delete shelf');
+    expect(messages()).toEqual(['Could not delete the shelf.']);
+    await press('Keep it');
+    expect(dialogOpen()).toBe(false);
+    await press('Open Energy');
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain('Energy');
+    expect(messages()).toEqual([]);
+    await press('Keep it');
+    await press('Open Trade');
+    expect(messages()).toEqual([]);
+  });
+});
+
+describe('the tags manager', () => {
+  it('waits for a pending save, then says its failure on the row', async () => {
+    const request = held<Tag>();
+    api.updateTag.mockReturnValueOnce(request.promise);
+    await mount(<TagsHost />);
+    await press('Edit');
+    typeInto(document.querySelector('input[aria-label="New name for Alpha"]') as HTMLInputElement, 'Beta');
+    await press('Save');
+    pressEscape();
+    clickBackdrop();
+    await press('Close');
+    expect(dialogOpen()).toBe(true);
+    await act(async () => request.fail(failures.words()));
+    await flush();
+    expect(dialogOpen()).toBe(true);
+    expect(messages()).toEqual([SERVER_WORDS]);
+    await press('Close');
+    expect(dialogOpen()).toBe(false);
+  });
+
+  it('waits for a pending delete, then says its failure on the row', async () => {
+    const request = held<void>();
+    api.removeTag.mockReturnValueOnce(request.promise);
+    await mount(<TagsHost />);
+    await press('Edit');
+    await press('Delete…');
+    await press('Delete tag');
+    pressEscape();
+    await press('Close');
+    expect(dialogOpen()).toBe(true);
+    await act(async () => request.fail(failures.noAnswer()));
+    await flush();
+    expect(messages()).toEqual(['Could not delete the tag.']);
   });
 });

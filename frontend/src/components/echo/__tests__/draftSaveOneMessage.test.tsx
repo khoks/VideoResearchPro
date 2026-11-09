@@ -10,9 +10,12 @@
  *
  * The line is the one message, so the surface it sits on waits while a save is
  * in flight (D-159 point 2): on the Echo page, Open and Delete in Recent drafts
- * and the draft buttons, any of which would put another draft (or none) in the
- * view's place; in the bubble, its close button, Escape, Clear and the opener,
- * any of which would close it.
+ * and the draft buttons (Draft a reply, Draft anyway, Draft in this register,
+ * and the form's own submit), any of which would put another draft (or none)
+ * in the view's place; in the bubble, its close button, Escape, Clear, both
+ * openers and the shortcut, any of which would close it. And the other way
+ * round: while a new draft, or a delete of the open one, is out on the Echo
+ * page, the view's Save waits, since that answer takes the view away.
  *
  * "A message" here is a toast or a line with `role="alert"`.
  *
@@ -21,14 +24,20 @@
  * toast; the old fixed sentence back in the view fails both `words` rows;
  * `apiErrorMessage` in place of `inlineErrorMessage` fails both `sessionEnded`
  * rows with "Not authenticated"; dropping `disabled={saving}` from Recent
- * drafts' Open, or the `saving` check from the bubble's Escape, or
- * `usePanelToggle` from the bubble's opener, fails that surface's "waits for a
- * save in flight".
+ * drafts' Open, or `|| saving` from Draft a reply, or the `saving` check at the
+ * top of `submit`, or the `saving` check from the bubble's Escape, or
+ * `usePanelToggle` from the bubble, the header button or the shortcut, fails
+ * that surface's "waits for a save in flight"; dropping `disabled={saving}`
+ * from Draft anyway or Draft in this register fails that stop's row; and
+ * taking `create.isPending`, or the delete, out of `replacing`, or `saveHeld`
+ * off the view's Save, or reading the open draft when Delete was pressed
+ * rather than when it lands, fails that "holds Save" test.
  */
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { MemoryRouter } from 'react-router-dom';
 import { QueryClientProvider } from '@tanstack/react-query';
+import { AxiosError, AxiosHeaders } from 'axios';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DraftResponse, DraftStatus, EchoDraft, EchoStatus } from '../../../services/echoApi';
 import { createQueryClient } from '../../../services/queryClient';
@@ -41,6 +50,7 @@ import {
   failures,
   flush,
   toastMessages,
+  typeInto,
 } from '../../../services/__tests__/failures';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -66,7 +76,7 @@ const STATUS: EchoStatus = {
 const api = {
   draftFeedback: vi.fn<(id: string, p: unknown) => Promise<EchoDraft>>(),
   createDraft: vi.fn<(p: unknown) => Promise<EchoDraft>>(),
-  deleteDraft: vi.fn(async () => undefined),
+  deleteDraft: vi.fn<(id: string) => Promise<undefined>>(async () => undefined),
 };
 
 vi.mock('../../../services/echoApi', async (orig) => ({
@@ -81,7 +91,7 @@ vi.mock('../../../services/echoApi', async (orig) => ({
     cardShown: async () => undefined,
     listDrafts: async () => ({ items: [DRAFT, OTHER] }),
     createDraft: (p: unknown) => api.createDraft(p),
-    deleteDraft: () => api.deleteDraft(),
+    deleteDraft: (id: string) => api.deleteDraft(id),
     draftFeedback: (id: string, p: unknown) => api.draftFeedback(id, p),
     voiceTest: async () => ({
       offer: {
@@ -104,7 +114,7 @@ vi.mock('../../../services/qaHistoryApi', () => ({
 }));
 
 import { SpeakAsMePanel } from '../SpeakAsMePanel';
-import { EchoBubble, EchoPanelHost } from '../EchoPanel';
+import { EchoBubble, EchoHeaderButton, EchoPanelHost } from '../EchoPanel';
 
 let host: HTMLDivElement;
 let root: Root;
@@ -138,10 +148,20 @@ async function click(el: HTMLElement) {
 /** A request that answers when the test says. */
 function held<T>() {
   let fail: (reason: unknown) => void = () => undefined;
-  const promise = new Promise<T>((_resolve, reject) => {
+  let land: (value: T) => void = () => undefined;
+  const promise = new Promise<T>((resolve, reject) => {
+    land = resolve;
     fail = reject;
   });
-  return { promise, fail };
+  return { promise, fail, land };
+}
+
+/** A draft the server stopped (HTTP 422), in its words, as `draftErrorOf` reads it. */
+function stopped(detail: { code: string; names: string[]; message: string }): AxiosError {
+  const headers = new AxiosHeaders();
+  return new AxiosError('Request failed with status code 422', 'ERR_BAD_REQUEST', undefined, undefined, {
+    status: 422, statusText: '422', headers, config: { headers }, data: { detail },
+  });
 }
 
 beforeEach(() => {
@@ -150,7 +170,7 @@ beforeEach(() => {
   root = createRoot(host);
   api.draftFeedback.mockReset().mockResolvedValue({ ...DRAFT, final_text: DRAFT.draft, disclosure_kept: true, feedback_at: '2026-10-20T10:05:00' });
   api.createDraft.mockReset().mockResolvedValue(OTHER);
-  api.deleteDraft.mockClear();
+  api.deleteDraft.mockReset().mockResolvedValue(undefined);
   useEchoPanelStore.setState({ open: false, mode: 'ask', target: 'library', turns: [], askText: '' });
   clearToasts();
 });
@@ -168,10 +188,23 @@ afterEach(() => {
 async function openOnPage() {
   await mount(<SpeakAsMePanel />);
   await click(buttons('Open')[0]);
-  expect(host.querySelector('[data-result]')).not.toBeNull();
+  expect(viewText()).toBe(DRAFT.draft);
 }
 
-const pageView = () => host.querySelector('[data-result]') as HTMLElement;
+// `section`: the voice test's verdict carries a `data-result` of its own.
+const pageView = () => host.querySelector('section[data-result]') as HTMLElement;
+/** The open draft's version box, or undefined when no draft is open. */
+const viewText = () => pageView()?.querySelector<HTMLTextAreaElement>('textarea[data-version]')?.value;
+/** "The message you're replying to", the form's one text box. */
+const messageField = () => host.querySelector<HTMLTextAreaElement>('form textarea')!;
+
+/** The form submitted as Enter in a field does it, past any button. */
+async function submitForm() {
+  await act(async () => {
+    host.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+  });
+  await flush();
+}
 
 describe('the Echo page’s draft', () => {
   it.each(FAILURE_KINDS)('says a failed save (%s) once, on its own line', async (kind) => {
@@ -194,15 +227,101 @@ describe('the Echo page’s draft', () => {
     const request = held<EchoDraft>();
     api.draftFeedback.mockReturnValueOnce(request.promise);
     await openOnPage();
+    typeInto(messageField(), 'Should we raise prices?');
+    expect(buttons('Draft a reply')[0].disabled).toBe(false);
     await click(buttons('Save my version', pageView())[0]);
     // Open, Delete and a new draft would each replace the view and its line.
     for (const b of [...buttons('Open'), ...buttons('Delete'), ...buttons('Draft a reply')]) expect(b.disabled).toBe(true);
     await click(buttons('Open')[1]);
-    expect(pageView().textContent).toContain(DRAFT.draft);
+    // The form's own submit (Enter in a field) goes through `submit`, which waits too.
+    await submitForm();
+    expect(api.createDraft).not.toHaveBeenCalled();
+    expect(viewText()).toBe(DRAFT.draft);
     await act(async () => request.fail(failures.noWords()));
     await flush();
     expect(messages()).toEqual([FALLBACK]);
-    for (const b of [...buttons('Open'), ...buttons('Delete')]) expect(b.disabled).toBe(false);
+    for (const b of [...buttons('Open'), ...buttons('Delete'), ...buttons('Draft a reply')]) expect(b.disabled).toBe(false);
+  });
+
+  it.each([
+    ['Draft anyway', { code: 'names_need_confirmation', names: ['Asha'], message: 'This names Asha.' }],
+    ['Draft in this register', { code: 'register_needs_approval', names: [], message: 'Echo has not drafted in this register yet.' }],
+  ])('holds %s while a save is in flight', async (label, detail) => {
+    api.createDraft.mockRejectedValueOnce(stopped(detail));
+    await mount(<SpeakAsMePanel />);
+    typeInto(messageField(), 'Did Asha call?');
+    await click(buttons('Draft a reply')[0]);
+    expect(buttons(label)[0].disabled).toBe(false);
+    await click(buttons('Open')[0]);
+    const request = held<EchoDraft>();
+    api.draftFeedback.mockReturnValueOnce(request.promise);
+    await click(buttons('Save my version', pageView())[0]);
+    expect(buttons(label)[0].disabled).toBe(true);
+    await click(buttons(label)[0]);
+    expect(api.createDraft).toHaveBeenCalledTimes(1);
+    expect(viewText()).toBe(DRAFT.draft);
+    await act(async () => request.fail(failures.noWords()));
+    await flush();
+    expect(buttons(label)[0].disabled).toBe(false);
+  });
+
+  it('holds Save while a new draft is out, which takes the view’s place when it lands', async () => {
+    const drafting = held<EchoDraft>();
+    api.createDraft.mockReturnValueOnce(drafting.promise);
+    await openOnPage();
+    expect(buttons('Save my version', pageView())[0].disabled).toBe(false);
+    typeInto(messageField(), 'Should we raise prices?');
+    await click(buttons('Draft a reply')[0]);
+    const save = buttons('Save my version', pageView())[0];
+    expect(save.disabled).toBe(true);
+    await click(save);
+    expect(api.draftFeedback).not.toHaveBeenCalled();
+    await act(async () => drafting.land(OTHER));
+    await flush();
+    expect(viewText()).toBe(OTHER.draft);
+    expect(buttons('Save my version', pageView())[0].disabled).toBe(false);
+  });
+
+  it('holds Save while the open draft is being deleted, which takes the view away', async () => {
+    const deleting = held<undefined>();
+    api.deleteDraft.mockReturnValueOnce(deleting.promise);
+    await openOnPage();
+    expect(buttons('Save my version', pageView())[0].disabled).toBe(false);
+    await click(buttons('Delete')[0]);
+    expect(api.deleteDraft).toHaveBeenCalledWith(DRAFT.id);
+    const save = buttons('Save my version', pageView())[0];
+    expect(save.disabled).toBe(true);
+    await click(save);
+    expect(api.draftFeedback).not.toHaveBeenCalled();
+    await act(async () => deleting.land(undefined));
+    await flush();
+    expect(pageView()).toBeNull();
+  });
+
+  it('a delete of another draft leaves the open one’s Save alone', async () => {
+    const deleting = held<undefined>();
+    api.deleteDraft.mockReturnValueOnce(deleting.promise);
+    await openOnPage();
+    await click(buttons('Delete')[1]);
+    expect(api.deleteDraft).toHaveBeenCalledWith(OTHER.id);
+    expect(buttons('Save my version', pageView())[0].disabled).toBe(false);
+    await act(async () => deleting.land(undefined));
+    await flush();
+    expect(viewText()).toBe(DRAFT.draft);
+  });
+
+  it('a delete that lands after another draft was opened leaves that draft open', async () => {
+    const deleting = held<undefined>();
+    api.deleteDraft.mockReturnValueOnce(deleting.promise);
+    await openOnPage();
+    await click(buttons('Delete')[0]);
+    await click(buttons('Open')[1]);
+    expect(viewText()).toBe(OTHER.draft);
+    // Not the draft being deleted, so its Save does not wait for the delete.
+    expect(buttons('Save my version', pageView())[0].disabled).toBe(false);
+    await act(async () => deleting.land(undefined));
+    await flush();
+    expect(viewText()).toBe(OTHER.draft);
   });
 });
 
@@ -217,9 +336,18 @@ async function openInBubble() {
   await mount(
     <>
       <EchoBubble />
+      <EchoHeaderButton />
       <EchoPanelHost />
     </>,
   );
+}
+
+/** Mod-Shift-E (Ctrl here: jsdom is no Mac), pressed outside the panel. */
+async function pressShortcut() {
+  await act(async () => {
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'E', ctrlKey: true, shiftKey: true, bubbles: true, cancelable: true }));
+  });
+  await flush();
 }
 
 const panel = () => document.querySelector<HTMLElement>('#echo-panel');
@@ -256,9 +384,16 @@ describe('the bubble’s draft', () => {
     const close = panel()!.querySelector<HTMLButtonElement>('button[aria-label="Close Echo"]')!;
     expect(close.disabled).toBe(true);
     expect(buttons('Clear', panel()!)[0].disabled).toBe(true);
+    // Each way to close it, one at a time: a second opener would open it again.
     pressEscape();
+    await flush();
+    expect(panel(), 'Escape').not.toBeNull();
     await click(document.querySelector<HTMLButtonElement>('.pratidhvani-echo-bubble')!);
-    expect(panel()).not.toBeNull();
+    expect(panel(), 'the bubble').not.toBeNull();
+    await click(document.querySelector<HTMLButtonElement>('button[data-echo-opener]')!);
+    expect(panel(), 'the header button').not.toBeNull();
+    await pressShortcut();
+    expect(panel(), 'the shortcut').not.toBeNull();
     expect(useEchoPanelStore.getState().turns).toHaveLength(1);
     await act(async () => request.fail(failures.noWords()));
     await flush();
@@ -266,6 +401,16 @@ describe('the bubble’s draft', () => {
     expect(messages()).toEqual([FALLBACK]);
     pressEscape();
     await flush();
+    expect(panel()).toBeNull();
+  });
+
+  it('with no save out, the header button and the shortcut close it as before', async () => {
+    await openInBubble();
+    await click(document.querySelector<HTMLButtonElement>('button[data-echo-opener]')!);
+    expect(panel()).toBeNull();
+    await pressShortcut();
+    expect(panel()).not.toBeNull();
+    await pressShortcut();
     expect(panel()).toBeNull();
   });
 

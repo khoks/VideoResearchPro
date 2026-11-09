@@ -25,6 +25,7 @@ export function DraftEditor({
   onCopy,
   meta,
   surface = 'page',
+  saveHeld = false,
 }: {
   draft: DraftResponse;
   /** The bubble: a shorter box and no hint line. */
@@ -34,6 +35,12 @@ export function DraftEditor({
   meta?: ReactNode;
   /** Which surface holds still while a save is in flight. */
   surface?: DraftSurface;
+  /**
+   * Something in flight will take this view away when it answers (a new draft,
+   * or a delete of this one), so Save waits for it: a save that failed after
+   * its view had gone would be said nowhere (T-3.4.1.24).
+   */
+  saveHeld?: boolean;
 }) {
   const c = useColors();
   const feedback = useDraftFeedback(surface);
@@ -91,7 +98,7 @@ export function DraftEditor({
         <Button type="button" size="sm" variant="secondary" onClick={copy} disabled={!version.trim()}>
           {copied ? 'Copied' : 'Copy'}
         </Button>
-        <Button type="button" size="sm" onClick={save} loading={feedback.isPending} disabled={!version.trim() || !dirty}>
+        <Button type="button" size="sm" onClick={save} loading={feedback.isPending} disabled={!version.trim() || !dirty || saveHeld}>
           Save my version
         </Button>
         {meta}

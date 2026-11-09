@@ -554,6 +554,25 @@ describe('a saved search’s card', () => {
     for (const label of ['Stop emails', 'Pause', 'Change schedule', 'Delete']) expect(button(label).disabled, label).toBe(false);
   });
 
+  it('holds its Delete while a run-now is out, and leaves its changes free', async () => {
+    const request = held<unknown>();
+    api.runNow.mockReturnValueOnce(request.promise);
+    const asked = vi.fn(() => true);
+    window.confirm = asked;
+    await mount(<SavedSearchesPage />);
+    await press('Run now');
+    expect(api.runNow).toHaveBeenCalledTimes(1);
+    expect(button('Delete').disabled).toBe(true);
+    for (const label of ['Stop emails', 'Pause', 'Change schedule']) expect(button(label).disabled, label).toBe(false);
+    await press('Delete');
+    expect(asked).not.toHaveBeenCalled();
+    expect(api.removeSaved).not.toHaveBeenCalled();
+    await act(async () => request.fail(failures.words()));
+    await flush();
+    expect(messages()).toEqual([SERVER_WORDS]);
+    expect(button('Delete').disabled).toBe(false);
+  });
+
   it('holds everything while it is being deleted', async () => {
     const request = held<unknown>();
     api.removeSaved.mockReturnValueOnce(request.promise);

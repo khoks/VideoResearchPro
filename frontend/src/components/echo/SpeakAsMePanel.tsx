@@ -48,6 +48,11 @@ export function SpeakAsMePanel() {
   // another draft in its place, or none: its line is where a failed save is
   // said, and the only place (T-3.4.1.24, D-159 point 2).
   const saving = useIsMutating({ mutationKey: draftFeedbackKey('page') }) > 0;
+  // And the other way round: a new draft in flight, or a delete of the open
+  // one, will take the view away when it answers, so the view's Save waits
+  // for it. Only the latest delete's `onSuccess` runs, and it is the one
+  // `del.variables` names.
+  const replacing = create.isPending || (del.isPending && del.variables === result?.id);
 
   const text: React.CSSProperties = { margin: 0, fontFamily: fonts.body, fontSize: fontSize.sm, color: c.textSecondary, lineHeight: lineHeight.normal };
   const st = status.data;
@@ -228,7 +233,9 @@ export function SpeakAsMePanel() {
         </form>
       ) : null}
 
-      {result && <DraftView key={result.id} draft={result} onCopy={() => pushToast('success', 'Copied. Read it once more before you send it.')} />}
+      {result && (
+        <DraftView key={result.id} draft={result} saveHeld={replacing} onCopy={() => pushToast('success', 'Copied. Read it once more before you send it.')} />
+      )}
 
       {st?.enabled && (recent.data?.items.length ?? 0) > 0 && (
         <details style={{ marginTop: space['4'] }}>
@@ -240,7 +247,10 @@ export function SpeakAsMePanel() {
                 <Button size="sm" variant="tertiary" onClick={() => setResult(d)} disabled={saving}>
                   Open
                 </Button>
-                <Button size="sm" variant="tertiary" style={{ color: c.error }} disabled={saving} onClick={() => del.mutate(d.id, { onSuccess: () => result?.id === d.id && setResult(null) })}>
+                <Button size="sm" variant="tertiary" style={{ color: c.error }} disabled={saving}
+                  // The draft open when the delete lands, not the one open when it was pressed.
+                  onClick={() => del.mutate(d.id, { onSuccess: () => setResult((r) => (r?.id === d.id ? null : r)) })}
+                >
                   Delete
                 </Button>
               </li>
@@ -254,13 +264,14 @@ export function SpeakAsMePanel() {
   );
 }
 
-function DraftView({ draft, onCopy }: { draft: EchoDraft; onCopy: () => void }) {
+function DraftView({ draft, saveHeld, onCopy }: { draft: EchoDraft; saveHeld: boolean; onCopy: () => void }) {
   const c = useColors();
   const small: React.CSSProperties = { fontFamily: fonts.ui, fontSize: fontSize.xs, color: c.textMuted };
   return (
     <section data-result aria-label="Draft" style={{ marginTop: space['4'], display: 'flex', flexDirection: 'column', gap: space['2'] }}>
       <DraftEditor
         draft={draft}
+        saveHeld={saveHeld}
         onCopy={onCopy}
         meta={
           <span style={small}>

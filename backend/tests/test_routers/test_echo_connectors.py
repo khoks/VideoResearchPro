@@ -193,6 +193,19 @@ def test_connecting_stores_an_encrypted_token_schedules_and_backfills(unauthenti
     assert fact.kind == "skill" and fact.confidence == 0.9, "derived facts stay below the user's own"
 
 
+def test_connecting_logs_the_connector_not_the_account(unauthenticated_client, inline_db, fake, two, monkeypatch):
+    """The line reaches the API's log, and a connector may label an account by
+    its email address. The page shows the label; the log does not need it."""
+    log = MagicMock()
+    monkeypatch.setattr(echo_connector_service, "logger", log)
+    r, _ = _connect(unauthenticated_client, two["ha"])
+    assert r.status_code == 200, r.text
+    assert r.json()["grant"]["account_label"] == "me-on-fake"
+    said = " ".join(str(a) for call in log.method_calls for a in call.args)
+    assert "connected" in said
+    assert "me-on-fake" not in said
+
+
 def test_a_state_is_bound_to_the_reader_who_started(unauthenticated_client, db, inline_db, fake, two):
     r = unauthenticated_client.post(f"{BASE}/fake/authorize", json={"consent_version": fake.consent_version}, headers=two["ha"])
     state = urllib.parse.parse_qs(urllib.parse.urlparse(r.json()["authorize_url"]).query)["state"][0]

@@ -401,11 +401,12 @@ def query_collection(
     where: dict | None = (
         {"document_id": {"$in": list(document_ids)}} if document_ids else None
     )
-    preview = query_text[:80] + ("..." if len(query_text) > 80 else "")
     scope = f"document_ids={len(document_ids)}" if document_ids else "global"
+    # The query's length, not its words: it is a user's question, and this
+    # line reaches the API's log.
     logger.info(
         f"ChromaDB query: scope={scope}, n_results={n_results}, "
-        f"distance_threshold={distance_threshold}, query='{preview}'"
+        f"distance_threshold={distance_threshold}, query of {len(query_text)} characters"
     )
 
     try:

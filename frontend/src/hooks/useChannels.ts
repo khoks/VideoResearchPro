@@ -30,7 +30,8 @@ function patchChannelInList(queryClient: ReturnType<typeof useQueryClient>, upda
 /**
  * Subscribe returns a `SubscribeResponse` (channel_id + the sync job it
  * dispatched), not the channel, so the caches are invalidated rather than
- * patched. Callers that want to watch the sync use `data.job_id`.
+ * patched. Callers that want to watch the sync use `data.job_id`; when it is
+ * null no sync started, and they show `data.sync_note`.
  */
 export function useSubscribeChannel() {
   const queryClient = useQueryClient();

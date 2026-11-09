@@ -41,7 +41,12 @@ class ChannelWeightRequest(BaseModel):
 
 
 class SubscribeResponse(BaseModel):
-    """Returned when a channel is subscribed or a fresh sync is dispatched."""
+    """Returned when a channel is subscribed or a fresh sync is dispatched.
+
+    ``job_id`` is null when no sync started, and ``sync_note`` then says why,
+    in words for the reader. Subscribing stands either way (T-5.2.15).
+    """
 
     channel_id: str
     job_id: str | None = None
+    sync_note: str | None = None

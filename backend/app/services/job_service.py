@@ -8,6 +8,28 @@ from app.schemas.job import JobCreate
 from app.services import job_source_types, language_mix_service, run_notes
 
 
+def refuse_if_at_limit(db: Session, tenant_id: str | None) -> None:
+    """Refuse one more job for ``tenant_id`` once they are at their limit.
+
+    T-5.2.14: the limit is each user's own, so one user's jobs never use up
+    another's room. Nothing is refused on the install's total: a job past
+    what the worker can run waits in the queue. Every path a user starts a job
+    by comes through here, and each answers the ``ValueError`` as a 429 with
+    this sentence, or (subscribing, T-5.2.15) as a note on what it did do.
+    """
+    limit = settings.MAX_CONCURRENT_JOBS
+    active_count = (
+        db.query(Job)
+        .filter(Job.tenant_id == tenant_id, Job.status.notin_(["completed", "cancelled", "failed"]))
+        .count()
+    )
+    if active_count >= limit:
+        raise ValueError(
+            f"You have {active_count} active jobs, and your limit is {limit} at once. "
+            "Other people's jobs do not count toward it. Wait for one to finish, or cancel one."
+        )
+
+
 def create_job(
     db: Session,
     job_data: JobCreate,
@@ -23,20 +45,7 @@ def create_job(
     Default ``None`` preserves the legacy single-tenant behaviour
     so service-layer callers that haven't updated yet keep working.
     """
-    # T-5.2.14: the limit is each user's own, so one user's jobs never use up
-    # another's room. Nothing is refused on the install's total: a job past
-    # what the worker can run waits in the queue.
-    limit = settings.MAX_CONCURRENT_JOBS
-    active_count = (
-        db.query(Job)
-        .filter(Job.tenant_id == tenant_id, Job.status.notin_(["completed", "cancelled", "failed"]))
-        .count()
-    )
-    if active_count >= limit:
-        raise ValueError(
-            f"You have {active_count} active jobs, and your limit is {limit} at once. "
-            "Other people's jobs do not count toward it. Wait for one to finish, or cancel one."
-        )
+    refuse_if_at_limit(db, tenant_id)
 
     job = Job(
         job_type=job_data.job_type,

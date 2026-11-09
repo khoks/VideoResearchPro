@@ -92,7 +92,10 @@ class BaseConnector(abc.ABC):
 
         Returns `None` when the text is unavailable (paywall, removed,
         connector failure) — the orchestrator marks the document as
-        `text_status='unavailable'` rather than raising.
+        `text_status='unavailable'` rather than raising. The one exception
+        is `source_failure.TranscriptionCutShort`, from a connector that
+        can use Whisper: the text is just as unavailable, but part of it
+        was paid for and the job's Whisper limits count that.
 
         `job_id` is forwarded for log correlation only; connectors should
         not branch on it.

@@ -668,7 +668,7 @@ Per [saas-roadmap.md](saas-roadmap.md):
 
 ### YouTube API
 
-`quota_service.py` records every YouTube Data API call in `api_quota_log` with its cost in units and mirrors the day's total in Redis. `GET /health/quota` reports it against `YOUTUBE_DAILY_QUOTA` (default 10K, the YouTube free quota), and the system status page shows it. Nothing refuses a call at that figure: `QuotaExceededError` comes from YouTube's own 403.
+`quota_service.py` records every YouTube Data API call in `api_quota_log` with its cost in units and mirrors the day's total in Redis. `GET /health/quota` reports it against `YOUTUBE_DAILY_QUOTA` (default 10K, the YouTube free quota), and the system status page shows it. The log's `operation` is the kind of call, so the lazy audio-language lookup is `videos_audio_language`, not `videos` (T-1.11.11.5); rows older than that still read `videos`. Nothing refuses a call at that figure: `QuotaExceededError` comes from YouTube's own 403.
 
 ### Usage per tenant
 

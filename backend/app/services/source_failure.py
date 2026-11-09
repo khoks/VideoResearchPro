@@ -32,6 +32,23 @@ class SearchFailed(Exception):
     """
 
 
+class TranscriptionCutShort(Exception):
+    """Whisper finished part of a recording and then failed (T-1.7.1.5).
+
+    There is no text, because a transcript with a hole in it would read as
+    complete, but the finished chunks were billed, so a job's Whisper limits
+    have to hear about them. This is how: D-111 keeps limits off the usage
+    meter. ``seconds`` is how far those chunks reached on the recording's
+    timeline, so an overlap counts once (D-141). Only a connector's
+    ``fetch_text`` with Whisper allowed can raise it, and nothing a provider
+    said goes in it: its text can quote a key.
+    """
+
+    def __init__(self, seconds: float) -> None:
+        super().__init__(f"Whisper failed {seconds:.0f} seconds into the recording")
+        self.seconds = seconds
+
+
 @dataclass(frozen=True)
 class SourceFailure:
     kind: str

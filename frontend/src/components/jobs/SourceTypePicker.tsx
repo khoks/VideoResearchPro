@@ -2,6 +2,7 @@ import { useColors } from '../../hooks/useTheme';
 import { fonts, fontSize, fontWeight, lineHeight, radius, space } from '../../theme';
 import type { SourceHold } from '../../stores/systemStatusStore';
 import {
+  heldSourceTypes,
   heldSourcesNote,
   isDefaultSourceTypes,
   offeredSourceTypes,
@@ -32,11 +33,17 @@ export interface SourceTypePickerProps {
  * `num_videos` is shared across the chosen sources (the plan cap bounds the
  * whole run), and the note says how it splits. A source that refused this
  * install drops out, and a second note says why, so it never just vanishes.
+ * "Try it anyway" puts it back in this run (T-1.5.14.6): a hold is one run's
+ * evidence, the server accepts the source, and its answer clears or renews
+ * the hold.
  */
 export function SourceTypePicker({ selected, onChange, capabilities, numVideos, holds = {} }: SourceTypePickerProps) {
   const c = useColors();
   const offered = offeredSourceTypes(capabilities);
-  const unavailable = unavailableSourceTypes(selected, capabilities);
+  const unavailable = unavailableSourceTypes(selected, capabilities, holds);
+  const notOffered = (v: SourceType) => !offered.some((o) => o.value === v);
+  const held = heldSourceTypes(holds).filter(notOffered);
+  const triedAnyway = held.filter((v) => selected.includes(v));
   const youtube = selected.includes('video');
   const tooFew = selected.length > 1 && numVideos < selected.length;
 
@@ -91,7 +98,8 @@ export function SourceTypePicker({ selected, onChange, capabilities, numVideos, 
     note = parts.length > 0 ? parts.join(' ') : null;
   }
   const alert = unavailable.length > 0 || selected.length === 0 || tooFew;
-  const heldNote = heldSourcesNote(holds);
+  const heldNote = heldSourcesNote(holds, selected);
+  const canTry = held.filter((v) => !selected.includes(v));
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: space['2'] }}>
@@ -110,6 +118,7 @@ export function SourceTypePicker({ selected, onChange, capabilities, numVideos, 
         }}
       >
         {offered.map((o) => chip(o.value, o.label, selected.includes(o.value)))}
+        {triedAnyway.map((v) => chip(v, sourceTypeLabel(v), true))}
         {unavailable.map((v) => chip(v, sourceTypeLabel(v), true, true))}
       </div>
       {note && !isDefaultSourceTypes(selected) && (
@@ -140,6 +149,33 @@ export function SourceTypePicker({ selected, onChange, capabilities, numVideos, 
         >
           {heldNote}
         </p>
+      )}
+      {canTry.length > 0 && (
+        <div
+          data-testid="source-type-try-held"
+          style={{ display: 'flex', flexWrap: 'wrap', gap: space['3'] }}
+        >
+          {canTry.map((v) => (
+            <button
+              type="button"
+              key={v}
+              data-try-held={v}
+              onClick={() => onChange(toggleSourceType(selected, v))}
+              style={{
+                background: 'none',
+                border: 'none',
+                padding: 0,
+                color: c.accent,
+                fontFamily: fonts.ui,
+                fontSize: fontSize.sm,
+                cursor: 'pointer',
+                textDecoration: 'underline',
+              }}
+            >
+              Try {sourceTypeLabel(v)} anyway
+            </button>
+          ))}
+        </div>
       )}
     </div>
   );

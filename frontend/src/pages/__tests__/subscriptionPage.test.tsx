@@ -4,6 +4,12 @@
  * `PUT /auth/me/tier`) and, to anyone else, shows the plans without buttons
  * and says who can change their plan. A refusal from the server is shown,
  * not swallowed. Planned features are never listed as lost on a downgrade.
+ *
+ * T-3.4.1.17: a refused switch is one toast under the app's own query client, not
+ * the page's and the global handler's, and none for a 401. Mutation checks, run
+ * on 2026-11-09: `meta` off the page's mutation fails each failure row but
+ * `sessionEnded` with two toasts; `toastMutationError` without its 401 check
+ * fails the `sessionEnded` row with one.
  */
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -13,6 +19,8 @@ import { AxiosError, AxiosHeaders } from 'axios';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MeResponse } from '../../hooks/useMe';
 import { useJobStore } from '../../stores/jobStore';
+import { createQueryClient } from '../../services/queryClient';
+import { FAILURE_KINDS, expectedToasts, failures, toastMessages } from '../../services/__tests__/failures';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -80,8 +88,7 @@ async function flush() {
   }
 }
 
-async function mount(path = '/account/subscription') {
-  const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+async function mount(path = '/account/subscription', qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })) {
   act(() =>
     root.render(
       <QueryClientProvider client={qc}>
@@ -119,6 +126,17 @@ afterEach(() => {
 });
 
 describe('SubscriptionPage for the operator', () => {
+  it.each(FAILURE_KINDS)('says a refused switch (%s) once, under the app’s client', async (kind) => {
+    put.mockRejectedValueOnce(failures[kind]());
+    await mount('/account/subscription', createQueryClient());
+    act(() => button('Upgrade to Studio')!.click());
+    await act(async () => button('Pay $49')!.click());
+    await flush();
+    expect(put).toHaveBeenCalledTimes(1);
+    expect(toastMessages()).toEqual(expectedToasts(kind, 'Could not change your plan. Try again.'));
+    expect(dialog()).toBeNull();
+  });
+
   it('offers the switch and sends it through the demo payment', async () => {
     await mount();
     expect(host.textContent).toContain('Demo mode.');

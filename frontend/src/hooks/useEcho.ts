@@ -16,9 +16,15 @@ import {
   type UpdateSignalPayload,
   type UploadShareFields,
 } from '../services/echoApi';
+import { ERRORS_SHOWN_HERE, toastMutationError } from '../services/queryClient';
 import { useJobStore } from '../stores/jobStore';
 import { isSessionEnded } from '../utils/apiError';
 import { draftErrorOf, isDraftStop } from '../utils/echoDrafts';
+
+// A mutation below that names `toastMutationError` answers its own failures, in
+// its own `onError`, so one failure is one toast, said even once the page that
+// started it has gone (D-148 point 5, T-3.4.1.17). Each has one caller, whose
+// own toast moved here. The two share hooks have two, and say theirs only when asked.
 
 const STATUS_KEY = ['echo', 'status'] as const;
 const CONTEXT_KEY = ['echo', 'context'] as const;
@@ -85,6 +91,8 @@ export function useClearFactTombstone() {
       qc.invalidateQueries({ queryKey: TOMBSTONES_KEY });
       qc.invalidateQueries({ queryKey: ['echo', 'footprint'] });
     },
+    onError: (err) => toastMutationError(err, 'Could not allow it again.'),
+    meta: ERRORS_SHOWN_HERE,
   });
 }
 
@@ -93,6 +101,8 @@ export function useRecordContext() {
   return useMutation({
     mutationFn: (payload: RecordContextPayload) => echoApi.recordContext(payload),
     onSuccess: invalidate,
+    onError: (err) => toastMutationError(err, 'Could not save this entry.'),
+    meta: ERRORS_SHOWN_HERE,
   });
 }
 
@@ -101,6 +111,8 @@ export function useDeleteContext() {
   return useMutation({
     mutationFn: ({ kind, key }: { kind: string; key: string }) => echoApi.deleteContext(kind, key),
     onSuccess: invalidate,
+    onError: (err) => toastMutationError(err, 'Delete failed. The entry may already be gone.'),
+    meta: ERRORS_SHOWN_HERE,
   });
 }
 
@@ -109,6 +121,8 @@ export function useRevokeSource() {
   return useMutation({
     mutationFn: (source: string) => echoApi.revokeSource(source),
     onSuccess: invalidate,
+    onError: (err) => toastMutationError(err, 'Revoke failed.'),
+    meta: ERRORS_SHOWN_HERE,
   });
 }
 
@@ -166,6 +180,8 @@ export function useCreateShareToken() {
   return useMutation({
     mutationFn: (label: string) => echoApi.createShareToken(label),
     onSuccess: () => qc.invalidateQueries({ queryKey: TOKENS_KEY }),
+    onError: (err) => toastMutationError(err, 'Could not make a token.'),
+    meta: ERRORS_SHOWN_HERE,
   });
 }
 
@@ -174,6 +190,8 @@ export function useRevokeShareToken() {
   return useMutation({
     mutationFn: (id: string) => echoApi.revokeShareToken(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: TOKENS_KEY }),
+    onError: (err) => toastMutationError(err, 'Could not revoke it.'),
+    meta: ERRORS_SHOWN_HERE,
   });
 }
 
@@ -195,6 +213,10 @@ export function useImports(enabled = true) {
 export function usePreviewImport() {
   return useMutation({
     mutationFn: ({ file, options }: { file: File; options?: ImportOptions }) => echoApi.previewImport(file, options),
+    // A date order means the file was read once already, and only the dates changed.
+    onError: (err, { options }) =>
+      toastMutationError(err, options?.date_order ? 'Could not re-read the dates.' : 'This file could not be read.'),
+    meta: ERRORS_SHOWN_HERE,
   });
 }
 
@@ -212,32 +234,62 @@ export function useRunImport() {
   return useMutation({
     mutationFn: ({ file, options }: { file: File; options?: ImportOptions }) => echoApi.runImport(file, options),
     onSuccess: invalidate,
+    onError: (err) => toastMutationError(err, 'The import failed.'),
+    meta: ERRORS_SHOWN_HERE,
   });
 }
 
 export function useRetryImportEmbedding() {
   const invalidate = useInvalidateImports();
-  return useMutation({ mutationFn: (id: string) => echoApi.retryImportEmbedding(id), onSuccess: invalidate });
+  return useMutation({
+    mutationFn: (id: string) => echoApi.retryImportEmbedding(id),
+    onSuccess: invalidate,
+    onError: (err) => toastMutationError(err, 'Could not retry.'),
+    meta: ERRORS_SHOWN_HERE,
+  });
 }
 
 export function useDeleteImport() {
   const invalidate = useInvalidateImports();
-  return useMutation({ mutationFn: (id: string) => echoApi.deleteImport(id), onSuccess: invalidate });
+  return useMutation({
+    mutationFn: (id: string) => echoApi.deleteImport(id),
+    onSuccess: invalidate,
+    onError: (err) => toastMutationError(err, 'Undo failed.'),
+    meta: ERRORS_SHOWN_HERE,
+  });
 }
 
-export function useCreateShare() {
+/**
+ * `toastErrors`: the hook says each failure, naming what was being added. The
+ * drop zone asks for it, since it can drop several files at once and a per-call
+ * `onError` runs for the last one only. Quick share leaves it off: it shows the
+ * failure in its dialog, and the global toast speaks as before.
+ */
+interface ShareErrorOptions {
+  toastErrors?: boolean;
+}
+
+export function useCreateShare({ toastErrors = false }: ShareErrorOptions = {}) {
   const invalidate = useInvalidateShares();
   return useMutation({
     mutationFn: (payload: CreateSharePayload) => echoApi.createShare(payload),
     onSuccess: invalidate,
+    onError: (err, payload) => {
+      if (toastErrors) toastMutationError(err, payload.url ? 'Could not add the link.' : 'Could not add the text.');
+    },
+    meta: toastErrors ? ERRORS_SHOWN_HERE : undefined,
   });
 }
 
-export function useUploadShare() {
+export function useUploadShare({ toastErrors = false }: ShareErrorOptions = {}) {
   const invalidate = useInvalidateShares();
   return useMutation({
     mutationFn: ({ file, fields }: { file: File; fields?: UploadShareFields }) => echoApi.uploadShare(file, fields),
     onSuccess: invalidate,
+    onError: (err, { file }) => {
+      if (toastErrors) toastMutationError(err, `Could not add ${file.name}.`);
+    },
+    meta: toastErrors ? ERRORS_SHOWN_HERE : undefined,
   });
 }
 
@@ -246,6 +298,8 @@ export function useUpdateShare() {
   return useMutation({
     mutationFn: ({ id, payload }: { id: string; payload: UpdateSharePayload }) => echoApi.updateShare(id, payload),
     onSuccess: invalidate,
+    onError: (err) => toastMutationError(err, 'Could not save.'),
+    meta: ERRORS_SHOWN_HERE,
   });
 }
 
@@ -254,6 +308,8 @@ export function useReprocessShare() {
   return useMutation({
     mutationFn: (id: string) => echoApi.reprocessShare(id),
     onSuccess: invalidate,
+    onError: (err) => toastMutationError(err, 'Could not queue the retry.'),
+    meta: ERRORS_SHOWN_HERE,
   });
 }
 
@@ -266,6 +322,10 @@ export function useAddShareToLibrary() {
       invalidate();
       qc.invalidateQueries({ queryKey: ['library'] });
     },
+    // A full library's refusal (T-5.2.10) is said here too, in the server's words:
+    // the global toast leaves that one to the page.
+    onError: (err) => toastMutationError(err, 'Could not add it to the library.'),
+    meta: ERRORS_SHOWN_HERE,
   });
 }
 
@@ -274,6 +334,8 @@ export function useDeleteShare() {
   return useMutation({
     mutationFn: (id: string) => echoApi.deleteShare(id),
     onSuccess: invalidate,
+    onError: (err) => toastMutationError(err, 'Delete failed. The share may already be gone.'),
+    meta: ERRORS_SHOWN_HERE,
   });
 }
 
@@ -316,6 +378,8 @@ export function useRestoreSignal() {
   return useMutation({
     mutationFn: (id: string) => echoApi.restoreSignal(id),
     onSuccess: invalidate,
+    onError: (err) => toastMutationError(err, 'Could not restore the signal.'),
+    meta: ERRORS_SHOWN_HERE,
   });
 }
 
@@ -324,6 +388,8 @@ export function useCreateSignal() {
   return useMutation({
     mutationFn: (payload: CreateSignalPayload) => echoApi.createSignal(payload),
     onSuccess: invalidate,
+    onError: (err) => toastMutationError(err, 'Could not add the signal.'),
+    meta: ERRORS_SHOWN_HERE,
   });
 }
 
@@ -332,6 +398,8 @@ export function useUpdateSignal() {
   return useMutation({
     mutationFn: ({ id, payload }: { id: string; payload: UpdateSignalPayload }) => echoApi.updateSignal(id, payload),
     onSuccess: invalidate,
+    onError: (err) => toastMutationError(err, 'Could not save the signal.'),
+    meta: ERRORS_SHOWN_HERE,
   });
 }
 
@@ -414,6 +482,8 @@ export function useStartVoiceTest() {
   return useMutation({
     mutationFn: () => echoApi.startVoiceTest(),
     onSettled: () => qc.invalidateQueries({ queryKey: VOICE_TEST_KEY }),
+    onError: (err) => toastMutationError(err, "Couldn't start the test. Try again."),
+    meta: ERRORS_SHOWN_HERE,
   });
 }
 
@@ -426,6 +496,8 @@ export function usePickVoiceTest() {
   return useMutation({
     mutationFn: ({ id, pair, pick }: { id: string; pair: string; pick: VoiceTestSide }) => echoApi.pickVoiceTest(id, pair, pick),
     onSuccess: (test) => storeTest(qc, test),
+    onError: (err) => toastMutationError(err, "Couldn't save that pick. Try again."),
+    meta: ERRORS_SHOWN_HERE,
   });
 }
 
@@ -439,6 +511,8 @@ export function useScoreVoiceTest() {
       // The gate moved: the card's blockers and the bubble read it.
       qc.invalidateQueries({ queryKey: DRAFTS_KEY });
     },
+    onError: (err) => toastMutationError(err, "Couldn't score the test. Try again."),
+    meta: ERRORS_SHOWN_HERE,
   });
 }
 
@@ -447,6 +521,8 @@ export function useLearnSignals() {
   return useMutation({
     mutationFn: () => echoApi.learnSignals(),
     onSuccess: invalidate,
+    onError: (err) => toastMutationError(err, 'Could not start learning. Try again.'),
+    meta: ERRORS_SHOWN_HERE,
   });
 }
 
@@ -455,6 +531,8 @@ export function useRejectSignal() {
   return useMutation({
     mutationFn: (id: string) => echoApi.rejectSignal(id),
     onSuccess: invalidate,
+    onError: (err) => toastMutationError(err, 'Could not remove the signal.'),
+    meta: ERRORS_SHOWN_HERE,
   });
 }
 
@@ -464,6 +542,8 @@ export function useDeleteBrain() {
   return useMutation({
     mutationFn: () => echoApi.deleteBrain(),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['echo'] }),
+    onError: (err) => toastMutationError(err, 'Delete failed. Nothing past the failing store was removed; try again.'),
+    meta: ERRORS_SHOWN_HERE,
   });
 }
 

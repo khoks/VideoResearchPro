@@ -8,7 +8,6 @@ import { useColors } from '../../hooks/useTheme';
 import { fonts, fontSize, fontWeight, lineHeight, radius, space } from '../../theme';
 import { formatDate } from '../../utils/formatters';
 import { apiOrigin, iosShortcutSteps, lastUsedLabel, sharesEndpoint } from '../../utils/echoExtension';
-import { detailFromErrorBody, type HttpErrorLike } from '../../utils/ingestResults';
 
 /**
  * "Add from your browser" (S-3.7.3): share tokens for the Add to Echo
@@ -48,7 +47,7 @@ export function ShareTokensCard() {
         setFresh(t);
         setLabel('');
       },
-      onError: (err) => pushToast('error', detailFromErrorBody((err as HttpErrorLike).response?.data) ?? 'Could not make a token.'),
+      // A failure is said by the hook, once (T-3.4.1.17).
     });
 
   return (
@@ -129,7 +128,6 @@ export function ShareTokensCard() {
                 onClick={() =>
                   revoke.mutate(t.id, {
                     onSuccess: () => pushToast('success', `Revoked "${t.label}". The extension using it stops working now.`),
-                    onError: () => pushToast('error', 'Could not revoke it.'),
                   })
                 }
               >

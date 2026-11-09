@@ -5,7 +5,6 @@ import { useJobStore } from '../../stores/jobStore';
 import { useColors } from '../../hooks/useTheme';
 import { fonts, fontSize, fontWeight, lineHeight, radius, space } from '../../theme';
 import { MAX_DROP_FILES, isShareableDrag, planDrop } from '../../utils/echoDrop';
-import { detailFromErrorBody, type HttpErrorLike } from '../../utils/ingestResults';
 
 function isEditable(target: EventTarget | null): boolean {
   const el = target as HTMLElement | null;
@@ -24,16 +23,15 @@ export function EchoDropZone() {
   const c = useColors();
   const navigate = useNavigate();
   const pushToast = useJobStore((s) => s.pushToast);
-  const upload = useUploadShare();
-  const create = useCreateShare();
+  // The hooks say each failure, naming the file: a per-call `onError` would run
+  // for the last of several dropped files only (T-3.4.1.17).
+  const upload = useUploadShare({ toastErrors: true });
+  const create = useCreateShare({ toastErrors: true });
   const [active, setActive] = useState(false);
   const internal = useRef(false);
   const depth = useRef(0);
 
   useEffect(() => {
-    const fail = (err: unknown, fallback: string) =>
-      pushToast('error', detailFromErrorBody((err as HttpErrorLike).response?.data) ?? fallback);
-
     const onDragStart = () => {
       internal.current = true;
     };
@@ -78,22 +76,19 @@ export function EchoDropZone() {
         for (const file of plan.files) {
           upload.mutate(
             { file, fields: { surface: 'drag_drop' } },
-            {
-              onSuccess: () => pushToast('success', `Added ${file.name} to Echo.`),
-              onError: (err) => fail(err, `Could not add ${file.name}.`),
-            },
+            { onSuccess: () => pushToast('success', `Added ${file.name} to Echo.`) },
           );
         }
         if (plan.skipped) pushToast('info', `Only the first ${MAX_DROP_FILES} files were added.`);
       } else if (plan.kind === 'url') {
         create.mutate(
           { url: plan.url, surface: 'drag_drop' },
-          { onSuccess: () => pushToast('success', 'Link added to Echo.'), onError: (err) => fail(err, 'Could not add the link.') },
+          { onSuccess: () => pushToast('success', 'Link added to Echo.') },
         );
       } else if (plan.kind === 'text') {
         create.mutate(
           { text: plan.text, surface: 'drag_drop' },
-          { onSuccess: () => pushToast('success', 'Text added to Echo.'), onError: (err) => fail(err, 'Could not add the text.') },
+          { onSuccess: () => pushToast('success', 'Text added to Echo.') },
         );
       }
     };

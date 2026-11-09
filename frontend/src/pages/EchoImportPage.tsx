@@ -16,13 +16,8 @@ import {
   importStatusLabel,
   importerLabel,
 } from '../utils/echoImports';
-import { detailFromErrorBody, type HttpErrorLike } from '../utils/ingestResults';
 
 const NOT_ME = '__none__';
-
-function errorText(err: unknown, fallback: string): string {
-  return detailFromErrorBody((err as HttpErrorLike)?.response?.data) ?? fallback;
-}
 
 /**
  * Echo's export-file importer (S-3.7.5): bring a WhatsApp chat export or
@@ -100,6 +95,7 @@ export function EchoImportPage() {
     clearChoices();
     if (!f) return;
     setFile(f);
+    // Every failure here is said by its hook, once, even after the reader has left (T-3.4.1.17).
     previewImport.mutate(
       { file: f, options: { timezone: tz } },
       {
@@ -107,7 +103,6 @@ export function EchoImportPage() {
           setPreview(pv);
           setDateOrder('');
         },
-        onError: (err) => pushToast('error', errorText(err, 'This file could not be read.')),
       },
     );
   };
@@ -117,7 +112,7 @@ export function EchoImportPage() {
     setDateOrder(order);
     previewImport.mutate(
       { file, options: { timezone: tz, date_order: order } },
-      { onSuccess: (pv) => setPreview(pv), onError: (err) => pushToast('error', errorText(err, 'Could not re-read the dates.')) },
+      { onSuccess: (pv) => setPreview(pv) },
     );
   };
 
@@ -130,7 +125,6 @@ export function EchoImportPage() {
           pushToast('success', `Imported ${importCountsLine(item.importer, item.counts)}.`);
           reset();
         },
-        onError: (err) => pushToast('error', errorText(err, 'The import failed.')),
       },
     );
   };
@@ -341,7 +335,7 @@ export function EchoImportPage() {
                         See what it stored →
                       </Link>
                       {item.status === 'failed' && (
-                        <Button size="sm" variant="tertiary" loading={retry.isPending} onClick={() => retry.mutate(item.id, { onError: (err) => pushToast('error', errorText(err, 'Could not retry.')) })}>
+                        <Button size="sm" variant="tertiary" loading={retry.isPending} onClick={() => retry.mutate(item.id)}>
                           Retry indexing
                         </Button>
                       )}
@@ -376,7 +370,6 @@ export function EchoImportPage() {
                       pushToast('success', `Import undone: ${r.shares.toLocaleString()} items removed.`);
                       setUndoing(null);
                     },
-                    onError: (err) => pushToast('error', errorText(err, 'Undo failed.')),
                   })
                 }
               >

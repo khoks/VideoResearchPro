@@ -159,7 +159,8 @@ class FakeWhisperApi:
     survives the merge of a split recording. ``before_send`` runs first and may
     raise, as a dying worker does. ``silent`` answers with no words at all,
     billed all the same (T-1.7.1.7). ``text_only`` answers with the words and
-    no ``segments``, which verbose_json allows (T-1.7.1.8): a word every 5 s."""
+    no ``segments``, which verbose_json allows (T-1.7.1.8): a word every 5 s,
+    or ``text_words`` words in all (sparse speech, fewer than its 30 s slots)."""
 
     def __init__(self) -> None:
         self.seconds = 60.0
@@ -168,6 +169,7 @@ class FakeWhisperApi:
         self.before_send = None
         self.silent = False
         self.text_only = False
+        self.text_words: int | None = None
         self.client = MagicMock()
         self.client.with_options.return_value = self.client
         self.client.audio.transcriptions.create.side_effect = self._create
@@ -181,7 +183,8 @@ class FakeWhisperApi:
         if self.text_only:
             # A word every 5 s, as speech has at least: the pseudo-segments
             # then fill every 30 s slot and end where the audio does.
-            words = " ".join(f"w{self.sent}-{i}" for i in range(max(1, int(self.seconds // 5))))
+            count = self.text_words if self.text_words is not None else max(1, int(self.seconds // 5))
+            words = " ".join(f"w{self.sent}-{i}" for i in range(count))
             return SimpleNamespace(language="en", duration=self.seconds, segments=[], text=words)
         segment = _WhisperSegment(
             text=f"spoken words {self.sent}", start=self.segment_start, end=self.seconds

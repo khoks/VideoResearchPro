@@ -629,12 +629,15 @@ def send_newsletter_now(
     except Exception:  # noqa: BLE001 - the broker is down: say so, in words
         # T-5.2.19: as `POST /jobs` (T-5.2.17), a 503 the page can show, never
         # the broker's error, which can hold its URL and password. Nothing is
-        # left to undo: only the worker writes the issue and its send row.
+        # left to undo: only the worker writes the issue and its send row. The
+        # words promise nothing either way: the broker may have taken the
+        # message before the reply was lost, and then the issue is still made
+        # and emailed, and a second press makes a second one.
         logger.exception("Failed to queue a newsletter issue for subscription %s", sub.id)
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Could not queue the issue, so nothing was sent; the task queue is unavailable. "
-            "Try Send now again in a few minutes.",
+            detail="Could not confirm the issue with the task queue, so it may or may not be sent. "
+            "Check your outputs in a few minutes before pressing Send now again.",
         )
     return {"status": "queued", "task_id": getattr(result, "id", None)}
 

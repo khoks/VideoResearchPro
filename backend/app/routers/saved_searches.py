@@ -148,11 +148,14 @@ def run_saved_search_now(
         # T-5.2.19: as `POST /jobs` (T-5.2.17), a 503 the page can show, never
         # the broker's error, which can hold its URL and password. Nothing is
         # left to undo: the quota check above only reads, and the run counts
-        # toward it when it answers.
+        # toward it when it answers. The words promise nothing either way: the
+        # broker may have taken the message before the reply was lost, and
+        # then the run still happens, and a second press runs (and counts) twice.
         logger.exception("Failed to queue a run of saved search %s", ss.id)
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Could not queue the run; the task queue is unavailable. Try Run now again in a few minutes.",
+            detail="Could not confirm the run with the task queue, so it may or may not run. "
+            "Check its history in a few minutes before pressing Run now again.",
         )
     return RunNowResponse(status="queued")
 

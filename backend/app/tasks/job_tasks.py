@@ -270,6 +270,7 @@ def _upsert_candidate_and_link(
     *,
     classification: dict | None = None,
     extracted_text=None,
+    newly_dated: list[Document] | None = None,
 ) -> Document | None:
     """Insert/refresh a global Document from a connector ``Candidate`` and
     create the JobVideo (job_documents) link.
@@ -298,6 +299,10 @@ def _upsert_candidate_and_link(
             ``transcript_status='fetched'``, ``transcript_word_count``,
             ``transcript_language``, and ``transcript_source`` so the
             downstream chunk pipeline can be uniform across source types.
+        newly_dated: when given, an existing row that is already embedded
+            and that this call dated is appended to it. Its stored chunks
+            still lack the date, and no later step re-inserts them, so the
+            caller stamps them once its commit has kept the date.
 
     Returns:
         The persisted ``Document`` (existing or newly added). ``None``
@@ -366,7 +371,9 @@ def _upsert_candidate_and_link(
             existing.transcript_source = extracted_text.text_source
         # A gap only: the row is shared, and a date it has stays (D-144's
         # "a job fills gaps"). The Candidate's date first, then the page's.
-        _fill_published_at(existing, extracted_text, candidate_date=candidate.published_at)
+        dated = _fill_published_at(existing, extracted_text, candidate_date=candidate.published_at)
+        if dated and newly_dated is not None and getattr(existing, "embedded_in_chroma", False):
+            newly_dated.append(existing)
         document = existing
     else:
         # New row. video_id stays NULL for non-video sources; for
@@ -421,8 +428,9 @@ def _upsert_candidate_and_link(
     return document
 
 
-def _fill_published_at(document: Document, extracted, *, candidate_date: datetime | None = None) -> None:
-    """Date a document that has no ``published_at`` yet (T-1.6.7).
+def _fill_published_at(document: Document, extracted, *, candidate_date: datetime | None = None) -> bool:
+    """Date a document that has no ``published_at`` yet (T-1.6.7). True when
+    this call set the date.
 
     The order is the Candidate's date, then the date its own page states,
     which the paste-URL connectors (articles among them) put in
@@ -435,19 +443,23 @@ def _fill_published_at(document: Document, extracted, *, candidate_date: datetim
     unknown (None, never a placeholder) when it is missing, not a datetime, or
     before 1995 or after tomorrow. The chunk fields (``published_ts``,
     ``published_year``) and the corpus statistics read the column, so they
-    follow, as they do for a Candidate's date.
+    follow, as they do for a Candidate's date. Chunks built after this call
+    carry it; chunks already stored do not, which is why a caller that dates
+    an embedded row stamps them (``_stamp_dates_on_embedded_chunks``).
     """
     if document.published_at is not None:
-        return
+        return False
     if candidate_date is not None:
         document.published_at = candidate_date
-        return
+        return True
     extra = getattr(extracted, "extra", None) if extracted is not None else None
     if not isinstance(extra, dict):
-        return
+        return False
     page_date = to_utc_post_date(extra.get("extracted_published_at"))
-    if page_date is not None:
-        document.published_at = page_date
+    if page_date is None:
+        return False
+    document.published_at = page_date
+    return True
 
 
 def _resolve_source_types(job: Job) -> list[str]:
@@ -675,6 +687,8 @@ def _store_non_video_candidates(db, job: Job, result, limits: dict[str, int]) ->
     from app.sources.registry import connector_for
 
     stored = 0
+    # Library rows already embedded that this search dated (T-1.6.7).
+    newly_dated: list[Document] = []
     searched = result.candidates_by_source_type
     for st, candidates in searched.items():
         if not candidates:
@@ -706,6 +720,7 @@ def _store_non_video_candidates(db, job: Job, result, limits: dict[str, int]) ->
                     cand,
                     classification=classification,
                     extracted_text=extracted,
+                    newly_dated=newly_dated,
                 )
                 if document is not None:
                     _cache_document_text(db, document, extracted)
@@ -719,6 +734,12 @@ def _store_non_video_candidates(db, job: Job, result, limits: dict[str, int]) ->
                 )
 
     db.commit()
+    # A row already in the library is re-fetched here, so it can be dated
+    # now, but the resume reuses its stored chunks without re-inserting them:
+    # without this they keep no date while the row and the statistics have
+    # one. After the commit, so a chunk never holds a date its row lost.
+    for document in newly_dated:
+        _stamp_dates_on_embedded_chunks(document, job.id, "publish date")
     logger.info(
         "[job:%s] Non-video dispatch persisted %d candidates across %d source types",
         job.id,
@@ -1032,17 +1053,26 @@ def _ensure_era(db, video: Document, segments: list[dict], job_id: str) -> None:
 def _stamp_era_on_embedded_chunks(video: Document, job_id: str) -> None:
     """Metadata-only update of an embedded document's chunks. Fail-soft: the
     era is on the document, and the backfill script reaches the chunks later."""
+    _stamp_dates_on_embedded_chunks(video, job_id, "era")
+
+
+def _stamp_dates_on_embedded_chunks(video: Document, job_id: str, what: str) -> None:
+    """Bring an embedded document's stored chunks up to its dates: the era and
+    the publish date (``published_ts``, ``published_year``, ``published_at``),
+    metadata only, no re-embed. ``what`` names the date that changed, for the
+    log. Fail-soft: the date is on the document, and the backfill script
+    (``backfill_chunk_temporal_fields.py``) reaches the chunks later."""
     if not getattr(video, "embedded_in_chroma", False):
         return
     try:
         updated = metadata_backfill_service.stamp_chunk_temporal_fields(video)
         logger.info(
-            f"[job:{job_id}] Era stamped on {updated} stored chunks of "
+            f"[job:{job_id}] The {what} stamped on {updated} stored chunks of "
             f"document_id={video.document_id}"
         )
     except Exception:
         logger.exception(
-            f"[job:{job_id}] Could not stamp the era on the stored chunks of "
+            f"[job:{job_id}] Could not stamp the {what} on the stored chunks of "
             f"document_id={video.document_id}; the backfill script will"
         )
 

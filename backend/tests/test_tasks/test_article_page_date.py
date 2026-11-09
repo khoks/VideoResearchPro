@@ -21,6 +21,7 @@ expects a date fails, at the document, the chunk and the statistics.
 """
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
@@ -28,11 +29,13 @@ import pytest
 
 from app.models.document import Document
 from app.models.job import Job
-from app.services import corpus_stats_service
+from app.models.transcript_cache import TranscriptCache
+from app.services import corpus_stats_service, metadata_backfill_service
 from app.sources import registry
 from app.sources.base import BaseConnector
 from app.sources.types import Candidate, ExtractedText
 from app.tasks import job_tasks
+from app.utils.chunking import chunk_transcript
 
 PAGE_DATE = datetime(2024, 3, 5, 14, 30, tzinfo=timezone.utc)
 FEED_DATE = datetime(2023, 1, 9, 8, 0, tzinfo=timezone.utc)
@@ -282,3 +285,175 @@ def test_mutation_without_the_page_date_the_article_is_undated(db, articles, wor
 
     assert _doc(db, "article:a1").published_at is None
     assert all("published_year" not in m for m in _chunk_meta(chunks, "article:a1"))
+
+
+
+# ---------------------------------------------------------------------------
+# An article already in the library, embedded while it had no date
+#
+# The search phase fetches every candidate, a library row included, so it can
+# date one (the page's date, or a Candidate's date on an undated shared row).
+# The resume then reuses that row's stored chunks without inserting them
+# again, so they would keep no date while the row and the corpus statistics
+# have one. Once the search phase has committed the date, the stored chunks
+# are stamped (metadata only, no re-embed). An in-memory Chroma holds them.
+#
+# Mutation check: ``test_mutation_without_the_stamp_the_stored_chunks_stay_undated``
+# takes the stamp out and shows the row dated while its chunks are not.
+# ---------------------------------------------------------------------------
+LIBRARY_SEGMENTS = [
+    {"text": f"An earlier read of the tariff article, paragraph {i}.", "start": float(i * 5), "duration": 5.0}
+    for i in range(6)
+]
+
+
+@pytest.fixture
+def ephemeral_chroma(monkeypatch):
+    import chromadb
+    from chromadb.api.shared_system_client import SharedSystemClient
+
+    from app.services import chroma_service
+
+    SharedSystemClient._identifier_to_system = {}
+    monkeypatch.setattr(chroma_service, "_client", chromadb.EphemeralClient())
+    yield chroma_service
+    monkeypatch.setattr(chroma_service, "_client", None)
+    SharedSystemClient._identifier_to_system = {}
+
+
+def _embedded_article(db, chroma, source_id: str, *, published_at: datetime | None = None) -> str:
+    """A library article: fetched, embedded, its text cached and its chunks
+    stored as the extraction loop wrote them then. Returns its document_id."""
+    url = f"https://news.example.com/{source_id}"
+    doc = Document(source_type="article", source_id=source_id, title=f"Article {source_id}", url=url,
+                   source_url=url, published_at=published_at, transcript_status="fetched",
+                   transcript_language="en", embedded_in_chroma=True)
+    db.add(doc)
+    db.flush()
+    db.add(TranscriptCache(document_id=doc.document_id, video_id=None,
+                           segments_json=json.dumps(LIBRARY_SEGMENTS), language="en", source="article"))
+    db.commit()
+    chunks = chunk_transcript(LIBRARY_SEGMENTS, chunk_size=40, chunk_overlap=8,
+                              video_metadata=job_tasks._build_video_metadata(doc, "en"))
+    assert len(chunks) > 1
+    assert chroma.insert_chunks(chunks) == len(chunks)
+    return doc.document_id
+
+
+def _stored(chroma, document_id: str) -> list[dict]:
+    got = chroma.get_global_collection().get(where={"document_id": document_id},
+                                             include=["metadatas", "documents", "embeddings"])
+    return [
+        {"id": cid, "meta": meta, "text": text, "embedding": [round(float(x), 6) for x in vector]}
+        for cid, meta, text, vector in zip(got["ids"], got["metadatas"], got["documents"], got["embeddings"])
+    ]
+
+
+def _resume_on_chroma(job_id: str) -> None:
+    """The real resume against the in-memory Chroma, its report stubbed."""
+    with (
+        patch("app.agents.report_agent.run_report_agent", return_value=({}, "<p>report</p>")),
+        patch.object(job_tasks, "build_report_html", return_value="<html></html>"),
+        patch.object(job_tasks, "save_report", return_value="report.html"),
+    ):
+        job_tasks.resume_job_after_approval.run(job_id)
+
+
+@pytest.mark.parametrize(
+    "candidate_date, expected",
+    [(None, PAGE_DATE), (FEED_DATE, FEED_DATE)],
+    ids=["the-pages-date", "the-candidates-date"],
+)
+def test_a_library_article_dated_by_the_search_gets_the_date_on_its_stored_chunks(
+    db, articles, worker, ephemeral_chroma, candidate_date, expected
+):
+    document_id = _embedded_article(db, ephemeral_chroma, "article:lib")
+    before = _stored(ephemeral_chroma, document_id)
+    assert before and all("published_ts" not in c["meta"] and c["meta"]["published_at"] == "" for c in before)
+    articles([_brave("article:lib", published_at=candidate_date)], {"article:lib": PAGE_DATE})
+    job_id = _topic_job(db)
+
+    _search(job_id)
+
+    assert _as_utc(_doc(db, "article:lib").published_at) == expected
+    stamped = _stored(ephemeral_chroma, document_id)
+    assert [c["id"] for c in stamped] == [c["id"] for c in before]
+    for old, new in zip(before, stamped):
+        assert new["meta"]["published_ts"] == int(expected.timestamp())
+        assert new["meta"]["published_year"] == expected.year
+        assert new["meta"]["published_at"].startswith(expected.date().isoformat())
+        # Metadata only: the same text, the same vector, every other key kept.
+        assert new["text"] == old["text"] and new["embedding"] == old["embedding"]
+        kept = {k: v for k, v in old["meta"].items() if k != "published_at"}
+        assert {k: new["meta"].get(k) for k in kept} == kept
+
+    _resume_on_chroma(job_id)
+
+    db.expire_all()
+    assert db.get(Job, job_id).status == "completed"
+    after = _stored(ephemeral_chroma, document_id)
+    assert [c["meta"]["published_year"] for c in after] == [expected.year] * len(before)
+    stats = corpus_stats_service.corpus_statistics_for_document_ids(
+        db, corpus_stats_service.approved_document_ids_for_job(db, job_id)
+    )
+    assert stats["dated_video_count"] == 1 and stats["videos_by_year"] == {str(expected.year): 1}
+
+
+def test_a_library_article_that_had_its_date_is_not_stamped_again(db, articles, worker, ephemeral_chroma):
+    """Nothing was dated, so no Chroma read: the stored chunks stay as they are."""
+    document_id = _embedded_article(db, ephemeral_chroma, "article:dated", published_at=FEED_DATE)
+    before = _stored(ephemeral_chroma, document_id)
+    articles([_brave("article:dated")], {"article:dated": PAGE_DATE})
+
+    with patch.object(metadata_backfill_service, "stamp_chunk_temporal_fields") as stamp:
+        _search(_topic_job(db))
+
+    stamp.assert_not_called()
+    assert _as_utc(_doc(db, "article:dated").published_at) == FEED_DATE
+    assert _stored(ephemeral_chroma, document_id) == before
+
+
+def test_a_new_article_needs_no_stamp_its_chunks_are_built_dated(db, articles, worker):
+    """A row the search creates has no stored chunks yet: the resume inserts
+    them, dated. Only a row already embedded is stamped."""
+    articles([_brave("article:new")], {"article:new": PAGE_DATE})
+
+    with patch.object(metadata_backfill_service, "stamp_chunk_temporal_fields") as stamp:
+        _search(_topic_job(db))
+
+    stamp.assert_not_called()
+    assert _as_utc(_doc(db, "article:new").published_at) == PAGE_DATE
+
+
+def test_a_failed_stamp_leaves_the_search_working(db, articles, worker, ephemeral_chroma):
+    """Fail-soft, as the era's stamp: the date is on the row, and
+    ``backfill_chunk_temporal_fields.py`` reaches the chunks later."""
+    _embedded_article(db, ephemeral_chroma, "article:lib")
+    articles([_brave("article:lib")], {"article:lib": PAGE_DATE})
+    job_id = _topic_job(db)
+
+    with patch.object(metadata_backfill_service, "stamp_chunk_temporal_fields",
+                      side_effect=RuntimeError("chroma unavailable")) as stamp:
+        _search(job_id)
+
+    stamp.assert_called_once()
+    db.expire_all()
+    assert db.get(Job, job_id).status == "awaiting_approval"
+    assert _as_utc(_doc(db, "article:lib").published_at) == PAGE_DATE
+
+
+def test_mutation_without_the_stamp_the_stored_chunks_stay_undated(
+    db, articles, worker, ephemeral_chroma, monkeypatch
+):
+    """The review's case with the stamp taken out: the row and the statistics
+    are dated, and every stored chunk still has no date."""
+    monkeypatch.setattr(job_tasks, "_stamp_dates_on_embedded_chunks", lambda *a, **k: None)
+    document_id = _embedded_article(db, ephemeral_chroma, "article:lib")
+    articles([_brave("article:lib")], {"article:lib": PAGE_DATE})
+    job_id = _topic_job(db)
+
+    _search(job_id)
+    _resume_on_chroma(job_id)
+
+    assert _as_utc(_doc(db, "article:lib").published_at) == PAGE_DATE
+    assert all("published_ts" not in c["meta"] for c in _stored(ephemeral_chroma, document_id))

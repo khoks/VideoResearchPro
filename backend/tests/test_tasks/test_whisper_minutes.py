@@ -856,6 +856,43 @@ def test_a_text_only_episode_counts_what_whisper_heard_against_the_minute_cap(
     assert statuses[0] == "fetched"
 
 
+@pytest.mark.parametrize("cap_minutes, requests", [(5, 1), (6, 2)])
+def test_sparse_text_counts_all_whisper_heard_when_the_feed_declares_no_length(
+    db, tasks, whisper_api, monkeypatch, cap_minutes, requests  # noqa: F811
+):
+    """Three words in 300 s, in a feed with no ``itunes:duration``. The helper
+    gives a pseudo-segment only to a 30 s slot with a word, so the third ends
+    at 90 s; the cap counted that (1.5 minutes) and let a 5-minute cap send
+    the next episode. The timeline now ends where Whisper stopped, and the
+    episode counts the 300 s it was billed for.
+
+    Mutation check: take ``_end_where_whisper_stopped`` out of the connector
+    and the 5-minute case sends two episodes and counts 90 s."""
+    monkeypatch.setattr(settings, "WHISPER_MAX_MINUTES_PER_JOB", cap_minutes)
+    monkeypatch.setattr(settings, "WHISPER_MAX_PER_JOB", 50)
+    _single_episodes(monkeypatch, whisper_api)
+    whisper_api.text_only = True
+    whisper_api.text_words = 3
+    counted: list[float] = []
+    real_charge = job_tasks.WhisperMinutes.charge
+
+    def charge(self, document, extracted):
+        before = self.used_seconds
+        real_charge(self, document, extracted)
+        counted.append(self.used_seconds - before)
+
+    monkeypatch.setattr(job_tasks.WhisperMinutes, "charge", charge)
+    job_id = _approved(db, [None, None])
+
+    _resume(job_id)
+
+    assert whisper_api.sent == requests
+    assert counted == [300.0] * requests
+    db.expire_all()
+    first = db.query(Document).order_by(Document.source_id).first()
+    assert first.transcript_status == "fetched" and first.transcript_word_count == 3, "every word is kept"
+
+
 def test_a_text_only_episode_is_never_also_charged_as_empty(db, tasks, whisper_api, monkeypatch):  # noqa: F811
     """The one connector answer is the transcript: ``_fetch_text`` sees no
     ``PaidTranscriptionLost``, so ``charge_part`` is never called."""

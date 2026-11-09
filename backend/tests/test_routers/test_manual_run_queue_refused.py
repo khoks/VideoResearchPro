@@ -11,6 +11,13 @@ reading it (the run itself records the use when it answers), and Send now
 reads the subscription; the issue, its send row and the email are the worker's.
 The tests below look at every table those could touch.
 
+The sentence promises nothing either way. A dispatch can raise after the
+broker took the message (the publish went out, the reply was lost), and then
+the worker still runs it. Neither task dedupes a manual trigger (an issue's
+key is the second the worker made it), so "nothing was sent, try again" would
+send a second issue, or run and charge a second time. The user is told to
+check first.
+
 Mutation check: remove either ``except`` and its test fails on a 500 (the
 TestClient re-raises the broker's error).
 """
@@ -62,7 +69,8 @@ def test_run_now_with_the_queue_down_answers_503_in_words(client, db, pro):
 
     assert response.status_code == 503
     assert response.json()["detail"] == (
-        "Could not queue the run; the task queue is unavailable. Try Run now again in a few minutes."
+        "Could not confirm the run with the task queue, so it may or may not run. "
+        "Check its history in a few minutes before pressing Run now again."
     )
     assert "hunter2" not in response.text and "redis" not in response.text
     dispatch.assert_called_once()
@@ -87,8 +95,8 @@ def test_send_now_with_the_queue_down_answers_503_in_words(client, db, pro):
 
     assert response.status_code == 503
     assert response.json()["detail"] == (
-        "Could not queue the issue, so nothing was sent; the task queue is unavailable. "
-        "Try Send now again in a few minutes."
+        "Could not confirm the issue with the task queue, so it may or may not be sent. "
+        "Check your outputs in a few minutes before pressing Send now again."
     )
     assert "hunter2" not in response.text and "redis" not in response.text
     task.apply_async.assert_called_once()

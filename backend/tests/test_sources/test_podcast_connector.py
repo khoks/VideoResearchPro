@@ -1212,6 +1212,30 @@ def test_an_older_sdks_dict_answer_with_only_text_is_kept_too(podcast, fake_clie
     assert [(s["text"], s["start"], s["duration"]) for s in out.segments] == [("A short clip.", 0.0, 20.0)]
 
 
+def test_sparse_text_still_ends_where_whisper_stopped(podcast, fake_client, audio_dirs):
+    """Ten words in an hour of music. The helper gives a pseudo-segment only to
+    a 30 s slot with a word, so its segments end at 300 s; the job's minute
+    cap reads where the transcript ends when the feed declares no length, so
+    the last one is stretched to the 3,600 s Whisper heard. Every word and
+    every start stay as YouTube's helper set them.
+
+    Mutation check: take ``_end_where_whisper_stopped`` out and the last
+    segment ends at 300 s."""
+    fake_client.fetch_audio_to_file.side_effect = _writes(b"mp3")
+    words = " ".join(f"lyric{i}" for i in range(10))
+    answer = _whisper_text_only(words, 3600.0)
+    with patch.object(youtube_service, "_whisper_transcribe_with_retry", return_value=answer):
+        out = podcast.fetch_text(_candidate_for_ep1(), job_id="j1")
+
+    assert out.word_count == 10 and " ".join(s["text"] for s in out.segments) == words
+    youtube_segments, _, _ = youtube_service._whisper_response_to_segments(answer, "[test]", "ep1")
+    assert [(s["text"], s["start"]) for s in out.segments] == [(s["text"], s["start"]) for s in youtube_segments]
+    assert youtube_segments[-1]["start"] + youtube_segments[-1]["duration"] == 300.0, "the helper's own end"
+    assert [s["duration"] for s in out.segments[:-1]] == [30.0] * 9
+    assert out.segments[-1]["start"] == 270.0
+    assert out.segments[-1]["start"] + out.segments[-1]["duration"] == 3600.0
+
+
 @pytest.mark.parametrize("text", ["", "   \n ", None], ids=["empty", "blank", "absent"])
 def test_an_answer_with_no_words_at_all_is_still_transcription_empty(podcast, fake_client, audio_dirs, text):
     """T-1.7.1.7 unchanged: billed, no words, and the job's limits hear it."""

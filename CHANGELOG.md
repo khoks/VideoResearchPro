@@ -10,6 +10,53 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Fixed: ten stale phone baselines, and `regenerate_report.py` reads every source type (T-8.8.6.8, T-8.8.6.9, 2026-11-09)
+
+PR [#438](https://github.com/khoks/VideoResearchPro/pull/438). No new decision.
+
+- Ten device baselines that predate the header's bell and search icons are re-recorded on Windows: `iphone-13` and `pixel-7` job Q&A, and `iphone-13`, `pixel-7` and `narrow-320` knowledge report, light and dark. Below the header nothing moved beyond antialiasing, and no other baseline is stale.
+- `backend/scripts/regenerate_report.py` finds a job's documents by `document_id`, as the worker does, so a PDF, a pasted page, a thread or a podcast episode in the job reaches the regenerated report. A document with no cached text is still left out, and the log now counts those by source type.
+- **Please check:** a run without `--no-era` writes eras to the documents and their stored Chroma chunks, as before, and now for every source type, with one model call per undated document. `--help` says so; pass `--no-era` to avoid it.
+- No migration, no setting and nothing to restart.
+
+### Changed: a failed run stays failed, Run now and Send now answer 503, an article's own date, podcast text without segments (T-5.2.18, T-5.2.19, T-1.6.7, T-1.7.1.8, 2026-11-09)
+
+PR [#436](https://github.com/khoks/VideoResearchPro/pull/436). [D-158](docs/decisions.md#d-158--a-job-task-returns-at-once-on-a-failed-row-a-job-dates-an-undated-row-and-its-stored-chunks-whisper-text-without-segments-is-a-transcription-and-a-manual-dispatchs-503-promises-nothing-2026-11-09).
+
+- A job task delivered for a run already marked failed, as after a dispatch that raised once the broker had the message, returns at once: no write, no progress and no quota or model call. A cancelled run is unchanged (T-5.2.20).
+- `POST /saved-searches/{id}/run-now` and `POST /author/newsletter/send-now` answer 503 on a broker outage, with a sentence that asks you to check the history or your outputs before pressing again, since the run or issue may still happen. The broker's error never reaches the caller.
+- An article found by search takes the date its page states when it has none, so the date reaches its chunks and the corpus statistics. A library article found again is dated, and so are its stored chunks. A date already on a row is never replaced.
+- A podcast episode whose Whisper answer has text but no segments keeps its words, as pseudo-segments that end where Whisper stopped, and is charged once as an ordinary transcription.
+- No migration and no new setting. Restart the API and the worker.
+
+### Fixed: the API writes the app's own log lines (T-4.11.4.1, 2026-11-09)
+
+PR [#437](https://github.com/khoks/VideoResearchPro/pull/437). [D-157](docs/decisions.md#d-157--the-apps-log-lines-get-a-handler-that-steps-aside-while-the-root-logger-has-one-an-in-process-migration-restores-the-root-logger-and-a-log-line-names-no-email-recipient-subject-or-connector-account-2026-11-09).
+
+- Under `LOG_FORMAT=text` the API's log now holds the app's own INFO lines and warnings, with time, level and logger: the X-token startup line from T-1.5.9.1, `llm_smoke`'s results and the backfill counts. Under uvicorn's default logging they had reached no handler. The worker, beat, `LOG_FORMAT=json` and the tests write each line once, as before.
+- After an in-process migration at startup the app's lines keep their time; before, Alembic's handler kept the root logger.
+- **Changed, please check:** with `SMTP_HOST` unset, a password-reset request writes the whole email, code included, to the API's stderr (`.uvicorn.err.log` under the launchers), as CLAUDE.md has always said. A code works once and for 30 minutes (OQ-44 asks about the other emails).
+- Log lines no longer carry the opening of a question, a delivered email's recipient and subject, or a connector's account label.
+- The worker's warnings from before Celery sets up logging now carry time, level and logger.
+- No migration and no new setting. Restart the API.
+
+### Changed: a failure said on the page stands alone, every dropped file named, a disconnect that cannot reject unhandled (T-3.4.1.18, T-3.4.1.19, T-3.4.1.20, 2026-11-09)
+
+PR [#435](https://github.com/khoks/VideoResearchPro/pull/435). [D-156](docs/decisions.md#d-156--a-failure-said-on-the-page-stands-alone-a-dialog-waits-for-its-answer-the-drop-zone-names-each-file-that-lands-and-a-disconnect-goes-through-mutate-2026-11-09).
+
+- The tags manager, the delete-shelf modal, a template's delete, the connector callback page and the Echo bubble's ask turns show a failure once, on their own line, with no second toast and nothing on a 401. The line says the server's words first. The tags manager and the delete-shelf modal stay open until their answer arrives.
+- Quick share's dialog is unchanged, waiting on the owner's ruling (T-3.4.1.21).
+- The Echo drop zone names every file that lands, one toast each, not only the last.
+- A failed disconnect on the Echo page keeps the dialog open with one toast, and leaves no unhandled rejection.
+- Frontend only. Nothing to restart.
+
+### Fixed: a flaky session-expiry device test (T-8.8.6.10, 2026-11-09)
+
+PR [#434](https://github.com/khoks/VideoResearchPro/pull/434). No decision needed.
+
+- The shell spec's two tests that refuse yesterday's token mid-page now wait for the page's own requests to settle (`networkidle`) before the refusal starts. On a slow runner one of the job page's first requests could get the 401 and end the session in the middle of `fill()`, which failed #433's first CI run.
+- Test only.
+
 ### Fixed: the 320 px job Q&A baselines, and the scripts' tiktoken folder (T-8.8.6.3, T-8.8.6.6, 2026-11-09)
 
 PR [#432](https://github.com/khoks/VideoResearchPro/pull/432). No new decision: it extends [D-152](docs/decisions.md#d-152--cors-reads-the-oauth-origin-list-and-the-app-keeps-tiktokens-encoding-in-a-folder-of-its-own-2026-11-09) point 5 to `backend/scripts`.

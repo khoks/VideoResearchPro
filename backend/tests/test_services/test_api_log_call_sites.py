@@ -153,6 +153,37 @@ def test_an_unregistered_operator_is_named_by_place_and_mask(db, log, monkeypatc
     assert "register the account before listing it" in text
 
 
+def test_an_operators_place_counts_the_list_as_written(db, log, monkeypatch):
+    """Review of #447: the place is the one the operator counts to in the
+    setting. A repeated address (in another case) still takes its place and
+    a blank slot takes none. Here bob and bill mask alike, b***@e***.com, so
+    the place is the only thing that tells them apart: bill is the 4th
+    address written, not the 3rd distinct one, which is bob."""
+    auth_service.create_user(db, email="ops@x.com", password="pw" * 6)
+    auth_service.create_user(db, email="bob@example.com", password="pw" * 6)
+    monkeypatch.setattr(settings, "ADMIN_EMAILS", "ops@x.com, OPS@x.com, , bob@example.com, bill@example.com")
+    fake = log(auth_service)
+
+    assert auth_service.warn_unregistered_operators(session_factory=lambda: _Borrowed(db)) == ["bill@example.com"]
+
+    assert_no_words(fake, "bill@example.com", "bob@example.com", "ops@x.com")
+    lines = [str(c.args[0]) % c.args[1:] for c in fake.warning.call_args_list]
+    assert len(lines) == 1
+    assert lines[0].startswith("ADMIN_EMAILS entry 4 of 4 (b***@e***.com) names no account."), lines
+
+
+def test_an_operator_listed_twice_is_named_by_its_first_place(db, log, monkeypatch):
+    auth_service.create_user(db, email="boss@example.com", password="pw" * 6)
+    monkeypatch.setattr(settings, "ADMIN_EMAILS", f"{ADDRESS}, boss@example.com, {ADDRESS.upper()}")
+    fake = log(auth_service)
+
+    assert auth_service.warn_unregistered_operators(session_factory=lambda: _Borrowed(db)) == [ADDRESS]
+
+    lines = [str(c.args[0]) % c.args[1:] for c in fake.warning.call_args_list]
+    assert lines == [lines[0]] and lines[0].startswith("ADMIN_EMAILS entry 1 of 3 (w***@z***.org) names no account.")
+    assert_no_words(fake, ADDRESS)
+
+
 def test_a_failed_operator_check_at_startup_names_no_address(monkeypatch):
     fake = MagicMock()
     with (
@@ -221,10 +252,12 @@ class _Importer:
     privacy_weight = "high"
     consent_disclosure = "test"
 
-    def __init__(self, name, *, accepts=False, sniff_fails=False, accepts_fails=False, parse_fails=False):
+    def __init__(self, name, *, accepts=False, sniff_fails=False, accepts_fails=False, parse_fails=False,
+                 preview_fails=False):
         self.name = name
         self._accepts, self._sniff_fails = accepts, sniff_fails
         self._accepts_fails, self._parse_fails = accepts_fails, parse_fails
+        self._preview_fails = preview_fails
 
     def accepts(self, filename):
         if self._accepts_fails:
@@ -239,6 +272,11 @@ class _Importer:
         return False
 
     def preview(self, source, options):
+        if self._preview_fails:
+            # As goodreads' preview reads a rating: int() on a cell of words.
+            source.fileobj.seek(0)
+            second = source.fileobj.read().decode("utf-8").splitlines()[1]
+            int(second)
         return ImportPreview(importer=self.name, label=self.display_name, summary={"messages": 2})
 
     def parse(self, source, *, tenant_id, options=None, filename=None, stats=None):
@@ -305,6 +343,55 @@ def test_an_import_that_stops_is_logged_by_its_frames_and_raised_in_words(db, lo
     db.expire_all()
     record = db.query(echo_import_service.EchoImport).filter_by(tenant_id=user.id).one()
     assert record.status == "failed" and record.error == "Import stopped: ValueError"
+
+
+def test_a_preview_that_fails_is_logged_by_its_frames_and_raised_in_words(log, importers):
+    """Review of #447: a preview reads the whole file, so a cell it cannot
+    read raises an error quoting it. Without the guard that error left the
+    service whole, for uvicorn to write."""
+    fake = log(echo_import_service)
+    importers(_Importer("zzz_words_preview", accepts=True, preview_fails=True))
+
+    with pytest.raises(echo_import_service.ImportStopped) as stopped:
+        echo_import_service.preview(io.BytesIO(CONTENT), FILENAME, importer="zzz_words_preview")
+
+    assert str(stopped.value) == "Preview stopped: ValueError"
+    assert isinstance(stopped.value.__cause__, ValueError) and "wombat line two" in str(stopped.value.__cause__)
+    text = assert_no_words(fake, FILENAME.lower())
+    assert f"importer zzz_words_preview failed to preview a .wchat file name of {len(FILENAME)} characters" in text
+    assert "valueerror" in text and fake.error.called and not fake.exception.called
+
+
+def test_an_import_whose_preview_fails_stops_before_its_row(db, log, importers):
+    fake = log(echo_import_service)
+    importers(_Importer("zzz_words_preview_run", accepts=True, preview_fails=True))
+    user = auth_service.create_user(db, email=f"imp-{uuid.uuid4().hex[:8]}@example.com", password="pw" * 6)
+
+    with pytest.raises(echo_import_service.ImportStopped) as stopped:
+        echo_import_service.run_import(db, user, io.BytesIO(CONTENT), FILENAME, importer="zzz_words_preview_run")
+
+    assert str(stopped.value) == "Preview stopped: ValueError"
+    text = assert_no_words(fake, FILENAME.lower())
+    assert "failed to preview" in text and not fake.exception.called
+    assert db.query(echo_import_service.EchoImport).filter_by(tenant_id=user.id).count() == 0
+
+
+UNREADABLE = "No books were found in this export."
+
+
+def test_an_unreadable_preview_is_still_the_files_fault(log, importers):
+    """``ExportUnreadable`` keeps its own words and its 422: the guard takes
+    only what the file did not say."""
+    class Unreadable(_Importer):
+        def preview(self, source, options):
+            raise ExportUnreadable(UNREADABLE)
+
+    fake = log(echo_import_service)
+    importers(Unreadable("zzz_words_unreadable", accepts=True))
+
+    with pytest.raises(ExportUnreadable, match=UNREADABLE):
+        echo_import_service.preview(io.BytesIO(CONTENT), FILENAME, importer="zzz_words_unreadable")
+    assert not fake.error.called
 
 
 # ---------------------------------------------------------------------------

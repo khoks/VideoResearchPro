@@ -877,6 +877,9 @@ def import_preview_endpoint(
         pv = echo_import_service.preview(fh, file.filename or "upload", importer=importer, options=opts)
     except ExportUnreadable as e:
         raise HTTPException(status_code=422, detail=str(e))
+    except echo_import_service.ImportStopped as e:
+        # T-4.11.4.4: logged by its frames in the service; answered here.
+        raise HTTPException(status_code=500, detail=str(e))
     return ImportPreviewResponse(
         importer=pv.importer,
         label=pv.label,

@@ -10,6 +10,8 @@ with the record factory of D-151 and a formatter that renders tracebacks:
   parse stops on a line it quotes. The run answers in words (500, "Import
   stopped: ValueError"), so nothing reaches the server's own log of an
   unhandled exception.
+- The same two routes when the importer's preview fails on a line it
+  quotes (review of #447): both answer 500, "Preview stopped: ValueError".
 - ``POST /echo/draft`` with an incoming message. The classifier's model
   fails, quoting the request back as a local server can, and the critique's
   model writes a score as the draft's words, which ``float()`` quotes.
@@ -169,6 +171,44 @@ def test_the_draft_check_sees_a_leak(unauthenticated_client, db, failing_models,
     _draft(unauthenticated_client, db, monkeypatch)
 
     assert DRAFT_WORDS.lower() in api_log.getvalue().lower()
+
+
+@pytest.fixture
+def preview_importer():
+    registry.load_builtin()
+    importer = _Importer("zzz_words_preview", accepts=True, preview_fails=True)
+    registry.register_importer(importer)
+    yield
+    registry.unregister_importer(importer.name)
+
+
+def _previews_fail(client, headers):
+    for path in ("/api/v1/echo/import/preview", "/api/v1/echo/import"):
+        r = _upload(client, path, headers)
+        assert r.status_code == 500, (path, r.text)
+        assert r.json() == {"detail": "Preview stopped: ValueError"}, path
+
+
+def test_a_preview_that_fails_writes_none_of_the_users_words(unauthenticated_client, db, preview_importer, api_log):
+    user, headers = _studio(db, "log-words-preview@example.com")
+
+    _previews_fail(unauthenticated_client, headers)
+
+    text = assert_nothing_said(api_log, FILENAME, "fermentation starts at dawn")
+    assert text.count("importer zzz_words_preview failed to preview a .wchat file name of") == 2
+    assert "ValueError" in text
+    assert db.query(echo_import_service.EchoImport).filter_by(tenant_id=user.id).count() == 0
+
+
+def test_the_preview_check_sees_a_leak(unauthenticated_client, db, preview_importer, monkeypatch):
+    """The mutation: the guard taken out, and the importer's error leaves
+    the route whole, quoting the file, which is what uvicorn's own line
+    writes. So the check above can fail."""
+    monkeypatch.setattr(echo_import_service, "_preview_or_stop", echo_import_service._preview)
+    _, headers = _studio(db, "log-words-preview-mutant@example.com")
+
+    with pytest.raises(ValueError, match="fermentation starts at dawn"):
+        _upload(unauthenticated_client, "/api/v1/echo/import/preview", headers)
 
 
 def test_an_import_row_names_the_file_and_the_log_does_not(db, words_importers):

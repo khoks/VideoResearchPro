@@ -88,14 +88,15 @@ def get_user_by_id(db: Session, user_id: str) -> User | None:
 
 
 def operator_entries() -> list[str]:
-    """``ADMIN_EMAILS`` in the order it is written, lower-cased, each address
-    once (empty when unset)."""
-    entries: list[str] = []
-    for entry in (settings.ADMIN_EMAILS or "").split(","):
-        address = entry.strip().lower()
-        if address and address not in entries:
-            entries.append(address)
-    return entries
+    """``ADMIN_EMAILS``'s addresses in the order written, lower-cased (empty
+    when unset). A repeated address stays where it is written and a blank
+    slot is left out, so an address's place here is its place among the
+    addresses the operator reads in the setting (T-4.11.4.4)."""
+    return [
+        address
+        for address in (entry.strip().lower() for entry in (settings.ADMIN_EMAILS or "").split(","))
+        if address
+    ]
 
 
 def operator_emails() -> frozenset[str]:
@@ -173,7 +174,10 @@ def warn_unregistered_operators(session_factory=None) -> list[str]:
 
     T-4.11.4.4: a line names the entry by its place in the list and a masked
     form (``masked_email``), never the whole address. The list is the
-    operator's own, so that is enough to find the entry.
+    operator's own, so that is enough to find the entry. The place counts
+    the addresses as written, a repeated one included and a blank slot not,
+    and an address written twice is named by its first place: two addresses
+    can mask alike, so the place must be the one the operator counts to.
     """
     entries = operator_entries()
     if not entries:

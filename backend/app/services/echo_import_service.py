@@ -58,10 +58,11 @@ class ImportNotFound(LookupError):
 
 
 class ImportStopped(RuntimeError):
-    """An import failed part-way for a reason that is not the file's (T-4.11.4.4).
-    Its row is already ``failed`` with the words its message carries, and the
-    route answers with them, so the failure never reaches the server's own
-    log of an unhandled exception, which would write its text whole."""
+    """A preview or an import failed for a reason that is not the file's
+    (T-4.11.4.4). It is already logged by its frames, and a run's row is
+    already ``failed`` with the words its message carries. The route answers
+    with them, so the failure never reaches the server's own log of an
+    unhandled exception, which would write its text whole."""
 
 
 def _now() -> datetime:
@@ -129,6 +130,23 @@ def _preview(importer, source: ImportSource, options: dict[str, Any]) -> ImportP
     return ImportPreview(importer=importer.name, label=getattr(importer, "display_name", importer.name), summary=counts)
 
 
+def _preview_or_stop(importer, source: ImportSource, options: dict[str, Any]) -> ImportPreview:
+    """``_preview``, with a failure that is not ``ExportUnreadable`` logged by
+    its frames and raised as ``ImportStopped`` (T-4.11.4.4). A preview reads
+    the whole file, so a cell an importer cannot read (a Goodreads rating or a
+    Spotify play time that is not a number) raises an error quoting it."""
+    try:
+        return _preview(importer, source, options)
+    except ExportUnreadable:
+        raise
+    except Exception as e:
+        logger.error(
+            "echo: importer %s failed to preview %s: %s",
+            getattr(importer, "name", "?"), loggable_filename(source.filename), traceback_without_text(e),
+        )
+        raise ImportStopped(f"Preview stopped: {type(e).__name__}") from e
+
+
 # ---------------------------------------------------------------------------
 # Preview
 # ---------------------------------------------------------------------------
@@ -137,7 +155,7 @@ def _preview(importer, source: ImportSource, options: dict[str, Any]) -> ImportP
 def preview(fileobj: IO[bytes], filename: str, *, importer: str | None = None,
             options: dict[str, Any] | None = None) -> ImportPreview:
     source = _source(fileobj, filename)
-    return _preview(_importer(source, importer), source, dict(options or {}))
+    return _preview_or_stop(_importer(source, importer), source, dict(options or {}))
 
 
 def _validated(importer_name: str, pv: ImportPreview, options: dict[str, Any]) -> dict[str, Any]:
@@ -167,7 +185,7 @@ def run_import(db: Session, user: Any, fileobj: IO[bytes], filename: str, *,
     source = _source(fileobj, filename)
     module = _importer(source, importer)
     raw_options = dict(options or {})
-    pv = _preview(module, source, raw_options)
+    pv = _preview_or_stop(module, source, raw_options)
     opts = _validated(module.name, pv, raw_options)
 
     record = EchoImport(

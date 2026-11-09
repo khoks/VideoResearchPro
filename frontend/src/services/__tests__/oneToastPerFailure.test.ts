@@ -253,6 +253,8 @@ describe('the guard', () => {
 // `useDeleteShelf`, `useDeleteTemplate` or `useCompleteConnector`, or dropping
 // `{ inlineErrors: true }` from the Echo bubble's `useAskLibraryQA`, each fails
 // "finds no line on a page that the global toast repeats", naming that file.
+// An option hook stands aside only when the caller sets that option to `true`:
+// the bubble passing `{ inlineErrors: false }` fails it too.
 
 /** How a mutation sets `meta`: always, only when a caller passes `option: true`,
  * or never; and whether its own `onError` toasts the failure. */

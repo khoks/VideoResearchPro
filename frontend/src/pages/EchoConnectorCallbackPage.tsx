@@ -9,7 +9,7 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { Card, Spinner } from '../components/primitives';
 import { useCompleteConnector } from '../hooks/useEcho';
 import { useColors } from '../hooks/useTheme';
-import { apiErrorMessage } from '../utils/apiError';
+import { inlineErrorMessage } from '../utils/apiError';
 import { fonts, fontSize, measure, space } from '../theme';
 
 export function EchoConnectorCallbackPage() {
@@ -35,10 +35,12 @@ export function EchoConnectorCallbackPage() {
       setError('This link is missing what the provider sends back. Start again from the Echo page.');
       return;
     }
+    // The page says a failure, and nothing else does: the hook sets `meta`. A 401
+    // says nothing; the session-expiry path takes the reader to sign in (T-3.4.1.18).
     complete
       .mutateAsync({ name, code, state })
       .then(() => navigate(`/echo?connected=${encodeURIComponent(name)}`, { replace: true }))
-      .catch((e) => setError(apiErrorMessage(e, 'Connecting failed. Start again from the Echo page.')));
+      .catch((e) => setError(inlineErrorMessage(e, 'Connecting failed. Start again from the Echo page.')));
   }, [complete, name, navigate, params]);
 
   return (

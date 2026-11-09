@@ -17,6 +17,10 @@
  * `onError`, SignalsPanel's `failed(...)` helper or SubscriptionPage's mutation
  * without `meta`, or moving a hook's toast back onto the `mutate` call of the
  * voice test, the importer or the data card, each fails the guard.
+ *
+ * A second guard below holds T-3.4.1.18's rule: a failure said on the page, where
+ * the reader acted, needs its hook's `meta`, so the global toast does not say it
+ * again.
  */
 import { AxiosError, AxiosHeaders } from 'axios';
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -224,5 +228,189 @@ describe('the guard', () => {
     ["const m = useMutation({ mutationFn: f, onError: (err) => toastMutationError(err, 'No.'), meta: ERRORS_SHOWN_HERE });"],
   ])('leaves alone %s', (src) => {
     expect(doubleToasts(src)).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The second guard: a line on the page stands alone (T-3.4.1.18)
+// ---------------------------------------------------------------------------
+//
+// A page that says a failed mutation where the reader acted (a line under the
+// row, a turn in the Echo bubble) needs the global toast to stand aside, or the
+// one failure is said twice. So the hook behind it sets `meta: ERRORS_SHOWN_HERE`:
+// always, when every caller has such a line, or through an option the caller
+// passes, when its callers differ (D-153 point 2).
+//
+// "Says it on the page" is read from the handler: a per-call `onError`, the
+// `catch` of a `try` that awaits a `mutateAsync`, or a `.mutateAsync().catch()`
+// that hands its error to a call that is not an `is…` check, or gives a setter a
+// sentence. A handler that only checks the error (`isSessionEnded(err)`) or
+// ignores it leaves the global toast to speak, as it should. Mutations passed in
+// as props, which the guard cannot follow to their hook, are not read.
+//
+// Mutation checks, run on 2026-11-09: taking `meta` off `useDeleteTag`,
+// `useDeleteShelf`, `useDeleteTemplate` or `useCompleteConnector`, or dropping
+// `{ inlineErrors: true }` from the Echo bubble's `useAskLibraryQA`, each fails
+// "finds no line on a page that the global toast repeats", naming that file.
+
+/** How each mutation hook the app defines sets `meta`: always, only when a
+ * caller passes its option, or never. */
+type MetaWhen = 'always' | 'option' | 'never';
+
+function metaWhen(options: string): MetaWhen {
+  const meta = /\bmeta\s*:\s*([^,\n}]+)/.exec(options);
+  if (!meta) return 'never';
+  return meta[1].includes('?') ? 'option' : 'always';
+}
+
+function mutationHooks(sources: Record<string, string>): Map<string, MetaWhen> {
+  const hooks = new Map<string, MetaWhen>();
+  for (const src of Object.values(sources)) {
+    const starts = [...src.matchAll(/export function (use\w+)\s*\(/g)];
+    starts.forEach((m, k) => {
+      const body = src.slice(m.index!, starts[k + 1]?.index ?? src.length);
+      const call = /\buseMutation\(\s*\{/.exec(body);
+      if (!call) return;
+      const open = call.index + call[0].length - 1;
+      hooks.set(m[1], metaWhen(body.slice(open, closing(body, open))));
+    });
+  }
+  return hooks;
+}
+
+/** Whether a handler says its failure on the page. `handler` is the `onError`
+ * value, a `catch (e) {…}` turned into `(e) => {…}`, or a local function's name. */
+function saysItOnThePage(src: string, handler: string): boolean {
+  let text = handler.trim();
+  const named = /^([A-Za-z_$][\w$]*)$/.exec(text);
+  if (named) {
+    const def = new RegExp(`(?:const|let)\\s+${named[1].replace('$', '\\$')}\\s*=\\s*`).exec(src);
+    if (!def) return false;
+    text = src.slice(def.index + def[0].length, def.index + def[0].length + 400);
+  }
+  // A line kept for the refusals the global toast already leaves to the page
+  // (`globalErrorToastMessage`): a full library, a refused sync.
+  if (/\bis(?:DocumentCap|Sync)Refusal\(/.test(text)) return false;
+  if (/\bset[A-Z]\w*\(\s*['"`]/.test(text)) return true;
+  const param = /^(?:async\s*)?\(\s*([A-Za-z_$][\w$]*)/.exec(text) ?? /^([A-Za-z_$][\w$]*)\s*=>/.exec(text);
+  if (!param) return false;
+  const body = text.slice(param.index + param[0].length);
+  const handedOn = new RegExp(`\\b([A-Za-z_$][\\w$]*)\\s*\\(\\s*\\(?\\s*${param[1].replace('$', '\\$')}\\b`, 'g');
+  return [...body.matchAll(handedOn)].some((m) => !/^is[A-Z]/.test(m[1]));
+}
+
+/** Every place in `src` where a line on the page sits beside the global toast. */
+function linesTheToastRepeats(src: string, hooks: Map<string, MetaWhen>): number[] {
+  // Which mutation each name holds, and whether its `meta` is set for this caller.
+  const standsAside = new Map<string, boolean>();
+  for (const m of src.matchAll(/\b(?:const|let)\s+([A-Za-z_$][\w$]*)\s*=\s*(use\w+)\(/g)) {
+    const open = m.index! + m[0].length - 1;
+    const args = src.slice(open + 1, closing(src, open) - 1);
+    const when = m[2] === 'useMutation' ? metaWhen(args) : hooks.get(m[2]);
+    if (when) standsAside.set(m[1], when === 'always' || (when === 'option' && args.trim() !== ''));
+  }
+  const repeats = (names: string[]) => names.some((n) => standsAside.get(n) === false);
+  const found: number[] = [];
+  // A per-call `onError`.
+  for (const m of src.matchAll(/\b([A-Za-z_$][\w$]*)\.(mutate|mutateAsync)\(/g)) {
+    const open = m.index! + m[0].length - 1;
+    const args = src.slice(open, closing(src, open));
+    if (repeats([m[1]]) && onErrorValues(args).some((v) => saysItOnThePage(src, v))) found.push(lineOf(src, m.index!));
+  }
+  // The `catch` of a `try` that awaits a `mutateAsync`.
+  for (const m of src.matchAll(/\btry\s*\{/g)) {
+    const open = m.index! + m[0].length - 1;
+    const end = closing(src, open);
+    const names = [...src.slice(open, end).matchAll(/\b([A-Za-z_$][\w$]*)\.mutateAsync\(/g)].map((n) => n[1]);
+    const handler = /^\s*catch\s*(?:\(\s*([A-Za-z_$][\w$]*)[^)]*\))?\s*\{/.exec(src.slice(end));
+    if (!names.length || !handler) continue;
+    const catchOpen = end + handler[0].length - 1;
+    const body = src.slice(catchOpen, closing(src, catchOpen));
+    if (repeats(names) && saysItOnThePage(src, `(${handler[1] ?? ''}) => ${body}`)) found.push(lineOf(src, m.index!));
+  }
+  // `.mutateAsync(...).then(...).catch(...)`.
+  for (const m of src.matchAll(/\b([A-Za-z_$][\w$]*)\.mutateAsync\(/g)) {
+    let i = closing(src, m.index! + m[0].length - 1);
+    for (let chained = /^\s*\.(then|catch|finally)\(/.exec(src.slice(i)); chained; chained = /^\s*\.(then|catch|finally)\(/.exec(src.slice(i))) {
+      const open = i + chained[0].length - 1;
+      const close = closing(src, open);
+      if (chained[1] === 'catch' && repeats([m[1]]) && saysItOnThePage(src, src.slice(open + 1, close - 1))) {
+        found.push(lineOf(src, m.index!));
+      }
+      i = close;
+    }
+  }
+  return found;
+}
+
+/**
+ * Lines the global toast still repeats, known and not yet changed. The guard
+ * holds every other module to the rule, and fails when one of these is fixed,
+ * so the list cannot outlive what it names.
+ */
+const NOT_YET: Record<string, string> = {
+  // The dialog says a failure, and the global toast says it too. Closing the
+  // dialog mid-request unmounts it, and its line with it, so the toast is the
+  // only word then. What it should say then is the owner's call (T-3.4.1.18).
+  'src/components/echo/QuickShare.tsx': 'waits on the owner’s ruling',
+  // The first-run step says a failed start under its button, and the global
+  // toast says it too; the same page does it for saving the channels and for the
+  // approval, through a prop and `isError`, which this guard does not follow.
+  // Found by this guard after T-3.4.1.18 was filed, and left for its own task.
+  'src/pages/WelcomePage.tsx': 'found by this guard, not yet in a task',
+};
+
+describe('the second guard', () => {
+  const sources = import.meta.glob(['../../**/*.{ts,tsx}', '!**/__tests__/**', '!**/*.test.{ts,tsx}'], {
+    query: '?raw',
+    import: 'default',
+    eager: true,
+  }) as Record<string, string>;
+  const hooks = mutationHooks(sources);
+
+  it('knows how each hook sets `meta`', () => {
+    expect(hooks.get('useDeleteTag')).toBe('always');
+    expect(hooks.get('useCreateShare')).toBe('option');
+    expect(hooks.get('useAskLibraryQA')).toBe('option');
+    expect(hooks.get('useCreateShelf')).toBe('never');
+  });
+
+  it('finds no line on a page that the global toast repeats, but those known and not yet changed', () => {
+    const offenders = Object.entries(sources)
+      .map(([file, src]) => [file.replace('../../', 'src/'), linesTheToastRepeats(src, hooks)] as const)
+      .filter(([, lines]) => lines.length > 0)
+      .map(([file]) => file);
+    expect(offenders.sort()).toEqual(Object.keys(NOT_YET).sort());
+  });
+
+  const HOOKS = new Map<string, MetaWhen>([
+    ['useBare', 'never'],
+    ['useQuiet', 'always'],
+    ['useEither', 'option'],
+  ]);
+
+  it.each([
+    ["const x = useBare();\nx.mutate(p, { onError: (err) => setError(apiErrorMessage(err, 'No.')) });"],
+    ["const x = useBare();\nx.mutate(p, { onError: () => setError('No.') });"],
+    ["const x = useBare();\nconst fail = (err: unknown) =>\n  setError(detailFromErrorBody((err as E).response?.data) ?? 'No.');\nx.mutate(p, { onError: fail });"],
+    ["const x = useEither();\nasync function go() {\n  try {\n    await x.mutateAsync(p);\n  } catch (err) {\n    updateTurn(id, { status: 'error', error: requestErrorLine(err) });\n  }\n}"],
+    ["const x = useBare();\nx.mutateAsync(p).then(() => go()).catch((e) => setError(inlineErrorMessage(e, 'No.')));"],
+    ["const m = useMutation({ mutationFn: f });\nm.mutate(p, { onError: (e) => setError(apiErrorMessage(e, 'No.')) });"],
+  ])('catches %s', (src) => {
+    expect(linesTheToastRepeats(src, HOOKS)).toHaveLength(1);
+  });
+
+  it.each([
+    ["const x = useQuiet();\nx.mutate(p, { onError: (err) => setError(inlineErrorMessage(err, 'No.')) });"],
+    ["const x = useEither({ inlineErrors: true });\ntry {\n  await x.mutateAsync(p);\n} catch (err) {\n  updateTurn(id, { error: requestErrorLine(err) });\n}"],
+    ["const x = useBare();\ntry {\n  await x.mutateAsync(p);\n} catch (err) {\n  if (mounted.current && !isSessionEnded(err)) await again();\n}"],
+    ["const x = useBare();\ntry {\n  await x.mutateAsync(p);\n} catch {\n  return; // the global toast said it\n}"],
+    ["const x = useBare();\nx.mutate(p, { onSuccess: () => setConfirming(false) });"],
+    ["const x = useBare();\nx.mutateAsync(p).then(() => go(), () => undefined);"],
+    ["const x = useBare();\ntry {\n  await x.mutateAsync(p);\n} catch (err) {\n  if (isDocumentCapRefusal(err)) setError(apiErrorMessage(err, 'Full.'));\n}"],
+    ["const m = useMutation({ mutationFn: f, meta: ERRORS_SHOWN_HERE });\nm.mutate(p, { onError: (e) => setError(apiErrorMessage(e, 'No.')) });"],
+    ["onSubmit={(v) => update.mutateAsync(v)}"],
+  ])('leaves alone %s', (src) => {
+    expect(linesTheToastRepeats(src, HOOKS)).toEqual([]);
   });
 });

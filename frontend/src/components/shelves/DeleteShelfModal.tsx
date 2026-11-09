@@ -4,7 +4,7 @@ import { useDeleteShelf } from '../../hooks/useShelves';
 import { Button, Modal } from '../primitives';
 import { useColors } from '../../hooks/useTheme';
 import { fonts, fontSize } from '../../theme';
-import { apiErrorMessage } from '../../utils/apiError';
+import { inlineErrorMessage } from '../../utils/apiError';
 
 interface Props {
   shelf: Pick<Shelf, 'id' | 'name' | 'job_count'> | null;
@@ -26,7 +26,8 @@ export function DeleteShelfModal({ shelf, onClose, onDeleted }: Props) {
         onClose();
         onDeleted?.();
       },
-      onError: (err) => setError(apiErrorMessage(err, 'Could not delete the shelf.')),
+      // Said here alone: the hook sets `meta`, and a 401 says nothing (T-3.4.1.18).
+      onError: (err) => setError(inlineErrorMessage(err, 'Could not delete the shelf.')),
     });
   };
 

@@ -6,7 +6,7 @@ import { Button, Input, LabelPill, Modal, Select, Spinner } from '../primitives'
 import { useColors } from '../../hooks/useTheme';
 import { fonts, fontSize, radius, space } from '../../theme';
 import type { PaletteColor } from '../../theme';
-import { apiErrorMessage } from '../../utils/apiError';
+import { inlineErrorMessage } from '../../utils/apiError';
 
 /**
  * Rename, recolour, merge and delete the reader's tags (S-8.1.3). A rename
@@ -58,13 +58,15 @@ function TagRow({ tag, others }: { tag: Tag; others: Tag[] }) {
     setEditing(true);
   };
 
+  // Each failure is said here, on the tag's row, and nowhere else: the hooks set
+  // `meta` so the global toast stands aside, and a 401 says nothing (T-3.4.1.18).
   const save = () => {
     setError(null);
     update.mutate(
       { id: tag.id, body: { name: name.trim(), color } },
       {
         onSuccess: () => setEditing(false),
-        onError: (err) => setError(apiErrorMessage(err, 'Could not save the tag.')),
+        onError: (err) => setError(inlineErrorMessage(err, 'Could not save the tag.')),
       },
     );
   };
@@ -74,13 +76,13 @@ function TagRow({ tag, others }: { tag: Tag; others: Tag[] }) {
     setError(null);
     del.mutate(
       { id: tag.id, into: mergeInto },
-      { onError: (err) => setError(apiErrorMessage(err, 'Could not merge the tag.')) },
+      { onError: (err) => setError(inlineErrorMessage(err, 'Could not merge the tag.')) },
     );
   };
 
   const remove = () => {
     setError(null);
-    del.mutate({ id: tag.id }, { onError: (err) => setError(apiErrorMessage(err, 'Could not delete the tag.')) });
+    del.mutate({ id: tag.id }, { onError: (err) => setError(inlineErrorMessage(err, 'Could not delete the tag.')) });
   };
 
   return (

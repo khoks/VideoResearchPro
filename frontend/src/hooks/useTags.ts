@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { ERRORS_SHOWN_HERE } from '../services/queryClient';
 import { tagsApi, type TagCreate, type TagUpdate } from '../services/tagsApi';
 
 export const tagsKey = ['tags'] as const;
@@ -30,11 +31,15 @@ export function useCreateTag() {
   });
 }
 
+// The tags manager, the one caller of the next two, says a failure on the tag's
+// own row, so the global toast stands aside (T-3.4.1.18).
+
 export function useUpdateTag() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ id, body }: { id: string; body: TagUpdate }) => tagsApi.update(id, body),
     onSuccess: () => refreshRows(qc),
+    meta: ERRORS_SHOWN_HERE,
   });
 }
 
@@ -43,6 +48,7 @@ export function useDeleteTag() {
   return useMutation({
     mutationFn: ({ id, into }: { id: string; into?: string }) => tagsApi.remove(id, into),
     onSuccess: () => refreshRows(qc),
+    meta: ERRORS_SHOWN_HERE,
   });
 }
 

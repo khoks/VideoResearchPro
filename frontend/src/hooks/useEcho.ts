@@ -586,6 +586,8 @@ export function useCompleteConnector() {
     mutationFn: ({ name, code, state }: { name: string; code: string; state: string }) =>
       echoApi.completeConnector(name, { code, state }),
     onSuccess: invalidate,
+    // Its one caller, the callback page, says a failure as the page itself (T-3.4.1.18).
+    meta: ERRORS_SHOWN_HERE,
   });
 }
 

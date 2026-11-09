@@ -39,6 +39,7 @@ import { suggestionsApi, type SuggestionContext } from '../../services/suggestio
 import { useEchoPanelStore, type AskTarget, type EchoTurn } from '../../stores/echoPanelStore';
 import { fonts, fontSize, fontWeight, lineHeight, radius, space, target as touch, z } from '../../theme';
 import type { LibraryQAExchange, QAHistoryExchange } from '../../types/qa';
+import { isSessionEnded } from '../../utils/apiError';
 import { computeReadiness } from '../../utils/echoReadiness';
 import { citationLabel, draftErrorOf } from '../../utils/echoDrafts';
 import { DraftEditor } from './DraftEditor';
@@ -572,8 +573,10 @@ function AskComposer() {
   const setTarget = useEchoPanelStore((st) => st.setTarget);
   const addTurn = useEchoPanelStore((st) => st.addTurn);
   const updateTurn = useEchoPanelStore((st) => st.updateTurn);
-  const askLibrary = useAskLibraryQA();
-  const askHistory = useAskQAHistoryChat();
+  // A failed ask is said in its turn, and nowhere else (T-3.4.1.18). The turn is
+  // in the panel's store, so it is said even if the panel closed meanwhile.
+  const askLibrary = useAskLibraryQA({ inlineErrors: true });
+  const askHistory = useAskQAHistoryChat({ inlineErrors: true });
   const libraryUp = useFeatureAvailable('library_qa');
   const historyUp = useFeatureAvailable('qa_history');
   const text = useEchoPanelStore((st) => st.askText);
@@ -596,6 +599,8 @@ function AskComposer() {
           : await askHistory.mutateAsync({ question });
       updateTurn(id, { status: 'done', result });
     } catch (err) {
+      // A 401 says nothing: the session ends, and the thread with it (D-148 point 2).
+      if (isSessionEnded(err)) return;
       updateTurn(id, { status: 'error', error: requestErrorLine(err) });
     }
   };

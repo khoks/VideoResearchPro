@@ -26,8 +26,9 @@ export function ShelfPicker({ jobId, size = 'sm' }: Props) {
   const canWrite = has('shelves');
   const shelvesQuery = useShelves();
   const { shelves: onShelves } = useJobShelves(jobId);
+  // A failed change is said in the picker alone (T-3.4.1.22).
   const add = useAddJobToShelf();
-  const remove = useRemoveJobFromShelf();
+  const remove = useRemoveJobFromShelf({ inlineErrors: true });
   const create = useCreateShelf();
 
   const selectedIds = useMemo(() => new Set(onShelves.map((s) => s.id)), [onShelves]);

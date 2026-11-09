@@ -26,9 +26,11 @@
  * `inlineErrorMessage` fails the `sessionEnded` rows with "Not authenticated";
  * the panel's old `errorText` fails the frames' `noWords` and `noAnswer` rows
  * with axios's words; setting `meta` on `useDeleteNote` fails both "a note's
- * delete keeps its toast"; each hold taken out fails its "waits" test; the
- * saved search's one shared line back fails "each action has its own line";
- * and dropping the editor reset fails "a new editor starts clean".
+ * delete keeps its toast"; each hold taken out fails its "waits" or "holds"
+ * test (`runNow.isPending` out of the card's `busy` fails "holds its Delete
+ * while a run-now is out"); the saved search's one shared line back fails
+ * "each action has its own line"; and dropping the editor reset fails "a new
+ * editor starts clean".
  */
 import { act, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';

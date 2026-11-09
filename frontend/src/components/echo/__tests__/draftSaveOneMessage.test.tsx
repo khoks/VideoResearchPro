@@ -390,7 +390,7 @@ describe('the bubble’s draft', () => {
     expect(panel(), 'Escape').not.toBeNull();
     await click(document.querySelector<HTMLButtonElement>('.pratidhvani-echo-bubble')!);
     expect(panel(), 'the bubble').not.toBeNull();
-    await click(document.querySelector<HTMLButtonElement>('button[data-echo-opener]')!);
+    await click(document.querySelector<HTMLButtonElement>('button[data-echo-opener]:not(.pratidhvani-echo-bubble)')!);
     expect(panel(), 'the header button').not.toBeNull();
     await pressShortcut();
     expect(panel(), 'the shortcut').not.toBeNull();
@@ -406,7 +406,7 @@ describe('the bubble’s draft', () => {
 
   it('with no save out, the header button and the shortcut close it as before', async () => {
     await openInBubble();
-    await click(document.querySelector<HTMLButtonElement>('button[data-echo-opener]')!);
+    await click(document.querySelector<HTMLButtonElement>('button[data-echo-opener]:not(.pratidhvani-echo-bubble)')!);
     expect(panel()).toBeNull();
     await pressShortcut();
     expect(panel()).not.toBeNull();

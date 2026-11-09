@@ -312,7 +312,7 @@ function linesTheToastRepeats(src: string, hooks: Map<string, MetaWhen>): number
   const repeats = (names: string[]) => names.some((n) => standsAside.get(n) === false);
   const found: number[] = [];
   // A per-call `onError`.
-  for (const m of src.matchAll(/\b([A-Za-z_$][\w$]*)\.(mutate|mutateAsync)\(/g)) {
+  for (const m of src.matchAll(/\b([A-Za-z_$][\w$]*)\s*\.(mutate|mutateAsync)\(/g)) {
     const open = m.index! + m[0].length - 1;
     const args = src.slice(open, closing(src, open));
     if (repeats([m[1]]) && onErrorValues(args).some((v) => saysItOnThePage(src, v))) found.push(lineOf(src, m.index!));
@@ -321,7 +321,7 @@ function linesTheToastRepeats(src: string, hooks: Map<string, MetaWhen>): number
   for (const m of src.matchAll(/\btry\s*\{/g)) {
     const open = m.index! + m[0].length - 1;
     const end = closing(src, open);
-    const names = [...src.slice(open, end).matchAll(/\b([A-Za-z_$][\w$]*)\.mutateAsync\(/g)].map((n) => n[1]);
+    const names = [...src.slice(open, end).matchAll(/\b([A-Za-z_$][\w$]*)\s*\.mutateAsync\(/g)].map((n) => n[1]);
     const handler = /^\s*catch\s*(?:\(\s*([A-Za-z_$][\w$]*)[^)]*\))?\s*\{/.exec(src.slice(end));
     if (!names.length || !handler) continue;
     const catchOpen = end + handler[0].length - 1;
@@ -329,7 +329,7 @@ function linesTheToastRepeats(src: string, hooks: Map<string, MetaWhen>): number
     if (repeats(names) && saysItOnThePage(src, `(${handler[1] ?? ''}) => ${body}`)) found.push(lineOf(src, m.index!));
   }
   // `.mutateAsync(...).then(...).catch(...)`.
-  for (const m of src.matchAll(/\b([A-Za-z_$][\w$]*)\.mutateAsync\(/g)) {
+  for (const m of src.matchAll(/\b([A-Za-z_$][\w$]*)\s*\.mutateAsync\(/g)) {
     let i = closing(src, m.index! + m[0].length - 1);
     for (let chained = /^\s*\.(then|catch|finally)\(/.exec(src.slice(i)); chained; chained = /^\s*\.(then|catch|finally)\(/.exec(src.slice(i))) {
       const open = i + chained[0].length - 1;
@@ -395,6 +395,7 @@ describe('the second guard', () => {
     ["const x = useBare();\nconst fail = (err: unknown) =>\n  setError(detailFromErrorBody((err as E).response?.data) ?? 'No.');\nx.mutate(p, { onError: fail });"],
     ["const x = useEither();\nasync function go() {\n  try {\n    await x.mutateAsync(p);\n  } catch (err) {\n    updateTurn(id, { status: 'error', error: requestErrorLine(err) });\n  }\n}"],
     ["const x = useBare();\nx.mutateAsync(p).then(() => go()).catch((e) => setError(inlineErrorMessage(e, 'No.')));"],
+    ["const x = useBare();\nx\n  .mutateAsync(p)\n  .then(() => go())\n  .catch((e) => setError(inlineErrorMessage(e, 'No.')));"],
     ["const m = useMutation({ mutationFn: f });\nm.mutate(p, { onError: (e) => setError(apiErrorMessage(e, 'No.')) });"],
   ])('catches %s', (src) => {
     expect(linesTheToastRepeats(src, HOOKS)).toHaveLength(1);

@@ -15,9 +15,10 @@
  *
  * Mutation checks, run on 2026-11-09: taking `meta` off `useCompleteConnector`
  * fails the callback page's rows but `sessionEnded` with the page's line and a
- * toast; `apiErrorMessage` back for `inlineErrorMessage` there fails
- * `sessionEnded`; putting back `await revoke.mutateAsync(...)` fails every
- * failed-disconnect row on "nothing rejects unhandled".
+ * toast, and the second guard in `oneToastPerFailure.test.ts`;
+ * `inlineErrorMessage` without its 401 check fails `sessionEnded`; putting back
+ * `await revoke.mutateAsync(...)` fails every failed-disconnect row, a 401's
+ * included, on "nothing rejects unhandled".
  */
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';

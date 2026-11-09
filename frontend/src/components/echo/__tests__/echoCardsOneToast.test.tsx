@@ -197,9 +197,10 @@ describe('the drop zone', () => {
 // words, one toast each. A per-call `onSuccess` runs for an observer's last
 // `mutate` only, so of several files only the last was named. Mutation checks,
 // run on 2026-11-09: putting back the per-call `onSuccess` on `upload.mutate`
-// fails "names each of three dropped files" and "says the file that landed";
-// on `create.mutate`, "says a link and some text dropped one after the other";
-// taking out the `mounted` check fails "says nothing once the zone has gone".
+// fails "names each of three dropped files" (the mixed drop still passes, its
+// last file being the one that landed); on `create.mutate`, "says a link and
+// some text dropped one after the other"; taking out the `mounted` check fails
+// "says nothing once the zone has gone".
 describe('the drop zone, when files land', () => {
   const pdf = (name: string) => new File(['x'], name, { type: 'application/pdf' });
 

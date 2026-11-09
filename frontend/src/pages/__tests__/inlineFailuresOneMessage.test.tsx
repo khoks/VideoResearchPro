@@ -11,9 +11,9 @@
  * Mutation checks, run on 2026-11-09: taking `meta` off `useUpdateTag` fails the
  * tag save's `words`, `noWords` and `noAnswer` rows with the line and a toast;
  * off `useDeleteTag`, the merge and delete rows; off `useDeleteShelf` or
- * `useDeleteTemplate`, their rows. Putting `apiErrorMessage` back for
- * `inlineErrorMessage` at any of the five calls fails its `sessionEnded` row,
- * with "Not authenticated" on the page.
+ * `useDeleteTemplate`, their rows. Each also fails the second guard in
+ * `oneToastPerFailure.test.ts`. `inlineErrorMessage` without its 401 check fails
+ * every `sessionEnded` row here, with "Not authenticated" on the page.
  */
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';

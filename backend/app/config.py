@@ -10,6 +10,14 @@ from pydantic import field_validator
 held_warnings: list[str] = []
 
 
+def hold_warning(message: str) -> None:
+    """Hold ``message`` for ``configure_logging``, once: settings can load
+    more than once before it runs (a script, a test, Alembic), and the same
+    warning twice says nothing new."""
+    if message not in held_warnings:
+        held_warnings.append(message)
+
+
 class Settings(BaseSettings):
     # App
     APP_NAME: str = "Pratidhvani"
@@ -788,7 +796,7 @@ class Settings(BaseSettings):
         production must set a real value.
         """
         if v is None or (isinstance(v, str) and not v.strip()):
-            held_warnings.append(
+            hold_warning(
                 "JWT_SECRET is blank; using the insecure development default. "
                 "Set JWT_SECRET in backend/.env (any long random string)."
             )

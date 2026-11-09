@@ -8,11 +8,21 @@ before logging has a format.
 """
 from __future__ import annotations
 
-import logging
 from unittest.mock import patch
 
-from app.config import Settings
+import pytest
+
+from app.config import Settings, held_warnings
 from app.utils.json_logging import configure_logging
+
+
+@pytest.fixture(autouse=True)
+def _nothing_held():
+    """Another test can load settings from a blank template and leave its
+    warning held (test_docs_match_code does); only a migration says it."""
+    held_warnings.clear()
+    yield
+    held_warnings.clear()
 
 
 def test_blank_secret_falls_back_to_dev_default_and_warns():
@@ -25,6 +35,15 @@ def test_blank_secret_falls_back_to_dev_default_and_warns():
         assert "JWT_SECRET is blank" in warn.call_args.args[0]
         configure_logging()
     assert warn.call_count == 1, "said once, however often logging is set up"
+
+
+def test_settings_loaded_twice_warn_once():
+    """A script or Alembic can load settings again before logging is set up."""
+    with patch("logging.Logger.warning") as warn:
+        Settings(JWT_SECRET="")
+        Settings(JWT_SECRET="   ")
+        configure_logging()
+    assert warn.call_count == 1
 
 
 def test_real_secret_passes_through():

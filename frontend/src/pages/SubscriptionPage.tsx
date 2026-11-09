@@ -9,7 +9,7 @@ import { TIER_DESCRIPTORS, getTierDescriptor } from '../data/tiers';
 import { TierCard } from '../components/marketing/TierCard';
 import { MockPaymentModal } from '../components/marketing/MockPaymentModal';
 import { UsageSummaryPanel } from '../components/account/UsageSummaryPanel';
-import { apiErrorMessage } from '../utils/apiError';
+import { ERRORS_SHOWN_HERE, toastMutationError } from '../services/queryClient';
 import { useQuota } from '../hooks/useChannelIntelligence';
 import { documentUsageLine } from '../utils/documentCap';
 import { fonts, fontSize, fontWeight, lineHeight, radius, space } from '../theme';
@@ -84,11 +84,14 @@ export function SubscriptionPage() {
         `You're now on the ${data.tier.charAt(0).toUpperCase() + data.tier.slice(1)} plan. New features are active immediately.`,
       );
     },
+    // This page says the failure, so the global toast stays out of the way, and
+    // nothing of a 401, which the session-expiry path owns (T-3.4.1.17).
     onError: (err) => {
       setTargetTier(null);
       setConfirmingDowngrade(null);
-      pushToast('error', apiErrorMessage(err, 'Could not change your plan. Try again.'));
+      toastMutationError(err, 'Could not change your plan. Try again.');
     },
+    meta: ERRORS_SHOWN_HERE,
   });
 
   const handleAction = (tier: Tier) => {

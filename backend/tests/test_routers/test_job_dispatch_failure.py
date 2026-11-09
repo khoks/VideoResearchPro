@@ -10,7 +10,9 @@ does the same since #424 (T-5.2.15).
 Approval resumes a run the user is looking at. Its row was ``awaiting_approval``
 before and stays so, picks kept, so Approve works again once the queue is back
 and Cancel frees the place; failing it would throw the candidates away. It
-answers 503 in words instead of a 500.
+answers 503 in words instead of a 500, and grants the approved documents only
+once the resume is queued, so a refused approval holds no place under the
+document cap.
 
 Mutation checks: remove the ``except`` around ``dispatch_for_user`` in
 ``create_job`` and ``test_a_run_the_broker_refused_is_failed_and_holds_no_place``
@@ -25,8 +27,10 @@ import pytest
 
 from app.config import settings
 from app.models.document import Document
+from app.models.document_visibility import DocumentVisibility
 from app.models.job import Job
 from app.models.job_video import JobVideo
+from app.services import document_cap_service
 
 BODIES = {
     "topic": {"job_type": "topic", "topic": "tariffs"},
@@ -110,20 +114,33 @@ def test_an_approval_the_broker_refused_can_be_approved_again(client, db, test_u
     db.expire_all()
     assert db.get(Job, job.id).status == "awaiting_approval"
     assert db.get(JobVideo, (job.id, doc.document_id)).approved is True, "the picks are kept"
+    assert document_cap_service.visible_count(db, test_user.id) == 0, "nothing granted for a run that never started"
 
     with patch("app.routers.jobs.resume_job_after_approval") as task:
         task.apply_async.return_value = MagicMock(id="resume-task")
         approved = client.put(f"/api/v1/jobs/{job.id}/approve", json=body)
     assert approved.status_code == 200
     assert approved.json()["status"] == "extracting"
+    # The approval that was queued grants at once (T-5.2.10), as before.
+    assert document_cap_service.visible_count(db, test_user.id) == 1
 
 
 def test_a_refused_approval_can_be_cancelled_to_free_its_place(client, db, test_user):
+    """Cancel frees the job-limit place, and the refused approval held no
+    place under the document cap (D-115) either: its documents were never
+    read, so they were never granted.
+
+    Mutation check: move ``visibility_service.grant`` in ``approve_job`` back
+    above the dispatch and the cap count is 1 after the cancel."""
     job, doc = _awaiting(db, test_user.id)
+    before = document_cap_service.visible_count(db, test_user.id)
     with patch("app.routers.jobs.resume_job_after_approval") as task:
         task.apply_async.side_effect = BROKER_DOWN
-        client.put(f"/api/v1/jobs/{job.id}/approve", json={"approved_video_ids": [doc.video_id]})
+        refused = client.put(f"/api/v1/jobs/{job.id}/approve", json={"approved_video_ids": [doc.video_id]})
+    assert refused.status_code == 503
 
     assert client.post(f"/api/v1/jobs/{job.id}/cancel").status_code == 200
     db.expire_all()
     assert db.get(Job, job.id).status == "cancelled"
+    assert document_cap_service.visible_count(db, test_user.id) == before
+    assert db.query(DocumentVisibility).filter(DocumentVisibility.document_id == doc.document_id).count() == 0

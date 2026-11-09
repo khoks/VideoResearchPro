@@ -209,16 +209,6 @@ def approve_job(
     job.celery_task_id = None
     db.commit()
 
-    # T-5.2.10: the approved documents join the library now, not when the
-    # resume task starts. The cap counts visibility grants, and the resume can
-    # wait behind other work on the (solo) worker for hours; until it ran, a
-    # second approval, a paste or an upload was measured against a count that
-    # left this approval out. The resume task re-grants the same set
-    # (idempotent). After the commit, because a failed grant rolls back.
-    visibility_service.grant(
-        db, approved_document_ids, current_user.id, visibility_service.SOURCE_JOB
-    )
-
     # T-5.6.5: route resume on the same queue as the original job dispatch
     # by looking up the user via job.tenant_id. Falls back to default queue
     # for legacy NULL-tenant jobs.
@@ -230,12 +220,29 @@ def approve_job(
     except Exception:  # noqa: BLE001 - the broker is down: say so, in words
         # T-5.2.17: the run stays awaiting approval, with the picks kept, so
         # Approve works again once the queue is back, and Cancel frees its
-        # place. Failing it would throw the candidates away.
+        # place. Failing it would throw the candidates away. Nothing was
+        # granted yet (below), so the documents hold no place under the
+        # document cap either.
         logger.exception("Failed to dispatch the resume of job %s", job_id)
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Could not queue the run; the task queue is unavailable. Approve it again in a few minutes.",
         )
+
+    # T-5.2.10: the approved documents join the library now, not when the
+    # resume task starts. The cap counts visibility grants, and the resume can
+    # wait behind other work on the (solo) worker for hours; until it ran, a
+    # second approval, a paste or an upload was measured against a count that
+    # left this approval out. The resume task re-grants the same set
+    # (idempotent). After the commit, because a failed grant rolls back.
+    # T-5.2.17: after the dispatch too, so a run the queue refused grants
+    # nothing: its documents were never read and must not count toward the
+    # cap. ``grant`` never raises (best-effort), and a grant lost here is
+    # written by the resume task.
+    visibility_service.grant(
+        db, approved_document_ids, current_user.id, visibility_service.SOURCE_JOB
+    )
+
     job = job_service.update_job_status(db, job_id, "extracting", progress_pct=30,
                                         progress_message="Starting transcript extraction...")
     if job is not None:

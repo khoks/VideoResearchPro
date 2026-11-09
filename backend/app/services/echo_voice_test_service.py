@@ -49,7 +49,9 @@ test already open, and ``ECHO_VOICE_TESTS_PER_DAY``. The tier
 (``echo_speak_as_me``) is the router's 403. Only the user's click starts a
 test, after the page has said it makes about 40 model calls. Those checks
 read and then insert, so the rule of one open test is held by a partial
-unique index, which turns the loser of a race into the same conflict.
+unique index, which turns the loser of a race into the same conflict. A test
+the task queue refused (``NOT_QUEUED``) made no call, so it does not count
+toward the day's starts (T-5.2.17).
 
 **A test closed under the worker stays closed.** The page's poll marks a
 test failed when the worker has said nothing for ``STALE_AFTER``. Everything
@@ -71,6 +73,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Iterable, Iterator
 
+from sqlalchemy import and_, func, not_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -97,6 +100,10 @@ DRAFT_MAX_TOKENS = 1200
 #: A test "generating" that has shown no progress for this long lost its
 #: worker. Well above a slow pair: two calls of three tries each.
 STALE_AFTER = timedelta(minutes=30)
+#: What a test the task queue refused says. It is also how ``tests_today``
+#: knows the test never reached a worker: no column says so, and none is
+#: worth a migration while this sentence is written only here.
+NOT_QUEUED = "The test could not be started. Try again in a few minutes."
 
 LANGUAGE_NAMES = {
     "en": "English",
@@ -439,8 +446,23 @@ def get_test(db: Session, tenant_id: str, test_id: str) -> EchoVoiceTest:
 
 
 def tests_today(db: Session, tenant_id: str) -> int:
+    """The tests started today that count toward ``ECHO_VOICE_TESTS_PER_DAY``.
+    One the task queue refused is left out (T-5.2.17): it never reached a
+    worker and made no model call, so a broker outage does not use up the
+    user's starts for the day."""
     start = _now().replace(hour=0, minute=0, second=0, microsecond=0)
-    return db.query(EchoVoiceTest).filter(EchoVoiceTest.tenant_id == tenant_id, EchoVoiceTest.created_at >= start).count()
+    never_queued = and_(
+        EchoVoiceTest.status == "failed",
+        EchoVoiceTest.pairs_built == 0,
+        # COALESCE: a failed test with no error would make the AND unknown,
+        # and NOT unknown would drop it from the count.
+        func.coalesce(EchoVoiceTest.error, "") == NOT_QUEUED,
+    )
+    return (
+        db.query(EchoVoiceTest)
+        .filter(EchoVoiceTest.tenant_id == tenant_id, EchoVoiceTest.created_at >= start, not_(never_queued))
+        .count()
+    )
 
 
 def offer(db: Session, user: User) -> dict:
@@ -572,7 +594,7 @@ def _dispatch(db: Session, user: User, test_id: str) -> str:
         return "queued"
     except Exception:  # noqa: BLE001
         logger.exception("voice test: could not queue %s", test_id)
-        _fail(db, test_id, "The test could not be started. Try again in a few minutes.")
+        _fail(db, test_id, NOT_QUEUED)
         return "queue_failed"
 
 

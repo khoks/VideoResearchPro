@@ -193,7 +193,7 @@ backend/
 │       ├── html_builder.py      # Jinja2 env + custom number_format filter
 │       ├── tiktoken_cache.py    # tiktoken's encoding in TIKTOKEN_ENCODINGS_DIR (T-8.8.6.5)
 │       └── ...
-├── tests/                       # 5,400+ tests, mostly pytest + httpx test client
+├── tests/                       # 5,800+ tests, mostly pytest + httpx test client
 ├── alembic/                     # Alembic migrations
 └── scripts/                     # measurement harnesses, backfills (dry run unless --write), and
     ├── fix_anchor_links.py      # the Markdown anchor checker CI runs

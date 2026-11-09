@@ -265,15 +265,47 @@ def cancel_job(
     job = job_service.get_job(db, job_id, tenant_id=current_user.id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
-    if job.status in ("completed", "cancelled", "failed"):
-        raise HTTPException(status_code=400, detail=f"Job cannot be cancelled (status: {job.status})")
+    if job.status in job_service.ENDED_STATUSES:
+        raise _cannot_cancel(job.status)
 
-    # Revoke Celery task if running
+    # T-5.2.22: only while the row is still active, in one conditional UPDATE.
+    # The run can complete or fail between the read above and this write; it
+    # then keeps its end, and the cancel answers what it would have answered
+    # a moment later.
+    job = job_service.update_job_status(
+        db, job_id, "cancelled", progress_message="Job cancelled by user", unless_ended=True
+    )
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if job.status != "cancelled":
+        raise _cannot_cancel(job.status)
+
+    # Revoked only once the row says cancelled, and with the task id the row
+    # holds now (an approval may have stored the resume's meanwhile). A run
+    # that ended first needs no revoke: a completed or failed run's task is
+    # done or closing, and terminating it there would lose the usage its scope
+    # writes as it closes. The row is what stops a run (T-5.2.20): a delivered
+    # task returns at once on a cancelled row, a running one stops at its next
+    # check, so a revoke the broker refuses is logged, not answered as a 500
+    # for a cancel that took.
     if job.celery_task_id:
         from app.tasks.celery_app import celery_app
-        celery_app.control.revoke(job.celery_task_id, terminate=True)
-    job = job_service.update_job_status(db, job_id, "cancelled", progress_message="Job cancelled by user")
+        try:
+            celery_app.control.revoke(job.celery_task_id, terminate=True)
+        except Exception as e:  # noqa: BLE001 - the broker is down; the row already stops the run
+            # The type alone: a broker error can quote its URL and password.
+            logger.warning("[job:%s] cancelled, but its task could not be revoked: %s", job_id, type(e).__name__)
     return job_service.job_to_response_dict(job)
+
+
+_ENDED_WORDS = {"completed": "completed", "failed": "failed", "cancelled": "been cancelled"}
+
+
+def _cannot_cancel(status_: str) -> HTTPException:
+    """The one answer for a cancel that reaches a run already over, whether it
+    ended before the route read it or between that read and the write."""
+    ended = _ENDED_WORDS.get(status_, f"ended ({status_})")
+    return HTTPException(status_code=400, detail=f"This run has already {ended}, so there is nothing to cancel.")
 
 
 @router.delete("/{job_id}", status_code=204)

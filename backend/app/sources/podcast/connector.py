@@ -32,6 +32,8 @@ from app.sources.types import (
     ExtractedText,
     SourceMetadata,
 )
+from app.utils.log_redaction import provider_error_text
+from app.utils.shared_url_log import host_of, loggable_id, shared_url_fetch
 
 logger = logging.getLogger(__name__)
 
@@ -239,6 +241,7 @@ def _parse_itunes_duration(raw: str) -> int | None:
         return None
 
 
+@shared_url_fetch()
 def _resolve_transcript_segments(
     entry: Any, episode_url: str
 ) -> list[dict[str, Any]] | None:
@@ -296,8 +299,8 @@ def _resolve_transcript_segments(
     except (httpx.HTTPError, httpx.InvalidURL) as e:
         logger.warning(
             "podcast: in-feed transcript fetch failed for %s: %s",
-            url,
-            e,
+            host_of(url),
+            type(e).__name__,
         )
         return None
 
@@ -333,6 +336,8 @@ def _whisper_transcribe_audio(
         return None
     from app.services import llm_service
 
+    label = loggable_id(source_id)
+
     # T-5.6.13: the tenant's key when they brought one, as Echo recordings, so
     # an install with no key of its own can still read their episodes.
     api_key = llm_service.whisper_api_key()
@@ -340,7 +345,7 @@ def _whisper_transcribe_audio(
         logger.warning(
             "podcast: no OpenAI key, yours or the install's; cannot "
             "Whisper-transcribe %s",
-            source_id,
+            label,
         )
         return None
 
@@ -366,17 +371,18 @@ def _whisper_transcribe_audio(
         except (httpx.HTTPError, httpx.InvalidURL, OSError, podcast_client.AudioTooLargeError) as e:
             logger.warning(
                 "podcast: audio fetch failed for %s (%s): %s",
-                source_id,
-                audio_url,
-                e,
+                label,
+                host_of(audio_url),
+                type(e).__name__,
             )
             return None
         if audio_size == 0:
-            logger.warning("podcast: empty audio for %s (%s)", source_id, audio_url)
+            logger.warning("podcast: empty audio for %s (%s)", label, host_of(audio_url))
             return None
 
         # Reuse the YouTube Whisper helper. Tag is a free-form log
-        # prefix; pass the source_id so log lines are correlatable.
+        # prefix, and the helper's id is only ever logged, so it gets the
+        # label, which is correlatable and holds no URL.
         from openai import OpenAI
 
         from app.services import youtube_service
@@ -386,7 +392,7 @@ def _whisper_transcribe_audio(
         tag = f"[job:{job_id}] [podcast]" if job_id else "[podcast]"
         if audio_size > youtube_service.WHISPER_MAX_FILE_BYTES:
             result = youtube_service._transcribe_in_chunks(
-                client, tmp_path, work_dir, source_id, tag
+                client, tmp_path, work_dir, label, tag
             )
             return result[0] if result else None
 
@@ -395,15 +401,15 @@ def _whisper_transcribe_audio(
             response = _whisper_transcribe_with_retry(
                 client,
                 tmp_path,
-                source_id,
+                label,
                 tag,
                 size_mb,
             )
         except Exception as e:
             logger.warning(
                 "podcast: Whisper transcription failed for %s: %s",
-                source_id,
-                youtube_service.whisper_error_text(e),
+                label,
+                provider_error_text(e),
             )
             return None
 
@@ -481,7 +487,7 @@ class PodcastConnector(BaseConnector):
                 feed = client.fetch_feed(feed_url)
             except Exception as e:
                 logger.warning(
-                    "podcast: feed fetch failed for %s: %s", feed_url, e
+                    "podcast: feed fetch failed for %s: %s", host_of(feed_url), type(e).__name__
                 )
                 feed_failure = e
                 continue
@@ -520,8 +526,8 @@ class PodcastConnector(BaseConnector):
         except Exception as e:
             logger.warning(
                 "podcast: feed fetch failed for %s: %s",
-                creator_external_id,
-                e,
+                host_of(creator_external_id),
+                type(e).__name__,
                 extra={"job_id": job_id},
             )
             return
@@ -590,8 +596,8 @@ class PodcastConnector(BaseConnector):
         except Exception as e:
             logger.warning(
                 "podcast: fetch_creator feed-fetch failed for %s: %s",
-                creator_external_id,
-                e,
+                host_of(creator_external_id),
+                type(e).__name__,
             )
             return None
         feed_meta = feed.get("feed") if isinstance(feed, dict) else None
@@ -671,7 +677,7 @@ class PodcastConnector(BaseConnector):
         if not feed_url:
             logger.warning(
                 "podcast fetch_text: no feed_url for %s; cannot fetch entry",
-                candidate.source_id,
+                loggable_id(candidate.source_id),
             )
             return None
         client = podcast_client.get_client()
@@ -680,8 +686,8 @@ class PodcastConnector(BaseConnector):
         except Exception as e:
             logger.warning(
                 "podcast fetch_text: feed fetch failed for %s: %s",
-                feed_url,
-                e,
+                host_of(feed_url),
+                type(e).__name__,
                 extra={"job_id": job_id},
             )
             return None
@@ -690,8 +696,8 @@ class PodcastConnector(BaseConnector):
         if entry is None:
             logger.warning(
                 "podcast fetch_text: no entry with guid %s in feed %s",
-                guid,
-                feed_url,
+                loggable_id(guid),
+                host_of(feed_url),
             )
             return None
 
@@ -716,7 +722,7 @@ class PodcastConnector(BaseConnector):
             logger.info(
                 "podcast fetch_text: no in-feed transcript for %s and Whisper "
                 "not allowed here; text unavailable for now",
-                candidate.source_id,
+                loggable_id(candidate.source_id),
                 extra={"job_id": job_id},
             )
             return None

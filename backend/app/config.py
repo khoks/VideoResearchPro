@@ -4,6 +4,20 @@ from pydantic_settings import BaseSettings
 from pydantic import field_validator
 
 
+# What a validator below has to say as settings load (T-4.11.3.2). Logging has
+# no format then, LOG_FORMAT being one of these settings, so it would go out as
+# a bare line. `configure_logging` says these once the format is set.
+held_warnings: list[str] = []
+
+
+def hold_warning(message: str) -> None:
+    """Hold ``message`` for ``configure_logging``, once: settings can load
+    more than once before it runs (a script, a test, Alembic), and the same
+    warning twice says nothing new."""
+    if message not in held_warnings:
+        held_warnings.append(message)
+
+
 class Settings(BaseSettings):
     # App
     APP_NAME: str = "Pratidhvani"
@@ -782,9 +796,7 @@ class Settings(BaseSettings):
         production must set a real value.
         """
         if v is None or (isinstance(v, str) and not v.strip()):
-            import logging
-
-            logging.getLogger("app.config").warning(
+            hold_warning(
                 "JWT_SECRET is blank; using the insecure development default. "
                 "Set JWT_SECRET in backend/.env (any long random string)."
             )

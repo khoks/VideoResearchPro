@@ -2,7 +2,13 @@ import logging
 import sys
 
 from celery import Celery
-from celery.signals import after_setup_logger, after_setup_task_logger, worker_process_init, worker_ready
+from celery.signals import (
+    after_setup_logger,
+    after_setup_task_logger,
+    celeryd_after_setup,
+    worker_process_init,
+    worker_ready,
+)
 from celery.utils.log import get_multiprocessing_logger
 
 from app.config import settings
@@ -15,8 +21,7 @@ logger = logging.getLogger(__name__)
 @after_setup_task_logger.connect
 def _apply_log_format(logger: logging.Logger, **_kwargs) -> None:
     """T-4.11.2.2: Celery sets up its own handlers in the worker and in beat,
-    whatever the API did, so LOG_FORMAT=json is applied here. Celery's start
-    banner is printed, not logged, and stays as it is."""
+    whatever the API did, so LOG_FORMAT=json is applied here."""
     if not json_logs_enabled():
         return
     use_json_format(logger)
@@ -24,11 +29,28 @@ def _apply_log_format(logger: logging.Logger, **_kwargs) -> None:
     if pool_logger is not None:
         use_json_format(pool_logger)
 
+
+@celeryd_after_setup.connect
+def _no_worker_banner_under_json(instance, **_kwargs) -> None:
+    """T-4.11.3.2: the worker prints its start banner, not logs it, on its next
+    line after this signal. `quiet` is what `celery -q` sets, and all it turns
+    off is the banner: everything the banner says is in the settings, and the
+    worker still logs that it is connected and ready."""
+    if json_logs_enabled():
+        instance.quiet = True
+
+
 celery_app = Celery(
     "videoresearchpro",
     broker=settings.CELERY_BROKER_URL,
     backend=settings.CELERY_RESULT_BACKEND,
 )
+
+if json_logs_enabled():
+    # Beat prints its banner too, before any signal it sends, and the CLI
+    # builds it from this attribute with `quiet` as its own flag says.
+    _Beat = celery_app.Beat
+    celery_app.Beat = lambda **kwargs: _Beat(**{**kwargs, "quiet": True})
 
 
 def _beat_schedule() -> dict:

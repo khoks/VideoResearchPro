@@ -23,6 +23,7 @@ from app.models.transcript_cache import TranscriptCache
 from app.services import quota_service, usage_service
 from app.services.quota_service import QuotaExceededError
 from app.services.source_failure import TranscriptionCutShort
+from app.utils.log_redaction import provider_error_text
 from app.utils.rate_limiter import RateLimiter
 from app.utils.youtube_helpers import parse_iso8601_duration
 
@@ -1267,15 +1268,6 @@ _WHISPER_MAX_ATTEMPTS = 3
 _WHISPER_RETRY_BACKOFF = (5, 15)  # seconds between attempts 1→2 and 2→3
 
 
-def whisper_error_text(e: BaseException) -> str:
-    """What a log line may say about a failed Whisper call. A key the provider
-    refused comes back quoted in part in the error, and since T-5.6.13 it can
-    be a tenant's, so those are named by type alone."""
-    from openai import AuthenticationError, PermissionDeniedError
-
-    return type(e).__name__ if isinstance(e, (AuthenticationError, PermissionDeniedError)) else str(e)
-
-
 def _whisper_transcribe_with_retry(
     client, audio_path: str, video_id: str, tag: str, audio_size_mb: float
 ):
@@ -1326,7 +1318,7 @@ def _whisper_transcribe_with_retry(
             # Non-retryable: re-raise so the caller records unavailable.
             logger.error(
                 f"{tag} Whisper non-retryable error for {video_id} "
-                f"(attempt {attempt}): {type(e).__name__}: {whisper_error_text(e)}"
+                f"(attempt {attempt}): {type(e).__name__}: {provider_error_text(e)}"
             )
             raise
         except (APIConnectionError, APITimeoutError, InternalServerError) as e:
@@ -1665,7 +1657,7 @@ def _transcribe_in_chunks(
             )
         except Exception as e:
             logger.error(
-                f"{tag} Whisper failed on chunk {idx + 1}/{n} of {source_id}: {whisper_error_text(e)}"
+                f"{tag} Whisper failed on chunk {idx + 1}/{n} of {source_id}: {provider_error_text(e)}"
             )
             response = None
         if response is None:
@@ -1768,7 +1760,7 @@ def _transcribe_with_whisper(
             )
         except Exception as e:
             logger.error(
-                f"{tag} OpenAI Whisper API transcription failed for {video_id}: {whisper_error_text(e)}"
+                f"{tag} OpenAI Whisper API transcription failed for {video_id}: {provider_error_text(e)}"
             )
             return None
         if response is None:

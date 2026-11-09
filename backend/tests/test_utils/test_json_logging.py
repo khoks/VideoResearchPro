@@ -1,4 +1,4 @@
-"""T-4.11.2.2: ``LOG_FORMAT``.
+"""T-4.11.2.2 and T-4.11.3.2: ``LOG_FORMAT``.
 
 The two processes are checked in subprocesses, because what matters is how
 logging ends up after uvicorn, Alembic and Celery have each had their turn, and
@@ -23,7 +23,12 @@ the call from ``alembic/env.py``
 dropping its text guard (``test_text_leaves_the_model_libraries_alone``). A
 worker redirects stderr into the logger, so
 ``test_a_model_load_in_a_worker_writes_json_lines`` catches only the missing
-call and the missing ``propagate``.
+call and the missing ``propagate``. Not connecting ``celeryd_after_setup``
+(``test_the_real_worker_writes_nothing_else``), dropping the ``Beat`` override
+(``test_the_real_beat_writes_nothing_else``), and logging the blank-secret
+warning from the validator again
+(``test_a_blank_secret_warns_in_the_format_of_the_log``). Turning either banner
+off whatever the format fails its ``_keeps_its_banner_under_text`` test.
 """
 from __future__ import annotations
 
@@ -33,6 +38,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -171,11 +177,10 @@ def test_every_model_load_routes_the_libraries_first():
 # ---------------------------------------------------------------------------
 
 
-def _run(script: str, tmp_path: Path, log_format: str | None) -> list[str]:
-    """Run ``script`` in a fresh interpreter from backend/, returning its
-    non-empty lines of stderr and stdout. Settings come from the environment,
-    and nothing it opens is the install's: the database and Chroma live in
-    ``tmp_path``, the broker in memory."""
+def _env(tmp_path: Path, log_format: str | None, **extra: str) -> dict[str, str]:
+    """Settings come from the environment, and nothing a process opens is the
+    install's: the database and Chroma live in ``tmp_path``, the broker in
+    memory."""
     env = {
         **os.environ,
         "DATABASE_URL": f"sqlite:///{(tmp_path / 'app.db').as_posix()}",
@@ -183,15 +188,47 @@ def _run(script: str, tmp_path: Path, log_format: str | None) -> list[str]:
         "CELERY_BROKER_URL": "memory://",
         "CELERY_RESULT_BACKEND": "cache+memory://",
         "PYTHONIOENCODING": "utf-8",
+        **extra,
     }
     env.pop("LOG_FORMAT", None)
     if log_format is not None:
         env["LOG_FORMAT"] = log_format
+    return env
+
+
+def _run(script: str, tmp_path: Path, log_format: str | None, **extra: str) -> list[str]:
+    """Run ``script`` in a fresh interpreter from backend/, returning its
+    non-empty lines of stderr and stdout."""
+    env = _env(tmp_path, log_format, **extra)
     done = subprocess.run(
         [_PYTHON, "-c", script], cwd=_BACKEND, env=env, capture_output=True, text=True, encoding="utf-8", timeout=900
     )
     assert done.returncode == 0, done.stderr[-4000:]
     return [line for line in (done.stderr + done.stdout).splitlines() if line.strip()]
+
+
+def _celery(tmp_path: Path, log_format: str | None, args: list[str], until: str) -> list[str]:
+    """The real ``celery`` CLI, until it has written ``until``: what it printed
+    by then, all of it, in the order it came. Read before the process is told
+    to stop, because on a signal a worker writes its shutdown notices straight
+    to the stream (NFR-5.1 names them)."""
+    output = tmp_path / "celery.log"
+    command = [_PYTHON, "-m", "celery", "-A", "app.tasks.celery_app", *args]
+    with open(output, "wb") as sink:
+        # Unbuffered: a banner printed to a file and then killed would never show.
+        env = _env(tmp_path, log_format, PYTHONUNBUFFERED="1")
+        process = subprocess.Popen(command, cwd=_BACKEND, env=env, stdout=sink, stderr=subprocess.STDOUT)
+        try:
+            deadline = time.monotonic() + 240
+            while until not in output.read_text(encoding="utf-8"):
+                assert process.poll() is None, output.read_text(encoding="utf-8")[-4000:]
+                assert time.monotonic() < deadline, output.read_text(encoding="utf-8")[-4000:]
+                time.sleep(0.2)
+            written = output.read_text(encoding="utf-8")
+        finally:
+            process.terminate()
+            process.wait(30)
+    return [line for line in written.splitlines() if line.strip()]
 
 
 _API = """
@@ -350,3 +387,47 @@ def test_text_leaves_the_worker_as_it_was(tmp_path):
     lines = _run(_WORKER, tmp_path, "text")
     assert any("from the worker" in line for line in lines)
     assert not any(line.startswith("{") for line in lines)
+
+
+_REAL_WORKER = ["worker", "--pool=solo", "--loglevel=info"]
+# The worker prints its banner and then connects, so stopping there has seen it
+# or its absence, and spares the embedding model that loads once it is ready.
+_WORKER_CONNECTED = "Connected to memory://"
+_BEAT_STARTED = "beat: Starting"
+
+
+def _real_beat(tmp_path: Path) -> list[str]:
+    return ["beat", "--loglevel=info", "-s", str(tmp_path / "beat-schedule")]
+
+
+def test_the_real_worker_writes_nothing_else(tmp_path):
+    """T-4.11.3.2: a start banner is ``print``, which no handler sees."""
+    entries = _json_lines(_celery(tmp_path, "json", _REAL_WORKER, _WORKER_CONNECTED))
+    assert any(e["message"].startswith(_WORKER_CONNECTED) for e in entries)
+
+
+def test_the_real_worker_keeps_its_banner_under_text(tmp_path):
+    lines = _celery(tmp_path, "text", _REAL_WORKER, _WORKER_CONNECTED)
+    assert any(".> transport:" in line for line in lines)
+
+
+def test_the_real_beat_writes_nothing_else(tmp_path):
+    entries = _json_lines(_celery(tmp_path, "json", _real_beat(tmp_path), _BEAT_STARTED))
+    assert any(e["message"].startswith(_BEAT_STARTED) for e in entries)
+
+
+def test_the_real_beat_keeps_its_banner_under_text(tmp_path):
+    lines = _celery(tmp_path, "text", _real_beat(tmp_path), _BEAT_STARTED)
+    assert any("LocalTime ->" in line for line in lines)
+
+
+@pytest.mark.parametrize("log_format", ["json", None])
+def test_a_blank_secret_warns_in_the_format_of_the_log(tmp_path, log_format):
+    """T-4.11.3.2: settings load before logging can have a format, ``LOG_FORMAT``
+    being one of them, so the warning waits for it. ``_json_lines`` fails on a
+    bare line, and exactly one says it however often logging is set up."""
+    lines = _run(_API, tmp_path, log_format, JWT_SECRET="")
+    assert sum("JWT_SECRET is blank" in line for line in lines) == 1
+    if log_format == "json":
+        [warned] = [e for e in _json_lines(lines) if "JWT_SECRET is blank" in e["message"]]
+        assert warned["level"] == "WARNING" and warned["logger"] == "app.config"

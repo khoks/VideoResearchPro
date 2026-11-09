@@ -32,6 +32,7 @@ from app.sources.types import DEFAULT_AUDIO_LANGUAGE, Candidate, ExtractedText, 
 from app.tasks.celery_app import celery_app
 from app.utils.chunking import chunk_transcript
 from app.utils.html_builder import build_report_html, save_report
+from app.utils.shared_url_log import loggable_id
 
 logger = logging.getLogger(__name__)
 
@@ -497,7 +498,7 @@ def _fetch_text(connector, candidate: Candidate, **kwargs) -> tuple[ExtractedTex
     except source_failure.TranscriptionCutShort as cut:
         logger.warning(
             "[job:%s] %s: %s; recording unavailable",
-            kwargs.get("job_id", ""), candidate.source_id, cut,
+            kwargs.get("job_id", ""), loggable_id(candidate.source_id), cut,
         )
         return None, cut.seconds
 
@@ -650,7 +651,7 @@ def _store_non_video_candidates(db, job: Job, result, limits: dict[str, int]) ->
                     "[job:%s] fetch_text failed for %s/%s",
                     job.id,
                     st,
-                    cand.source_id,
+                    loggable_id(cand.source_id),
                 )
                 extracted = None
 
@@ -674,7 +675,7 @@ def _store_non_video_candidates(db, job: Job, result, limits: dict[str, int]) ->
                     "[job:%s] persist failed for %s/%s",
                     job.id,
                     st,
-                    cand.source_id,
+                    loggable_id(cand.source_id),
                 )
 
     db.commit()

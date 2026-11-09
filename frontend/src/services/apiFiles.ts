@@ -5,9 +5,8 @@
 // cannot send the Authorization header the axios client adds, and a JWT put
 // in the URL instead leaks into history, server and proxy logs and Referer
 // headers. So the bytes are fetched through the client and the browser gets
-// an object URL. Since T-8.8.1.5 no HTTP route accepts `?token=`; the only
-// URL token left is the /ws/jobs WebSocket's (services/wsClient.ts), because
-// a WebSocket handshake cannot carry headers either.
+// an object URL. Since T-8.8.1.5 and T-5.4.23 no route accepts `?token=`: the
+// /ws/jobs WebSocket offers its token as a subprotocol (services/wsClient.ts).
 import api from './api';
 import { downloadUrl } from '../utils/download';
 

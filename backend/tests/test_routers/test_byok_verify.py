@@ -355,14 +355,19 @@ def test_neither_the_key_nor_the_providers_words_reach_the_response(client, db, 
 
 def test_the_provider_text_really_did_carry_the_key(db, studio, provider):
     """Without this the two tests around it could pass on an error with no key
-    in it. The text exists; it is the route that drops it."""
+    in it. The text exists in what the SDK raises. Since T-5.6.16 the probe's
+    ``error`` drops it, so a route could not repeat it if it tried."""
     provider.answer(401, OPENAI_401)
     cfg = llm_service.UseCaseConfig("openai", llm_service.KEY_CHECK_MODELS["openai"], "off")
 
+    with pytest.raises(Exception) as raised:
+        llm_service._build_from_config(cfg, 0.0, 16, byok_api_key=KEY).invoke("hello")
     probe = llm_service.probe_config(cfg, byok_api_key=KEY)
 
+    assert KEY in str(raised.value)
     assert probe.status_code == 401
-    assert KEY in (probe.error or "")
+    # Its type alone. langchain-openai renames it in later releases.
+    assert probe.error.endswith("AuthenticationError") and KEY not in probe.error
 
 
 def test_neither_reaches_the_log(client, db, studio, provider):

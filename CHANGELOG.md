@@ -10,6 +10,44 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Fixed: the 320 px job Q&A baselines, and the scripts' tiktoken folder (T-8.8.6.3, T-8.8.6.6, 2026-11-09)
+
+PR [#432](https://github.com/khoks/VideoResearchPro/pull/432). No new decision: it extends [D-152](docs/decisions.md#d-152--cors-reads-the-oauth-origin-list-and-the-app-keeps-tiktokens-encoding-in-a-folder-of-its-own-2026-11-09) point 5 to `backend/scripts`.
+
+- The narrow-320 `job-qa` light and dark device baselines are re-recorded, so they show the header's bell and search icons. `npm run test:mobile:update` passes Playwright's bare `--update-snapshots`, which rewrites only a baseline that fails; `docs/testing.md` now says to pass `--update-snapshots=all` to refresh one that still passes within tolerance. Ten more phone baselines are stale the same way (T-8.8.6.8).
+- The nine scripts in `backend/scripts` that count tokens keep tiktoken's encoding in `TIKTOKEN_ENCODINGS_DIR`, as the API and the worker do. Three had used the temp folder; six already had the app's folder through an import of `job_tasks`.
+- No migration, no setting and nothing to restart.
+
+### Changed: job failures — provider text scrubbed where it is stored, an empty transcription charged, a refused dispatch fails its run (T-5.6.17, T-1.7.1.7, T-5.2.17, 2026-11-09)
+
+PR [#430](https://github.com/khoks/VideoResearchPro/pull/430). [D-155](docs/decisions.md#d-155--stored-exception-text-goes-through-error_summary-an-empty-whisper-answer-is-charged-a-refused-dispatch-fails-a-new-run-and-leaves-an-approval-waiting-and-a-start-the-queue-refused-uses-up-nothing-2026-11-09).
+
+- Exception text that is stored, published or answered goes through the new `log_redaction.error_summary`: `Class: words` with the shapes of a key taken out, or the class alone for a provider's refusal. That covers a job's error message and the live-progress error event, the report's map notes and its channel-narrative line (now HTML-escaped), Author Studio's output errors and notes, saved searches' errors, the scheduler and connector dispatch.
+- **Changed, please check:** a job's error message from an exception now starts with its class name, as in `RuntimeError: ...` (OQ-43).
+- Whisper that answered, was billed and left no text now counts toward `WHISPER_MAX_PER_JOB` and `WHISPER_MAX_MINUTES_PER_JOB`, at the seconds Whisper reported hearing.
+- `POST /jobs` answers 503 when the task queue refuses the run, and fails its row so it holds no place under the job limit. `PUT /jobs/{id}/approve` answers 503 and keeps the job awaiting approval with its picks, and grants the approved documents only once the run is queued.
+- **Fixed:** a voice test the task queue refused no longer uses up one of the day's `ECHO_VOICE_TESTS_PER_DAY` starts.
+- No migration and no new setting. Restart the API and the worker.
+
+### Added: a pasted post's author and date, one retry before a source fails, the X token at startup (T-1.5.8.4, T-1.5.11.2, T-1.5.9.1, 2026-11-09)
+
+PR [#431](https://github.com/khoks/VideoResearchPro/pull/431). [D-154](docs/decisions.md#d-154--a-posts-id-dates-it-a-placeholder-date-is-no-date-a-connector-request-gets-one-retry-and-xs-only-when-unanswered-and-the-x-token-line-reports-configuration-only-2026-11-09).
+
+- A pasted Facebook, Instagram, LinkedIn or X page now gets its author, its handle where the platform has one, and its date from the page's own metadata, and for X and LinkedIn from the post's id. A pasted article keeps the date trafilatura finds. A date before 1995 or after tomorrow is stored as unknown. Pages pasted before keep what they had.
+- **Fixed:** library Q&A no longer lists every pasted page as "by Unknown": chunk metadata now reads `source_metadata_json` when it is stored as JSON text.
+- Every connector HTTP client retries once after 1 s on a timeout, a lost connection, a 5xx or a 429 with a short `Retry-After`, so one transient error no longer marks a source unavailable for the run. Other 4xx answers are never retried. X, which is paid, is retried only when it never answered.
+- The API logs at startup whether `TWITTER_BEARER_TOKEN` is set, never the token, and says the token was not checked against X.
+- No migration and no new setting. Restart the API and the worker.
+
+### Changed: one toast per failure, on every page (T-3.4.1.17, 2026-11-09)
+
+PR [#429](https://github.com/khoks/VideoResearchPro/pull/429). [D-153](docs/decisions.md#d-153--a-hook-that-answers-its-own-failures-says-them-through-one-helper-a-hook-whose-callers-differ-takes-an-option-and-a-guard-test-holds-the-rule-2026-11-09).
+
+- A failed action shows one toast, not two, on the Echo page and its voice test, the Echo cards, drop zone, inbox and importer, Author Studio and the subscription page: 33 places in 12 files.
+- The toast says the server's words when there are any, otherwise the page's own sentence instead of "Network Error", and nothing when the session has ended. It still shows if you leave the page while a long request runs, and once for each dropped file that fails.
+- A guard test fails any page that toasts a failed mutation itself.
+- Frontend only.
+
 ### Changed: one list of allowed origins, and the app's own tiktoken folder (T-4.11.3.3, T-8.8.6.5, T-4.11.3.1, 2026-11-09)
 
 PR [#427](https://github.com/khoks/VideoResearchPro/pull/427). [D-152](docs/decisions.md#d-152--cors-reads-the-oauth-origin-list-and-the-app-keeps-tiktokens-encoding-in-a-folder-of-its-own-2026-11-09).

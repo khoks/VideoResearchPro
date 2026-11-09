@@ -1276,41 +1276,128 @@ def _get_job(db, job_id: str) -> Job | None:
     return db.query(Job).filter(Job.id == job_id).first()
 
 
-def _update_job(db, job: Job, **kwargs) -> None:
-    for key, value in kwargs.items():
-        setattr(job, key, value)
-    job.updated_at = datetime.now(timezone.utc)
+def _approved_documents(db, job_id: str) -> list[Document]:
+    """The job's approved documents, of every source type, for extraction.
+
+    ``approved`` lives on the job's ``job_documents`` row, which is joined on
+    ``document_id`` (D-070), the key every source type has. The legacy
+    ``video_id`` is NULL for a Reddit, HN, podcast, PDF or pasted document,
+    so the join on it dropped them: from the resume until S-1.5.13, and from
+    the subscription sync until T-8.8.6.12. ``scripts/regenerate_report.py``
+    has its own copy (``approved_documents``, T-8.8.6.9).
+    """
+    return (
+        db.query(Document)
+        .join(JobVideo, JobVideo.document_id == Document.document_id)
+        .filter(JobVideo.job_id == job_id, JobVideo.approved.is_(True))
+        .all()
+    )
+
+
+# A row in one of these states is over, whoever ended it: the user cancelled
+# it, a route failed it (a dispatch whose reply was lost), or the run itself
+# failed. A run never writes over one (T-5.2.18, T-5.2.20).
+_STOPPED_STATUSES = ("failed", "cancelled")
+
+
+class _RunStopped(Exception):
+    """The row was cancelled or failed while this run was going (T-5.2.20).
+
+    Raised by ``_update_job`` when its write found the row stopped. Every
+    entry point catches it before its ``except Exception``, so it is neither
+    logged as a failure nor handed to ``_handle_failure``: the row keeps the
+    status and the words whoever stopped it wrote.
+    """
+
+
+def _write_unless_stopped(db, job: Job, **fields) -> bool:
+    """Write ``fields`` to the job's row unless the row is failed or cancelled.
+
+    One conditional ``UPDATE ... WHERE id = :id AND status NOT IN ('failed',
+    'cancelled')``, so the test and the write are one statement: a cancel or a
+    route's failure that lands at any moment is either seen by it (nothing is
+    written) or lands after it (and the run's next check or write sees it).
+    The in-memory ``job`` is refreshed from the row either way. Returns
+    whether the row was written.
+    """
+    db.flush()
+    fields["updated_at"] = datetime.now(timezone.utc)
+    written = (
+        db.query(Job)
+        .filter(Job.id == job.id, Job.status.notin_(_STOPPED_STATUSES))
+        .update(fields, synchronize_session=False)
+    )
     db.commit()
     db.refresh(job)
+    return written == 1
 
 
-def _is_cancelled(db, job_id: str) -> bool:
+def _update_job(db, job: Job, **kwargs) -> None:
+    """Every write a run makes to its own row's status goes through here.
+
+    Raises ``_RunStopped``, writing nothing, when the row is already failed or
+    cancelled (``_write_unless_stopped``), so no status write in a run turns
+    a stopped row back into an active or completed one, and the publish that
+    follows each write never goes out for it.
+    """
+    if not _write_unless_stopped(db, job, **kwargs):
+        logger.info("[job:%s] the run is %s; it stops here, leaving the row as it is", job.id, job.status)
+        raise _RunStopped(job.status)
+
+
+def _is_stopped(db, job_id: str) -> bool:
+    """Has the row been cancelled or failed since the run last looked?
+
+    Read at each phase boundary and before each item of a loop, so a run stops
+    at its next check. Until T-5.2.20 only ``cancelled`` was read here, and a
+    run whose row a route had failed after the worker picked the task up ran
+    on to its end and wrote over ``failed``.
+    """
     db.expire_all()
     job = _get_job(db, job_id)
-    return job is not None and job.status == "cancelled"
+    return job is not None and job.status in _STOPPED_STATUSES
 
 
-def _already_failed(job: Job, task: str) -> bool:
-    """Is this run already failed, so a delivered task must leave it alone?
+def _already_stopped(job: Job, task: str) -> bool:
+    """Is this run already failed or cancelled, so a delivered task must leave it alone?
 
-    T-5.2.18: a dispatch can raise after the broker took the message (the
-    publish went out, the reply was lost). The route then fails the row,
+    T-5.2.18, failed: a dispatch can raise after the broker took the message
+    (the publish went out, the reply was lost). The route then fails the row,
     ``POST /jobs`` and ``_dispatch_subscription_sync`` alike, and tells the
-    user it never started; the worker would still get the message. Each entry
-    point reads the row first and returns, before the usage scope opens and
-    before any write or publish, so the run stays failed in the words the
-    route wrote and charges nothing.
+    user it never started; the worker would still get the message.
 
-    Nothing runs a failed job again on purpose: no route retries one in place
-    (a new run is a new row), the scheduler queues no job tasks, and the tasks
-    never call ``self.retry``. A redelivery after a worker died mid-run
-    (``task_acks_late``) finds the row in the state that worker left, never
-    failed, so it still runs. Cancelled is not read here (unchanged).
+    T-5.2.20, cancelled: ``POST /jobs/{id}/cancel`` writes ``cancelled`` and
+    revokes the task, but a revoke reaches only the workers alive at that
+    moment and lives in their memory. A task still on the queue when no worker
+    was up, or when the worker restarted before taking it, is delivered later,
+    and each entry point wrote ``searching`` or ``extracting`` before it read
+    the row, bringing the run back.
+
+    Each entry point reads the row first and returns, before the usage scope
+    opens and before any write or publish, so the run stays as whoever stopped
+    it left it and charges nothing.
+
+    Nothing runs a stopped job again on purpose: no route retries one in place
+    (a new run is a new row, Sync now included), approval accepts only
+    ``awaiting_approval``, the scheduler queues no job tasks, the tasks never
+    call ``self.retry``, and a sync never looks at an earlier sync's row. A
+    redelivery after a worker died mid-run (``task_acks_late``) finds the row
+    in the state that worker left, never stopped, so it still runs.
     """
-    if job.status != "failed":
+    if job.status not in _STOPPED_STATUSES:
         return False
-    logger.info("[job:%s] %s delivered for a failed run; leaving it failed", job.id, task)
+    logger.info("[job:%s] %s delivered for a %s run; leaving it as it is", job.id, task, job.status)
     return True
+
+
+def _discard_report(job_id: str, report_path: str) -> None:
+    """Remove a report file no row will point at. Best-effort."""
+    from app.services import report_service
+
+    try:
+        report_service.delete_report(report_path)
+    except OSError:
+        logger.warning("[job:%s] could not remove the report of a stopped run", job_id)
 
 
 @celery_app.task(bind=True, max_retries=2, default_retry_delay=60)
@@ -1325,7 +1412,7 @@ def execute_topic_job(self, job_id: str) -> None:
         if not job:
             logger.warning(f"[job:{job_id}] Job not found in DB, aborting")
             return
-        if _already_failed(job, "execute_topic_job"):
+        if _already_stopped(job, "execute_topic_job"):
             return
         meter.enter_context(usage_service.metered(db, job.tenant_id))
 
@@ -1336,8 +1423,8 @@ def execute_topic_job(self, job_id: str) -> None:
         progress_service.publish_status_change(job_id, "pending", "searching",
                                                "Searching for relevant videos...")
 
-        if _is_cancelled(db, job_id):
-            logger.info(f"[job:{job_id}] Job cancelled before search, exiting")
+        if _is_stopped(db, job_id):
+            logger.info(f"[job:{job_id}] Run stopped (cancelled or failed) before search, exiting")
             return
 
         # Decode source_types — controls which connectors fan out for
@@ -1369,7 +1456,12 @@ def execute_topic_job(self, job_id: str) -> None:
             if top_up_note:
                 notes.append(top_up_note)
 
-        # YouTube path (only when video is requested).
+        # YouTube path (only when video is requested). The other sources took
+        # seconds; the search agent spends model calls and YouTube units, so
+        # a run stopped meanwhile (T-5.2.20) stops before it.
+        if wants_video and _is_stopped(db, job_id):
+            logger.info(f"[job:{job_id}] Run stopped (cancelled or failed) before the YouTube search, exiting")
+            return
         if wants_video:
             from app.agents.search_agent import run_search_agent
             from app.services import llm_service
@@ -1383,11 +1475,11 @@ def execute_topic_job(self, job_id: str) -> None:
             # submitted the job (E-5.1 phase 2a write-side stamping).
             def _search_progress(pct: int, message: str) -> None:
                 # S-1.11.8: sub-progress during the multi-minute search phase.
-                progress_service.publish_progress(job_id, "searching", pct, message)
-                job.progress_pct = pct
-                job.progress_message = message
-                job.updated_at = datetime.now(timezone.utc)
-                db.commit()
+                # Written first and published only when it was: a stopped
+                # row keeps its words, and its page gets no progress event,
+                # which would show it searching again (T-5.2.20).
+                if _write_unless_stopped(db, job, progress_pct=pct, progress_message=message):
+                    progress_service.publish_progress(job_id, "searching", pct, message)
 
             candidate_pool: list[dict] = []
             unresolved_channels: list = []
@@ -1542,6 +1634,8 @@ def execute_topic_job(self, job_id: str) -> None:
             job_id, "searching", "awaiting_approval", found_message,
         )
 
+    except _RunStopped:
+        pass  # T-5.2.20: cancelled or failed meanwhile; _update_job logged it
     except Exception as e:
         logger.exception(f"[job:{job_id}] Topic job failed during search: {e}")
         _handle_failure(db, job_id, error_summary(e))
@@ -1567,7 +1661,7 @@ def execute_channel_job(self, job_id: str) -> None:
         if not job:
             logger.warning(f"[job:{job_id}] Job not found in DB, aborting")
             return
-        if _already_failed(job, "execute_channel_job"):
+        if _already_stopped(job, "execute_channel_job"):
             return
         meter.enter_context(usage_service.metered(db, job.tenant_id))
 
@@ -1581,16 +1675,16 @@ def execute_channel_job(self, job_id: str) -> None:
         progress_service.publish_status_change(job_id, "pending", "searching",
                                                "Fetching videos from channels...")
 
-        if _is_cancelled(db, job_id):
-            logger.info(f"[job:{job_id}] Job cancelled before channel fetch, exiting")
+        if _is_stopped(db, job_id):
+            logger.info(f"[job:{job_id}] Run stopped (cancelled or failed) before channel fetch, exiting")
             return
 
         all_video_ids = []
         connector = connector_for("video")
 
         for i, channel_input in enumerate(channel_list):
-            if _is_cancelled(db, job_id):
-                logger.info(f"[job:{job_id}] Job cancelled mid-channel-fetch, exiting")
+            if _is_stopped(db, job_id):
+                logger.info(f"[job:{job_id}] Run stopped (cancelled or failed) mid-channel-fetch, exiting")
                 return
 
             progress_service.publish_progress(
@@ -1671,6 +1765,8 @@ def execute_channel_job(self, job_id: str) -> None:
         progress_service.publish_status_change(job_id, "searching", "awaiting_approval",
                                                f"Found {video_count} videos. Please review and approve.")
 
+    except _RunStopped:
+        pass  # T-5.2.20: cancelled or failed meanwhile; _update_job logged it
     except Exception as e:
         logger.exception(f"[job:{job_id}] Channel job failed during search: {e}")
         _handle_failure(db, job_id, error_summary(e))
@@ -1692,22 +1788,12 @@ def resume_job_after_approval(self, job_id: str) -> None:
         if not job:
             logger.warning(f"[job:{job_id}] Job not found in DB, aborting")
             return
-        if _already_failed(job, "resume_job_after_approval"):
+        if _already_stopped(job, "resume_job_after_approval"):
             return
         meter.enter_context(usage_service.metered(db, job.tenant_id))
 
         # PHASE: EXTRACTING
-        # `approved` now lives on the JobVideo link row, not on Document.
-        # Joined on document_id (D-070): a Reddit / HN / podcast document has
-        # NULL video_id, and joining on it dropped every approved non-video
-        # document from extraction (S-1.5.13).
-        approved_rows = (
-            db.query(Document)
-            .join(JobVideo, JobVideo.document_id == Document.document_id)
-            .filter(JobVideo.job_id == job_id, JobVideo.approved.is_(True))
-            .all()
-        )
-        approved_videos = approved_rows
+        approved_videos = _approved_documents(db, job_id)
         total = len(approved_videos)
         logger.info(f"[job:{job_id}] Resuming job after approval: {total} approved videos "
                     f"to process (job_type={job.job_type})")
@@ -1744,8 +1830,8 @@ def resume_job_after_approval(self, job_id: str) -> None:
         from app.services import llm_service
 
         for i, video in enumerate(approved_videos):
-            if _is_cancelled(db, job_id):
-                logger.info(f"[job:{job_id}] Job cancelled during extraction at video {i + 1}/{total}, exiting")
+            if _is_stopped(db, job_id):
+                logger.info(f"[job:{job_id}] Run stopped (cancelled or failed) during extraction at video {i + 1}/{total}, exiting")
                 return
 
             title_preview = (video.title or "")[:60]
@@ -1945,27 +2031,27 @@ def resume_job_after_approval(self, job_id: str) -> None:
                 f"(reused {reused_count}, new {newly_processed_count})"
                 f"{eta_suffix}{budget_suffix}"
             )
-            progress_service.publish_progress(
-                job_id, "extracting", progress_pct, progress_message,
-                data={
-                    "transcripts_fetched": fetched_count,
-                    "transcripts_attempted": attempted,
-                    "transcripts_total": total,
-                    "transcripts_unavailable": unavailable_so_far,
-                    "reused_count": reused_count,
-                    "newly_processed_count": newly_processed_count,
-                },
-            )
             # Also persist to the DB so page reloads (or clients that aren't
             # WS-connected) see the current state, not the stale initial
             # "Extracting transcripts (0/N)..." message. Showing attempted +
             # fetched (not just fetched) means the counter advances even when
             # every video is falling through to a failing Whisper fallback —
-            # otherwise it looks frozen.
-            job.progress_pct = progress_pct
-            job.progress_message = progress_message
-            job.updated_at = datetime.now(timezone.utc)
-            db.commit()
+            # otherwise it looks frozen. Written first, and published only
+            # when it was: a row cancelled or failed during this video keeps
+            # its words and gets no event, and the next check stops the run
+            # (T-5.2.20).
+            if _write_unless_stopped(db, job, progress_pct=progress_pct, progress_message=progress_message):
+                progress_service.publish_progress(
+                    job_id, "extracting", progress_pct, progress_message,
+                    data={
+                        "transcripts_fetched": fetched_count,
+                        "transcripts_attempted": attempted,
+                        "transcripts_total": total,
+                        "transcripts_unavailable": unavailable_so_far,
+                        "reused_count": reused_count,
+                        "newly_processed_count": newly_processed_count,
+                    },
+                )
             usage_service.checkpoint()  # T-5.2.13
 
         unavailable_count = total - fetched_count
@@ -1986,8 +2072,8 @@ def resume_job_after_approval(self, job_id: str) -> None:
             return
 
         # PHASE: BUILDING_RAG
-        if _is_cancelled(db, job_id):
-            logger.info(f"[job:{job_id}] Job cancelled before RAG build, exiting")
+        if _is_stopped(db, job_id):
+            logger.info(f"[job:{job_id}] Run stopped (cancelled or failed) before RAG build, exiting")
             return
 
         _update_job(db, job, status="building_rag", progress_pct=60,
@@ -2021,8 +2107,8 @@ def resume_job_after_approval(self, job_id: str) -> None:
         )
 
         # PHASE: GENERATING_REPORT
-        if _is_cancelled(db, job_id):
-            logger.info(f"[job:{job_id}] Job cancelled before report generation, exiting")
+        if _is_stopped(db, job_id):
+            logger.info(f"[job:{job_id}] Run stopped (cancelled or failed) before report generation, exiting")
             return
 
         _update_job(db, job, status="generating_report", progress_pct=80,
@@ -2065,15 +2151,25 @@ def resume_job_after_approval(self, job_id: str) -> None:
         logger.info(f"[job:{job_id}] Report saved to '{report_path}'")
 
         # PHASE: COMPLETED
-        _update_job(db, job, status="completed", progress_pct=100,
-                    progress_message="Job completed successfully!",
-                    report_path=report_path,
-                    completed_at=datetime.now(timezone.utc))
+        try:
+            _update_job(db, job, status="completed", progress_pct=100,
+                        progress_message="Job completed successfully!",
+                        report_path=report_path,
+                        completed_at=datetime.now(timezone.utc))
+        except _RunStopped:
+            # Cancelled or failed while the report was written (on a solo
+            # pool a revoke cannot stop a running task, so a cancel during the
+            # report reaches here). No row points at the file now, so nothing
+            # would ever delete it.
+            _discard_report(job_id, report_path)
+            raise
         progress_service.publish_status_change(job_id, "generating_report", "completed",
                                                "Job completed successfully!")
         logger.info(f"[job:{job_id}] Job COMPLETED: fetched={fetched_count}, "
                     f"unavailable={unavailable_count}, chunks={len(all_chunks)}, report='{report_path}'")
 
+    except _RunStopped:
+        pass  # T-5.2.20: cancelled or failed meanwhile; _update_job logged it
     except Exception as e:
         logger.exception(f"[job:{job_id}] Job failed: {e}")
         _handle_failure(db, job_id, error_summary(e))
@@ -2089,23 +2185,23 @@ def _run_extraction_and_rag(self, db, job) -> None:
     Stops short of report generation — subscription jobs skip the report phase.
     Shared between ``resume_job_after_approval`` semantics and subscription
     ingest.
+
+    Returns when the row is cancelled or failed at one of its checks, and
+    raises ``_RunStopped`` when one of its writes finds it so; the caller
+    reads the row after it returns.
     """
     from app.services import llm_service
 
     job_id = job.id
-    # `approved` now lives on the JobVideo link row, not on Document.
-    approved_videos = (
-        db.query(Document)
-        .join(JobVideo, JobVideo.video_id == Document.video_id)
-        .filter(JobVideo.job_id == job_id, JobVideo.approved.is_(True))
-        .all()
-    )
+    # Joined on document_id (D-070, T-8.8.6.12), as after an approval.
+    approved_videos = _approved_documents(db, job_id)
     total = len(approved_videos)
     logger.info(
         f"[job:{job_id}] Starting extraction+RAG for {total} approved video(s) "
         f"(job_type={job.job_type})"
     )
 
+    previous_status = job.status
     _update_job(
         db, job,
         status="extracting",
@@ -2114,7 +2210,7 @@ def _run_extraction_and_rag(self, db, job) -> None:
         celery_task_id=self.request.id,
     )
     progress_service.publish_status_change(
-        job_id, job.status, "extracting",
+        job_id, previous_status, "extracting",
         f"Extracting transcripts for {total} videos...",
     )
 
@@ -2143,9 +2239,9 @@ def _run_extraction_and_rag(self, db, job) -> None:
     whisper_minutes = WhisperMinutes()
 
     for i, video in enumerate(approved_videos):
-        if _is_cancelled(db, job_id):
+        if _is_stopped(db, job_id):
             logger.info(
-                f"[job:{job_id}] Job cancelled during extraction at video {i + 1}/{total}, exiting"
+                f"[job:{job_id}] Run stopped (cancelled or failed) during extraction at video {i + 1}/{total}, exiting"
             )
             return
 
@@ -2155,7 +2251,7 @@ def _run_extraction_and_rag(self, db, job) -> None:
 
         # Fully reused: re-chunk from the transcript cache without fetch/embed.
         if already_fetched and already_embedded:
-            cached = _load_cached_segments(video.video_id)
+            cached = _load_cached_segments(video.video_id, video.document_id)
             if cached is not None:
                 segments, cached_language = cached
                 language_profile = language_mix_service.ensure(video, segments)
@@ -2180,7 +2276,7 @@ def _run_extraction_and_rag(self, db, job) -> None:
                 already_embedded = False
 
         if already_fetched and not already_embedded:
-            cached = _load_cached_segments(video.video_id)
+            cached = _load_cached_segments(video.video_id, video.document_id)
             if cached is not None:
                 segments, cached_language = cached
                 language_profile = language_mix_service.ensure(video, segments)
@@ -2314,22 +2410,21 @@ def _run_extraction_and_rag(self, db, job) -> None:
             f"{fetched_count} fetched, {unavailable_so_far} unavailable "
             f"(reused {reused_count}, new {newly_processed_count})...{budget_suffix}"
         )
-        progress_service.publish_progress(
-            job_id, "extracting", progress_pct, progress_message,
-            data={
-                "transcripts_fetched": fetched_count,
-                "transcripts_attempted": attempted,
-                "transcripts_total": total,
-                "transcripts_unavailable": unavailable_so_far,
-                "reused_count": reused_count,
-                "newly_processed_count": newly_processed_count,
-            },
-        )
         # Persist to the DB so reloads don't see the stale initial message.
-        job.progress_pct = progress_pct
-        job.progress_message = progress_message
-        job.updated_at = datetime.now(timezone.utc)
-        db.commit()
+        # Written first and published only when it was, as after an approval
+        # (T-5.2.20): a stopped row keeps its words and gets no event.
+        if _write_unless_stopped(db, job, progress_pct=progress_pct, progress_message=progress_message):
+            progress_service.publish_progress(
+                job_id, "extracting", progress_pct, progress_message,
+                data={
+                    "transcripts_fetched": fetched_count,
+                    "transcripts_attempted": attempted,
+                    "transcripts_total": total,
+                    "transcripts_unavailable": unavailable_so_far,
+                    "reused_count": reused_count,
+                    "newly_processed_count": newly_processed_count,
+                },
+            )
         usage_service.checkpoint()  # T-5.2.13: a sync's videos can take hours
 
     unavailable_count = total - fetched_count
@@ -2356,8 +2451,8 @@ def _run_extraction_and_rag(self, db, job) -> None:
         progress_service.publish_error(job_id, "No transcripts available.")
         return
 
-    if _is_cancelled(db, job_id):
-        logger.info(f"[job:{job_id}] Job cancelled before RAG build, exiting")
+    if _is_stopped(db, job_id):
+        logger.info(f"[job:{job_id}] Run stopped (cancelled or failed) before RAG build, exiting")
         return
 
     _update_job(
@@ -2417,7 +2512,7 @@ def execute_subscription_job(self, job_id: str) -> None:
         if not job:
             logger.warning(f"[job:{job_id}] Job not found in DB, aborting")
             return
-        if _already_failed(job, "execute_subscription_job"):
+        if _already_stopped(job, "execute_subscription_job"):
             return
         meter.enter_context(usage_service.metered(db, job.tenant_id))
 
@@ -2437,8 +2532,8 @@ def execute_subscription_job(self, job_id: str) -> None:
             job_id, "pending", "searching", "Resolving channels..."
         )
 
-        if _is_cancelled(db, job_id):
-            logger.info(f"[job:{job_id}] Job cancelled before channel resolve, exiting")
+        if _is_stopped(db, job_id):
+            logger.info(f"[job:{job_id}] Run stopped (cancelled or failed) before channel resolve, exiting")
             return
 
         resolved_channels: list[dict] = []
@@ -2446,8 +2541,8 @@ def execute_subscription_job(self, job_id: str) -> None:
 
         # Phase 1: resolve + upsert channels
         for i, channel_input in enumerate(channel_inputs):
-            if _is_cancelled(db, job_id):
-                logger.info(f"[job:{job_id}] Job cancelled mid channel-resolve, exiting")
+            if _is_stopped(db, job_id):
+                logger.info(f"[job:{job_id}] Run stopped (cancelled or failed) mid channel-resolve, exiting")
                 return
 
             progress_service.publish_progress(
@@ -2515,8 +2610,8 @@ def execute_subscription_job(self, job_id: str) -> None:
         db.commit()
 
         # Phase 2: walk uploads, fetch details, insert Document rows
-        if _is_cancelled(db, job_id):
-            logger.info(f"[job:{job_id}] Job cancelled before uploads walk, exiting")
+        if _is_stopped(db, job_id):
+            logger.info(f"[job:{job_id}] Run stopped (cancelled or failed) before uploads walk, exiting")
             return
 
         progress_service.publish_progress(
@@ -2539,8 +2634,8 @@ def execute_subscription_job(self, job_id: str) -> None:
         cap_budget = document_cap_service.sync_budget(db, job.tenant_id)
 
         for i, entry in enumerate(resolved_channels):
-            if _is_cancelled(db, job_id):
-                logger.info(f"[job:{job_id}] Job cancelled mid uploads walk, exiting")
+            if _is_stopped(db, job_id):
+                logger.info(f"[job:{job_id}] Run stopped (cancelled or failed) mid uploads walk, exiting")
                 return
 
             channel_id = entry["channel_id"]
@@ -2635,7 +2730,7 @@ def execute_subscription_job(self, job_id: str) -> None:
         _run_extraction_and_rag(self, db, job)
 
         db.refresh(job)
-        if job.status in ("failed", "cancelled"):
+        if job.status in _STOPPED_STATUSES:
             return
 
         # Skip generating_report — subscription jobs produce no report.
@@ -2658,6 +2753,8 @@ def execute_subscription_job(self, job_id: str) -> None:
         )
         logger.info(f"[job:{job_id}] Subscription job COMPLETED")
 
+    except _RunStopped:
+        pass  # T-5.2.20: cancelled or failed meanwhile; _update_job logged it
     except Exception as e:
         logger.exception(f"[job:{job_id}] Subscription job failed: {e}")
         _handle_failure(db, job_id, error_summary(e))
@@ -2692,23 +2789,33 @@ def _backstop_orphan(db, job_id: str) -> None:
             if job is None or job.status not in _TRANSIENT_STATUSES:
                 return
             stuck_in = job.status
-            logger.error(
-                f"[job:{job_id}] Orphan backstop tripped: task returned with status={stuck_in!r}; "
-                "marking failed. Check worker logs for the root cause."
-            )
-            job.status = "failed"
-            job.error_message = (
+            error_message = (
                 f"Task returned without advancing from '{stuck_in}'. "
                 "This usually means an exception fired inside the orchestrator "
                 "but the failure handler did not record it. Retry the job; "
                 "if it repeats, inspect the Celery worker logs."
             )
-            job.progress_message = "Failed: orchestrator returned without recording a result."
-            job.updated_at = datetime.now(timezone.utc)
+            # Only from the state just read (T-5.2.20): a cancel or a route's
+            # failure that lands between the read and this write stays.
+            written = fresh.query(Job).filter(Job.id == job_id, Job.status == stuck_in).update(
+                {
+                    "status": "failed",
+                    "error_message": error_message,
+                    "progress_message": "Failed: orchestrator returned without recording a result.",
+                    "updated_at": datetime.now(timezone.utc),
+                },
+                synchronize_session=False,
+            )
             fresh.commit()
+            if not written:
+                return
+            logger.error(
+                f"[job:{job_id}] Orphan backstop tripped: task returned with status={stuck_in!r}; "
+                "marking failed. Check worker logs for the root cause."
+            )
             try:
                 from app.services import progress_service as _ps
-                _ps.publish_error(job_id, job.error_message)
+                _ps.publish_error(job_id, error_message)
             except Exception:
                 logger.exception(f"[job:{job_id}] backstop failed to publish progress error")
         finally:
@@ -2757,22 +2864,27 @@ def _handle_failure(db, job_id: str, error: str) -> None:
 
     try:
         job = _get_job(db, job_id)
-        if job:
-            _update_job(db, job, status="failed", error_message=error)
+        # T-5.2.20: a row already cancelled, or failed (by a route, in its own
+        # words), stays as it is, and its page hears nothing more: this
+        # failure belongs to a run that had already ended.
+        if job is not None and not _write_unless_stopped(db, job, status="failed", error_message=error):
+            logger.info("[job:%s] the run failed after its row was %s; leaving the row as it is", job_id, job.status)
+            return
         progress_service.publish_error(job_id, error)
     except Exception:
         logger.exception(f"[job:{job_id}] _handle_failure also failed while recording error: {error!r}")
         # Last-ditch: open a fresh session and update the row directly so the
-        # UI doesn't hang on a transient status.
+        # UI doesn't hang on a transient status. Conditional, as above.
         try:
             fresh = SessionLocal()
             try:
-                job = fresh.query(Job).filter(Job.id == job_id).first()
-                if job is not None:
-                    job.status = "failed"
-                    job.error_message = error
-                    job.updated_at = datetime.now(timezone.utc)
-                    fresh.commit()
+                fresh.query(Job).filter(
+                    Job.id == job_id, Job.status.notin_(_STOPPED_STATUSES)
+                ).update(
+                    {"status": "failed", "error_message": error, "updated_at": datetime.now(timezone.utc)},
+                    synchronize_session=False,
+                )
+                fresh.commit()
             finally:
                 fresh.close()
         except Exception:

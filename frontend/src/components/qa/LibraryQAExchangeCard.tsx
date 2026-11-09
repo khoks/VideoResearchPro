@@ -178,7 +178,11 @@ export function LibraryQAExchangeCard({
       >
         <Markdown>{qa.answer}</Markdown>
       </div>
-      <AnswerCutOffNote exchangeId={qa.id} onAskAgain={onAskAgain && (() => onAskAgain(qa.question))} />
+      <AnswerCutOffNote
+        cutOff={qa.answer_cut_off}
+        exchangeId={qa.id}
+        onAskAgain={onAskAgain && (() => onAskAgain(qa.question))}
+      />
       {qa.references.length > 0 && (
         <div
           style={{

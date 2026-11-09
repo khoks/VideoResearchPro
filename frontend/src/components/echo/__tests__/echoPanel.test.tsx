@@ -219,6 +219,66 @@ describe('ask', () => {
     expect(panel()!.querySelector('[data-echo-turn="history"]')?.textContent).toContain('Library Q&AWhat raises tariffs?');
   });
 
+  it('says a library answer stopped at its length limit, with nothing to raise here (T-1.15.4.9)', async () => {
+    askLibraryMock.mockResolvedValue({
+      id: 'lq-cut',
+      question: 'What raises tariffs?',
+      answer: 'Mostly',
+      references: [],
+      created_at: '2026-10-20T00:00:00Z',
+      answer_cut_off: true,
+    });
+    useEchoPanelStore.setState({ open: true });
+    mount();
+    await flush();
+    await typeInto(panel()!.querySelector('textarea')!, 'What raises tariffs?');
+    click(buttonNamed('Ask'));
+    await flush();
+    const note = panel()!.querySelector('[data-echo-turn="library"] [data-answer-cut-off]')!;
+    expect(note.textContent).toContain('stopped at its length limit');
+    expect(note.querySelector('button')).toBeNull();
+  });
+
+  it('says a past-questions answer stopped at its length limit (T-1.15.4.9)', async () => {
+    askHistoryMock.mockResolvedValue({
+      id: 'h-cut',
+      question: 'What have I learned about tariffs?',
+      answer: 'That they',
+      references: [],
+      answer_language: 'en',
+      created_at: '',
+      answer_cut_off: true,
+    });
+    useEchoPanelStore.setState({ open: true, target: 'history' });
+    mount();
+    await flush();
+    await typeInto(panel()!.querySelector('textarea')!, 'What have I learned about tariffs?');
+    click(buttonNamed('Ask'));
+    await flush();
+    const note = panel()!.querySelector('[data-echo-turn="history"] [data-answer-cut-off]')!;
+    expect(note.textContent).toContain('stopped at its length limit');
+    expect(note.querySelector('button')).toBeNull();
+  });
+
+  it('says nothing about a finished answer, which the library reply calls false', async () => {
+    askLibraryMock.mockResolvedValue({
+      id: 'lq-done',
+      question: 'What raises tariffs?',
+      answer: 'Mostly politics.',
+      references: [],
+      created_at: '2026-10-20T00:00:00Z',
+      answer_cut_off: false,
+    });
+    useEchoPanelStore.setState({ open: true });
+    mount();
+    await flush();
+    await typeInto(panel()!.querySelector('textarea')!, 'What raises tariffs?');
+    click(buttonNamed('Ask'));
+    await flush();
+    expect(panel()!.querySelector('[data-echo-turn="library"]')?.textContent).toContain('Mostly politics.');
+    expect(panel()!.querySelector('[data-answer-cut-off]')).toBeNull();
+  });
+
   it('says what went wrong when the answer fails', async () => {
     askLibraryMock.mockRejectedValue(Object.assign(new Error('quota'), { response: { status: 429 } }));
     useEchoPanelStore.setState({ open: true });

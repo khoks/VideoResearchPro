@@ -560,14 +560,14 @@ Ask a question scoped to this job. Runs the Q&A agent (retrieve → refine → a
 
 Returns 400 if the job is not yet `completed`.
 
-`answer_cut_off` (T-1.15.4.5) is `true` when the answer stopped at its token budget, so its end is missing. The answer is stored and returned all the same, and the server logs a warning naming the use case and the model. It is true of this reply only: nothing stores it, so the history routes return `QAResponse`, which has no such field.
+`answer_cut_off` (T-1.15.4.5) is `true` when the answer stopped at its token budget, so its end is missing. The answer is stored and returned all the same, and the server logs a warning naming the use case and the model. Since T-1.15.4.8 the flag is stored on the exchange. This reply always says `true` or `false`; the history routes send the key only when it is `true`.
 
 **Streaming.** `POST /api/v1/jobs/{job_id}/qa/stream` takes the same body and makes the same checks (a not-`completed` job, the `qa_exchanges` quota) before any streaming starts. It answers with server-sent events: `{ "type": "stage", "stage": "..." }` while the agent runs, then `{ "type": "complete", "exchange": <the /qa response> }` or `{ "type": "error", "detail": "..." }`, then `data: [DONE]`.
 
 **Reference shapes.** References are polymorphic by `source_type` (`video`, `reddit_post`, `hn_story`, `pdf`, `article`, ...) and every field the agent emits is returned; until S-8.5.2 the response schema kept only the YouTube fields. **Notes (S-8.5.2):** when the answer uses one of the asker's own notes, the reference is `{ "source_type": "note", "note_id", "note_target_type", "note_target_id", "note_target_label", "note_target_parent_id", "note_created_at", "quote", "video_title": "Your note of <date> on <target>", "channel_name": "you", ... }` with empty URL fields. Job Q&A draws notes on the job's own material; library Q&A (same reference shape) draws every note of the asker.
 
 ### `GET /api/v1/jobs/{job_id}/qa`
-Per-job Q&A history. Query params: `limit` (default 50), `offset` (default 0). Ordered ascending by `created_at`. Returns `list[QAResponse]`.
+Per-job Q&A history. Query params: `limit` (default 50), `offset` (default 0). Ordered ascending by `created_at`. Returns `list[QAResponse]`. A row carries `"answer_cut_off": true` when its answer stopped at its token budget, and no such key otherwise: a finished answer and one from before the check (T-1.15.4.8, which backfills nothing, so those read as unknown) look the same, and neither claims "not cut".
 
 ---
 
@@ -599,14 +599,14 @@ Ask a question across everything the tenant can see (D-063). Runs `run_library_q
 }
 ```
 
-`answer_cut_off` is as on `POST /jobs/{job_id}/qa`: on this reply only, never on the history.
+`answer_cut_off` is as on `POST /jobs/{job_id}/qa`: this reply always says, and the history sends the key only when it is `true`.
 
 `document_id` (T-8.4.2.4) asks about that one source: its `document_id` or a video's legacy YouTube id, stored canonical. Retrieval and citations are restricted to exactly that document (every reference carries its `document_id`; `video_id` is empty on a non-YouTube source), the asker's notes to those on it, on its knowledge report, on its channel and on earlier answers about it. A source the caller cannot see, and one that does not exist, are the same **404**, before any quota is checked.
 
 `scope` (S-8.1.4, [D-095](decisions.md#d-095--scoped-library-questions-one-history-table-with-a-scope_json-object-narrowing-and-provenance-keys-unknown-keys-refused-2026-10-19)) is what the question was asked over: `null` for the whole library, or an object such as `{"shelf_id": "…"}` for a question asked on a shelf or `{"document_id": "…"}` for one asked about a source. Narrowing keys (`shelf_id`, `document_id`) only ever restrict the reader's visible documents, and a scope with no documents retrieves nothing; provenance keys (`saved_search_id`, M3) record where an exchange came from. Unknown keys from newer builds may appear; clients keep them and do not interpret them. Shape: `backend/app/schemas/qa_scope.py`.
 
 ### `GET /api/v1/library/qa`
-Library Q&A history. Query params: `limit` (default 100), `offset` (default 0). Ordered ascending by `created_at`. Returns `list[LibraryQAResponse]`, every exchange whatever its scope, each with its `scope` (a malformed stored value reads as `null`).
+Library Q&A history. Query params: `limit` (default 100), `offset` (default 0). Ordered ascending by `created_at`. Returns `list[LibraryQAResponse]`, every exchange whatever its scope, each with its `scope` (a malformed stored value reads as `null`), and `"answer_cut_off": true` on an answer that stopped at its token budget, as on `GET /jobs/{job_id}/qa`.
 
 ### `DELETE /api/v1/library/qa/{exchange_id}`
 Delete a single library Q&A exchange. Returns 204. (The matching `qa_library_global` Chroma entry is left as orphan; cleanup is a maintenance task, not a request-time concern.)
@@ -860,6 +860,8 @@ Pinned library questions re-asked on a schedule (S-8.3.2, plan [m3-saved-searche
 
 Times are naive UTC. `next_run_at` is null while paused. `last_status` is `ok`, `failed`, `quota_exceeded` (the month's library-question quota was used up, so the run was skipped before any spend, D-045), `feature_unavailable` (the tier no longer has the feature) or `scope_missing` (the shelf was deleted); every status but `ok` leaves the last answer in place.
 
+`last_answer` is the last full answer. While there is none, it is the newest answer that stopped at its token budget, and the response then adds `"last_answer_cut_off": true` (T-1.15.4.9). The key is absent otherwise, including over an answer from before the check, so a saved search that was never cut reads as it did.
+
 ### `POST /api/v1/saved-searches`
 Body `{question, cadence, answer_language?, scope?, notify_email?}`, unknown fields 422; 201 with the saved search. `cadence` is `daily`, `weekly` (with `weekday`, 0 = Monday) or `monthly` (with `day_of_month` 1 to 28), an `hour`, optional `minute`, and an IANA `timezone` (default UTC); `every` is for system kinds and is refused. `scope` is null (the whole library) or `{"shelf_id"}` for one of the caller's shelves (404 otherwise): the library-question scope of S-8.1.4, resolved by `qa_scope_service`. 409 when the tier's active cap is reached.
 
@@ -870,7 +872,7 @@ PATCH accepts any of the create fields plus `enabled`; a new cadence recomputes 
 Queues one run on the caller's tier queue outside the schedule; 202 `{status: "queued"}`. The quota is checked here as well as in the run, so an exhausted month answers 429 at once. A run asks the library Q&A agent over the caller's visible set (narrowed to the shelf's runs' approved documents when scoped, never widened when that is empty), with corpus statistics and trust weights as `POST /library/qa` passes them, records the quota, stores a `library_qa_exchanges` row (indexed in `qa_library_global`, `scope_json` = the scope plus `saved_search_id`) and updates the saved search's baseline: answer hash, cited document set, last exchange.
 
 ### `GET /api/v1/saved-searches/{id}/runs`
-The last 20 runs, newest first (S-8.3.3). Each: `ran_at`, `trigger` (`schedule` / `manual`), `status` (the saved-search statuses plus `no_new_sources`, the gate's skip), `exchange_id`, `previous_exchange_id`, `changed` (null on the first run, which sets the baseline, and on runs that did not answer), `jaccard` and `embedding_distance` (the two signals), `decided_by` (`none` / `agreed` / `judged` / `judge_failed` / `embedding_only`), `added_reference_ids`, `dropped_reference_ids`, `diff_summary`. The cited sets are keyed on `document_id` (T-8.3.3.10), so the two id lists hold `document_id` values; runs from before that hold YouTube ids. `embedding_only` means the sets could not be compared because a citation named no document (a non-YouTube citation stored before #397): `jaccard` is null, nothing is listed as added or dropped, and the embedding alone decided.
+The last 20 runs, newest first (S-8.3.3). Each: `ran_at`, `trigger` (`schedule` / `manual`), `status` (the saved-search statuses plus `no_new_sources`, the gate's skip), `exchange_id`, `previous_exchange_id`, `changed` (null on the first run, which sets the baseline, and on runs that did not answer), `jaccard` and `embedding_distance` (the two signals), `decided_by` (`none` / `agreed` / `judged` / `judge_failed` / `embedding_only` / `cut_off`), `added_reference_ids`, `dropped_reference_ids`, `diff_summary`. The cited sets are keyed on `document_id` (T-8.3.3.10), so the two id lists hold `document_id` values; runs from before that hold YouTube ids. `embedding_only` means the sets could not be compared because a citation named no document (a non-YouTube citation stored before #397): `jaccard` is null, nothing is listed as added or dropped, and the embedding alone decided. `cut_off` (T-1.15.4.9) means the answer stopped at its token budget, so it lost its end and the citations there: nothing was compared, `changed` and both signals are null, no alert went out, and the answer does not become the baseline. The next full answer is compared with the last full one. `exchange_id` still names the answer.
 
 **How a run decides it changed** ([pre-registered thresholds](notes/2026-10-19-saved-search-change-thresholds.md)): (1) a scheduled run whose scope resolves to the same document set as the last good run is skipped (`no_new_sources`, no quota, no model); Run now always asks. (2) After answering, the cited-set Jaccard below `SAVED_SEARCH_JACCARD_THRESHOLD` (0.50) or the answer-embedding cosine distance above `SAVED_SEARCH_EMBEDDING_THRESHOLD` (0.15) votes "changed". (3) When exactly one votes, `saved_search_judge` decides and writes the sentence; if it fails, the citation vote decides. A change writes a notification (`saved_search_changed`, `href` `/saved-searches?search=<id>&run=<run_id>`) and, when `notify_email` is on, an email through `email_service` linking to `APP_BASE_URL` + that path.
 
@@ -1058,8 +1060,10 @@ Ask a meta-question across all past Q&A exchanges. Runs `qa_history_agent` again
 }
 ```
 
+An answer that stopped at its token budget also carries `"answer_cut_off": true`, and the server logs a warning as on `POST /jobs/{job_id}/qa` (T-1.15.4.9). A finished answer has no such key.
+
 ### `GET /api/v1/qa-history/exchanges`
-List meta-chat history. Query params: `limit`, `offset`. Returns `list[QAHistoryResponse]`.
+List meta-chat history. Query params: `limit`, `offset`. Returns `list[QAHistoryResponse]`, with `"answer_cut_off": true` on an answer stored as cut and no such key otherwise.
 
 ---
 

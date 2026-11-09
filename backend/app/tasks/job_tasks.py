@@ -1,6 +1,7 @@
 import contextlib
 import json
 import logging
+import os
 import sys
 import time
 from datetime import datetime, timezone
@@ -1345,13 +1346,25 @@ def _insert_and_mark_embedded(db, new_chunks: list[dict], chunked: list[Document
 
 
 # A row in one of these states is over, whoever ended it: the user cancelled
-# it, a route failed it (a dispatch whose reply was lost), or the run itself
-# failed. A run never writes over one (T-5.2.18, T-5.2.20).
-_STOPPED_STATUSES = ("failed", "cancelled")
+# it, a route failed it (a dispatch whose reply was lost), the run itself
+# failed, or a run completed it. A run never writes over one (T-5.2.18,
+# T-5.2.20), and a task delivered for one leaves it alone. ``completed`` since
+# T-5.2.23: tasks ack late, so a worker that died between writing it and the
+# ack had its task delivered again, and the whole run ran a second time.
+_STOPPED_STATUSES = ("failed", "cancelled", "completed")
+
+# A first phase's task (the topic search, a channel's listing) is done once
+# its run waits for approval, and after that the resume owns the row
+# (T-5.2.23). Delivered again for a row in one of these, it leaves the row
+# alone, and its orphan backstop never fails one.
+_FIRST_PHASE_TASKS = ("execute_topic_job", "execute_channel_job")
+_PAST_THE_FIRST_PHASE = ("awaiting_approval", "extracting", "building_rag", "generating_report")
+# The transient states a first phase's own run writes.
+_FIRST_PHASE_STATUSES = ("pending", "searching")
 
 
 class _RunStopped(Exception):
-    """The row was cancelled or failed while this run was going (T-5.2.20).
+    """The row was cancelled, failed or completed while this run was going (T-5.2.20).
 
     Raised by ``_update_job`` when its write found the row stopped, and by the
     topic search when a check inside it did (the search agent's progress
@@ -1363,12 +1376,14 @@ class _RunStopped(Exception):
 
 
 def _write_unless_stopped(db, job: Job, **fields) -> bool:
-    """Write ``fields`` to the job's row unless the row is failed or cancelled.
+    """Write ``fields`` to the job's row unless the row is over (``_STOPPED_STATUSES``).
 
     One conditional ``UPDATE ... WHERE id = :id AND status NOT IN ('failed',
-    'cancelled')``, so the test and the write are one statement: a cancel or a
-    route's failure that lands at any moment is either seen by it (nothing is
-    written) or lands after it (and the run's next check or write sees it).
+    'cancelled', 'completed')``, so the test and the write are one statement:
+    a cancel or a route's failure that lands at any moment is either seen by
+    it (nothing is written) or lands after it (and the run's next check or
+    write sees it). A completed row is refused too (T-5.2.23), so a second
+    delivery of a task that got past the start guard never turns it back.
     The in-memory ``job`` is refreshed from the row either way. Returns
     whether the row was written.
     """
@@ -1397,13 +1412,34 @@ def _update_job(db, job: Job, **kwargs) -> None:
         raise _RunStopped(job.status)
 
 
+def _report_progress(db, job: Job, stage: str, pct: int, message: str, data: dict | None = None) -> None:
+    """Write a run's progress to its row, then publish it (T-5.2.21).
+
+    The write is ``_update_job``'s conditional one: refused, it raises
+    ``_RunStopped`` and nothing is published, so a run cancelled or failed
+    meanwhile sends its page no event (the page applies the event's status,
+    which would show the run going again), and the run stops here. Before
+    this, the sync's "N videos ingested so far" went out after a stop with no
+    check at all, and the per-channel and per-phase publishes followed an
+    ``_is_stopped`` read that a stop could land just after. The write takes
+    that read's place where there was one, so it costs no extra statement;
+    the one after each channel's walk is one UPDATE per channel. The row
+    holds the progress too, so a reload sees what the socket said (cut to
+    the column's 500 characters; a channel input can be a long link).
+    """
+    _update_job(db, job, progress_pct=pct, progress_message=message[:500])
+    progress_service.publish_progress(job.id, stage, pct, message, data=data)
+
+
 def _is_stopped(db, job_id: str) -> bool:
     """Has the row been cancelled or failed since the run last looked?
 
     Read at each phase boundary and before each item of a loop, so a run stops
     at its next check. Until T-5.2.20 only ``cancelled`` was read here, and a
     run whose row a route had failed after the worker picked the task up ran
-    on to its end and wrote over ``failed``.
+    on to its end and wrote over ``failed``. ``completed`` reads as stopped
+    too (T-5.2.23): only another delivery of the same task can complete the
+    row under a running one.
     """
     db.expire_all()
     job = _get_job(db, job_id)
@@ -1411,7 +1447,7 @@ def _is_stopped(db, job_id: str) -> bool:
 
 
 def _already_stopped(job: Job, task: str) -> bool:
-    """Is this run already failed or cancelled, so a delivered task must leave it alone?
+    """Is this run already over, or past this task, so a delivered task must leave it alone?
 
     T-5.2.18, failed: a dispatch can raise after the broker took the message
     (the publish went out, the reply was lost). The route then fails the row,
@@ -1425,21 +1461,42 @@ def _already_stopped(job: Job, task: str) -> bool:
     and each entry point wrote ``searching`` or ``extracting`` before it read
     the row, bringing the run back.
 
+    T-5.2.23, completed, and a first phase past its approval: tasks ack late
+    (``task_acks_late``), so a worker that died after a run's last write and
+    before the ack (stopped, killed, its machine restarted) has the task
+    delivered again, and the run ran a second time: its spend again, and its
+    progress over a finished page. A first phase's run ends at
+    ``awaiting_approval``; delivered again after that, the topic search wrote
+    ``searching`` over the user's review, or over the resume that the
+    approval started, and searched again.
+
     Each entry point reads the row first and returns, before the usage scope
-    opens and before any write or publish, so the run stays as whoever stopped
+    opens and before any write or publish, so the run stays as whoever ended
     it left it and charges nothing.
 
-    Nothing runs a stopped job again on purpose: no route retries one in place
-    (a new run is a new row, Sync now included), approval accepts only
-    ``awaiting_approval``, the scheduler queues no job tasks, the tasks never
-    call ``self.retry``, and a sync never looks at an earlier sync's row. A
-    redelivery after a worker died mid-run (``task_acks_late``) finds the row
-    in the state that worker left, never stopped, so it still runs.
+    Nothing runs an ended job, or a first phase past its approval, again on
+    purpose: no route retries a run in place (a new run is a new row, Sync
+    now included), approval accepts only ``awaiting_approval`` and dispatches
+    the resume, not the first phase, the scheduler queues no job tasks (a
+    saved search runs a library question, never a job), the tasks never call
+    ``self.retry``, a sync never looks at an earlier sync's row, and
+    regenerating a report (``scripts/regenerate_report.py``) dispatches no
+    task. A redelivery after a worker died mid-run finds the row in a state
+    that run writes on its way, never one of these, so it still runs.
     """
-    if job.status not in _STOPPED_STATUSES:
+    if job.status in _STOPPED_STATUSES:
+        logger.info("[job:%s] %s delivered for a %s run; leaving it as it is", job.id, task, job.status)
+        return True
+    if task in _FIRST_PHASE_TASKS and job.status in _PAST_THE_FIRST_PHASE:
+        logger.info("[job:%s] %s delivered for a run already at %s; leaving it as it is", job.id, task, job.status)
+        return True
+    return False
+
+
+def _same_file(a: str | None, b: str | None) -> bool:
+    if not a or not b:
         return False
-    logger.info("[job:%s] %s delivered for a %s run; leaving it as it is", job.id, task, job.status)
-    return True
+    return os.path.normcase(os.path.abspath(a)) == os.path.normcase(os.path.abspath(b))
 
 
 def _discard_report(job_id: str, report_path: str) -> None:
@@ -1727,7 +1784,9 @@ def execute_topic_job(self, job_id: str) -> None:
         # in a transient state, something silently bailed. Force-fail it so
         # the UI doesn't hang forever at "Searching...". Harmless when the
         # happy path already moved status to awaiting_approval/failed/etc.
-        _backstop_orphan(db, job_id)
+        # Only the states this phase writes (T-5.2.23): a row already past
+        # it belongs to the resume, which may be running right now.
+        _backstop_orphan(db, job_id, owns=_FIRST_PHASE_STATUSES)
         db.close()
 
 
@@ -1765,12 +1824,10 @@ def execute_channel_job(self, job_id: str) -> None:
         connector = connector_for("video")
 
         for i, channel_input in enumerate(channel_list):
-            if _is_stopped(db, job_id):
-                logger.info(f"[job:{job_id}] Run stopped (cancelled or failed) mid-channel-fetch, exiting")
-                return
-
-            progress_service.publish_progress(
-                job_id, "searching", 5 + int(10 * (i / len(channel_list))),
+            # The write is the check (T-5.2.21): a run stopped meanwhile
+            # publishes nothing and stops here, before the channel's calls.
+            _report_progress(
+                db, job, "searching", 5 + int(10 * (i / len(channel_list))),
                 f"Processing channel {i + 1}/{len(channel_list)}: {channel_input}"
             )
 
@@ -1860,7 +1917,7 @@ def execute_channel_job(self, job_id: str) -> None:
         _handle_failure(db, job_id, error_summary(e))
     finally:
         meter.close()
-        _backstop_orphan(db, job_id)
+        _backstop_orphan(db, job_id, owns=_FIRST_PHASE_STATUSES)
         db.close()
 
 
@@ -2175,16 +2232,21 @@ def resume_job_after_approval(self, job_id: str) -> None:
             f"(skipped {len(all_chunks) - len(new_chunks)} already-embedded chunks)"
         )
         _insert_and_mark_embedded(db, new_chunks, chunked)
-        _update_job(db, job, chroma_collection_name=global_collection_name)
+        # The progress rides on this write, which is conditional, and is
+        # published only once it is written (T-5.2.21).
+        indexed_message = (
+            f"Indexed {len(new_chunks)} new chunks into the library "
+            f"({len(all_chunks)} total for this job)."
+        )
+        _update_job(db, job, chroma_collection_name=global_collection_name,
+                    progress_pct=70, progress_message=indexed_message)
         logger.info(
             f"[job:{job_id}] RAG built: {len(new_chunks)} new chunks indexed in "
             f"'{global_collection_name}' (total for this job: {len(all_chunks)})"
         )
 
         progress_service.publish_progress(
-            job_id, "building_rag", 70,
-            f"Indexed {len(new_chunks)} new chunks into the library "
-            f"({len(all_chunks)} total for this job).",
+            job_id, "building_rag", 70, indexed_message,
             data={
                 "reused_count": reused_count,
                 "newly_processed_count": newly_processed_count,
@@ -2247,8 +2309,11 @@ def resume_job_after_approval(self, job_id: str) -> None:
             # Cancelled or failed while the report was written (on a solo
             # pool a revoke cannot stop a running task, so a cancel during the
             # report reaches here). No row points at the file now, so nothing
-            # would ever delete it.
-            _discard_report(job_id, report_path)
+            # would ever delete it. Unless the row is completed and points at
+            # it (T-5.2.23): another delivery of this task finished the run,
+            # and its report has this run's name, report_<job_id>.html.
+            if not _same_file(job.report_path, report_path):
+                _discard_report(job_id, report_path)
             raise
         progress_service.publish_status_change(job_id, "generating_report", "completed",
                                                "Job completed successfully!")
@@ -2557,16 +2622,21 @@ def _run_extraction_and_rag(self, db, job) -> None:
         f"(skipped {len(all_chunks) - len(new_chunks)} already-embedded chunks)"
     )
     _insert_and_mark_embedded(db, new_chunks, chunked)
-    _update_job(db, job, chroma_collection_name=global_collection_name)
+    # The progress rides on this write, which is conditional, and is
+    # published only once it is written (T-5.2.21).
+    indexed_message = (
+        f"Indexed {len(new_chunks)} new chunks into the library "
+        f"({len(all_chunks)} total for this job)."
+    )
+    _update_job(db, job, chroma_collection_name=global_collection_name,
+                progress_pct=70, progress_message=indexed_message)
     logger.info(
         f"[job:{job_id}] RAG built: {len(new_chunks)} new chunks indexed in "
         f"'{global_collection_name}' (total for this job: {len(all_chunks)})"
     )
 
     progress_service.publish_progress(
-        job_id, "building_rag", 70,
-        f"Indexed {len(new_chunks)} new chunks into the library "
-        f"({len(all_chunks)} total for this job).",
+        job_id, "building_rag", 70, indexed_message,
         data={
             "reused_count": reused_count,
             "newly_processed_count": newly_processed_count,
@@ -2626,12 +2696,9 @@ def execute_subscription_job(self, job_id: str) -> None:
 
         # Phase 1: resolve + upsert channels
         for i, channel_input in enumerate(channel_inputs):
-            if _is_stopped(db, job_id):
-                logger.info(f"[job:{job_id}] Run stopped (cancelled or failed) mid channel-resolve, exiting")
-                return
-
-            progress_service.publish_progress(
-                job_id, "searching", 5 + int(10 * (i / max(1, len(channel_inputs)))),
+            # The write is the check (T-5.2.21), as in a channel job.
+            _report_progress(
+                db, job, "searching", 5 + int(10 * (i / max(1, len(channel_inputs)))),
                 f"Resolving channel {i + 1}/{len(channel_inputs)}: {channel_input}",
             )
 
@@ -2695,13 +2762,10 @@ def execute_subscription_job(self, job_id: str) -> None:
         )
         db.commit()
 
-        # Phase 2: walk uploads, fetch details, insert Document rows
-        if _is_stopped(db, job_id):
-            logger.info(f"[job:{job_id}] Run stopped (cancelled or failed) before uploads walk, exiting")
-            return
-
-        progress_service.publish_progress(
-            job_id, "searching", 18,
+        # Phase 2: walk uploads, fetch details, insert Document rows. The
+        # write is the check (T-5.2.21).
+        _report_progress(
+            db, job, "searching", 18,
             f"Resolved {len(resolved_channels)} channel(s). Walking uploads...",
         )
 
@@ -2720,14 +2784,12 @@ def execute_subscription_job(self, job_id: str) -> None:
         cap_budget = document_cap_service.sync_budget(db, job.tenant_id)
 
         for i, entry in enumerate(resolved_channels):
-            if _is_stopped(db, job_id):
-                logger.info(f"[job:{job_id}] Run stopped (cancelled or failed) mid uploads walk, exiting")
-                return
-
             channel_id = entry["channel_id"]
             name = entry["name"]
-            progress_service.publish_progress(
-                job_id, "searching", 18 + int(7 * (i / max(1, len(resolved_channels)))),
+            # The write is the check (T-5.2.21): a run stopped meanwhile
+            # stops before the channel's listing.
+            _report_progress(
+                db, job, "searching", 18 + int(7 * (i / max(1, len(resolved_channels)))),
                 f"Walking uploads for {name} ({i + 1}/{len(resolved_channels)})",
             )
 
@@ -2794,8 +2856,11 @@ def execute_subscription_job(self, job_id: str) -> None:
             if job.tenant_id:
                 subscription_service.mark_synced(db, channel_id, job.tenant_id)
 
-            progress_service.publish_progress(
-                job_id, "searching", 18 + int(7 * ((i + 1) / max(1, len(resolved_channels)))),
+            # T-5.2.21: this one had no check before it, and a channel's walk
+            # (its listing, its details) is long enough for a cancel to land
+            # in. Written first, so a stopped run publishes nothing more.
+            _report_progress(
+                db, job, "searching", 18 + int(7 * ((i + 1) / max(1, len(resolved_channels)))),
                 f"{total_ingested} videos ingested so far...",
             )
             usage_service.checkpoint()  # T-5.2.13
@@ -2859,7 +2924,7 @@ def execute_subscription_job(self, job_id: str) -> None:
 _TRANSIENT_STATUSES = {"pending", "searching", "extracting", "building_rag", "generating_report"}
 
 
-def _backstop_orphan(db, job_id: str) -> None:
+def _backstop_orphan(db, job_id: str, owns=_TRANSIENT_STATUSES) -> None:
     """Force-fail a job whose task returned while still in a transient status.
 
     Called from the ``finally`` of every orchestrator task. If the happy path
@@ -2868,6 +2933,11 @@ def _backstop_orphan(db, job_id: str) -> None:
     with a diagnostic message so the user isn't stranded watching a dead
     progress bar.
 
+    ``owns`` is the transient states the returning task writes. A first
+    phase's task passes its own two (T-5.2.23): delivered again for a row the
+    resume holds, it returns at its start guard, and the row's ``extracting``
+    is the resume's, still running, not an orphan of this task.
+
     Swallows its own exceptions — this is a last-resort safety net; it must
     never itself bring the task down.
     """
@@ -2875,7 +2945,7 @@ def _backstop_orphan(db, job_id: str) -> None:
         fresh = SessionLocal()
         try:
             job = fresh.query(Job).filter(Job.id == job_id).first()
-            if job is None or job.status not in _TRANSIENT_STATUSES:
+            if job is None or job.status not in _TRANSIENT_STATUSES or job.status not in owns:
                 return
             stuck_in = job.status
             error_message = (

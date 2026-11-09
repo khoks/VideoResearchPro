@@ -8,6 +8,11 @@ from app.schemas.job import JobCreate
 from app.services import job_source_types, language_mix_service, run_notes
 
 
+# A job in one of these has ended: the job limit does not count it, a cancel
+# no longer reaches it (T-5.2.22), and no task runs it again (T-5.2.23).
+ENDED_STATUSES = ("completed", "cancelled", "failed")
+
+
 def refuse_if_at_limit(db: Session, tenant_id: str | None) -> None:
     """Refuse one more job for ``tenant_id`` once they are at their limit.
 
@@ -20,7 +25,7 @@ def refuse_if_at_limit(db: Session, tenant_id: str | None) -> None:
     limit = settings.MAX_CONCURRENT_JOBS
     active_count = (
         db.query(Job)
-        .filter(Job.tenant_id == tenant_id, Job.status.notin_(["completed", "cancelled", "failed"]))
+        .filter(Job.tenant_id == tenant_id, Job.status.notin_(ENDED_STATUSES))
         .count()
     )
     if active_count >= limit:
@@ -135,14 +140,17 @@ def get_jobs(
 
 def update_job_status(db: Session, job_id: str, status: str, progress_pct: int | None = None,
                       progress_message: str | None = None, error_message: str | None = None,
-                      *, only_from: str | None = None) -> Job | None:
+                      *, only_from: str | None = None, unless_ended: bool = False) -> Job | None:
     """Write a job's status, and the other fields given.
 
     ``only_from`` makes the write conditional on the row still being in that
     status, in one ``UPDATE ... WHERE status = :only_from`` (T-5.2.20): a
     route that writes after it dispatched a task never writes over what the
-    task, or a cancel, has written meanwhile. The row is returned as it is
-    either way.
+    task, or a cancel, has written meanwhile. ``unless_ended`` makes it
+    conditional on the row not having ended (``ENDED_STATUSES``), the same
+    way (T-5.2.22): a cancel never writes over a run that completed or failed
+    after the route read it. The row is returned as it is either way, so the
+    caller reads its status to learn whether the write took.
     """
     job = get_job(db, job_id)
     if not job:
@@ -154,11 +162,14 @@ def update_job_status(db: Session, job_id: str, status: str, progress_pct: int |
         values["progress_message"] = progress_message
     if error_message is not None:
         values["error_message"] = error_message
-    if only_from is not None:
+    if only_from is not None or unless_ended:
         db.flush()
-        db.query(Job).filter(Job.id == job_id, Job.status == only_from).update(
-            values, synchronize_session=False
-        )
+        query = db.query(Job).filter(Job.id == job_id)
+        if only_from is not None:
+            query = query.filter(Job.status == only_from)
+        if unless_ended:
+            query = query.filter(Job.status.notin_(ENDED_STATUSES))
+        query.update(values, synchronize_session=False)
     else:
         for key, value in values.items():
             setattr(job, key, value)

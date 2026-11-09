@@ -65,12 +65,22 @@ export function useApproveJob() {
   });
 }
 
+/**
+ * A run that ended before the cancel reached it answers 400 with what it ended
+ * as, and keeps that end (T-5.2.22). The global toast says those words; the run
+ * is fetched again so the page shows the end the toast names, not a Cancel
+ * button for a run that is over.
+ */
 export function useCancelJob() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => jobsApi.cancel(id),
     onSuccess: (updatedJob, id) => {
       queryClient.setQueryData(['job', id], updatedJob);
+      queryClient.invalidateQueries({ queryKey: ['jobs'] });
+    },
+    onError: (_error, id) => {
+      queryClient.invalidateQueries({ queryKey: ['job', id] });
       queryClient.invalidateQueries({ queryKey: ['jobs'] });
     },
   });

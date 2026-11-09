@@ -32,6 +32,7 @@ from app.sources.types import DEFAULT_AUDIO_LANGUAGE, Candidate, ExtractedText, 
 from app.tasks.celery_app import celery_app
 from app.utils.chunking import chunk_transcript
 from app.utils.html_builder import build_report_html, save_report
+from app.utils.log_redaction import error_summary, scrub_keys
 from app.utils.shared_url_log import loggable_id
 
 logger = logging.getLogger(__name__)
@@ -476,8 +477,10 @@ class WhisperMinutes:
         self.used_seconds += max(heard, float(document.duration_seconds or 0))
 
     def charge_part(self, seconds: float) -> None:
-        """Add a recording that failed part-way, by how far it got (T-1.7.1.5).
-        Its declared length was never heard, so it does not count here."""
+        """Add a paid recording that left no text, by how far Whisper's
+        answers reached: one that failed part-way (T-1.7.1.5) or answered
+        with nothing (T-1.7.1.7). Its declared length may never have been
+        heard, so it does not count here."""
         self.used_seconds += seconds
 
     def note(self) -> dict | None:
@@ -489,13 +492,15 @@ class WhisperMinutes:
 
 def _fetch_text(connector, candidate: Candidate, **kwargs) -> tuple[ExtractedText | None, float | None]:
     """``connector.fetch_text`` for an extraction loop: the text or None, and
-    the seconds of a transcription that failed part-way, which the loop
-    charges to its Whisper limits. ``None`` when there was no such failure:
-    a part that reached 0 seconds was still a paid recording (T-1.7.1.5).
+    the seconds of a transcription that was paid for and left no text, which
+    the loop charges to its Whisper limits: one that failed part-way
+    (T-1.7.1.5) or answered with nothing (T-1.7.1.7). ``None`` when there was
+    no such transcription: one that reached 0 seconds was still a paid
+    recording.
     """
     try:
         return connector.fetch_text(candidate, **kwargs), None
-    except source_failure.TranscriptionCutShort as cut:
+    except source_failure.PaidTranscriptionLost as cut:
         logger.warning(
             "[job:%s] %s: %s; recording unavailable",
             kwargs.get("job_id", ""), loggable_id(candidate.source_id), cut,
@@ -1441,7 +1446,7 @@ def execute_topic_job(self, job_id: str) -> None:
 
     except Exception as e:
         logger.exception(f"[job:{job_id}] Topic job failed during search: {e}")
-        _handle_failure(db, job_id, str(e))
+        _handle_failure(db, job_id, error_summary(e))
     finally:
         meter.close()
         # Backstop: if the task is about to return while the job is still
@@ -1568,7 +1573,7 @@ def execute_channel_job(self, job_id: str) -> None:
 
     except Exception as e:
         logger.exception(f"[job:{job_id}] Channel job failed during search: {e}")
-        _handle_failure(db, job_id, str(e))
+        _handle_failure(db, job_id, error_summary(e))
     finally:
         meter.close()
         _backstop_orphan(db, job_id)
@@ -1966,7 +1971,7 @@ def resume_job_after_approval(self, job_id: str) -> None:
 
     except Exception as e:
         logger.exception(f"[job:{job_id}] Job failed: {e}")
-        _handle_failure(db, job_id, str(e))
+        _handle_failure(db, job_id, error_summary(e))
     finally:
         meter.close()
         _backstop_orphan(db, job_id)
@@ -2548,7 +2553,7 @@ def execute_subscription_job(self, job_id: str) -> None:
 
     except Exception as e:
         logger.exception(f"[job:{job_id}] Subscription job failed: {e}")
-        _handle_failure(db, job_id, str(e))
+        _handle_failure(db, job_id, error_summary(e))
     finally:
         meter.close()
         _backstop_orphan(db, job_id)
@@ -2606,7 +2611,15 @@ def _backstop_orphan(db, job_id: str) -> None:
 
 
 def _handle_failure(db, job_id: str, error: str) -> None:
-    """Set job to failed and publish error."""
+    """Set job to failed and publish error.
+
+    ``error`` is stored on the row and sent on the socket, neither of which
+    is a log record, so the record factory never sees it (T-5.6.17). A caller
+    with an exception passes ``error_summary(e)``, never ``str(e)``, which is
+    the only way a refusal's words, in any shape, stay out. The shapes of a
+    key are taken out here as well, whatever the caller passed.
+    """
+    error = scrub_keys(error)
     # Translate YouTube quota exhaustion into a user-friendly message.
     from app.services.quota_service import QuotaExceededError
     exc_type, exc_value, _ = sys.exc_info()

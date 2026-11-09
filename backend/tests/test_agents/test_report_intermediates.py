@@ -28,6 +28,7 @@ from app.models.job_report_intermediate import (
 )
 from app.tasks import job_tasks
 from app.tasks.job_tasks import _persist_report_intermediates, _report_intermediates_sink
+from tests.provider_errors import CASES, assert_kept_out
 
 KEYS = ("facts", "comments", "conclusions", "references", "speakers")
 
@@ -281,3 +282,35 @@ def test_audit_script_reads_the_rows_back(db, job, capsys):
     assert "1 run(s)" in out and "reduce: lossless" in out
     assert "matches" in out and "DOES NOT match" not in out
     assert "per-batch:" in out
+
+
+class _KeyQuotingMapLLM(_MapLLM):
+    """Fails like a provider that quotes the key it was sent."""
+
+    def __init__(self, error: Exception, fail_on_calls: set[int]):
+        super().__init__(fail_on_calls=fail_on_calls)
+        self.error = error
+
+    def invoke(self, messages):
+        if self.calls + 1 in self.fail_on_calls:
+            self.calls += 1
+            raise self.error
+        return super().invoke(messages)
+
+
+@pytest.mark.parametrize("case", CASES)
+def test_a_failed_batchs_note_keeps_no_key(db, job, case):
+    """T-5.6.17: the note is stored in `job_report_intermediates`, which is not
+    a log, so the record factory never sees it. It keeps the class and the
+    scrubbed words. Mutation check: put `str(error)` back in `_map_record` and
+    this fails on every case."""
+    chunks = [_chunk(i, f"v{i}") for i in range(2)]
+    # One batch of two chunks: call 1 fails, its halves are calls 2 and 3, and
+    # call 2 fails as well, so one chunk is recorded as failed.
+    llm = _KeyQuotingMapLLM(case.make(), fail_on_calls={1, 2})
+    intermediates: dict = {}
+    _run(chunks, llm, intermediates)
+    _persist_report_intermediates(db, job.id, intermediates)
+
+    failed = db.query(JobReportIntermediate).filter_by(job_id=job.id, stage=STAGE_MAP, status=MAP_FAILED).one()
+    assert_kept_out(case, json.loads(failed.notes_json)["error"])

@@ -23,6 +23,7 @@ from app.models.output_citation import OutputCitation
 from app.services import auth_service, output_artifacts, output_service
 from app.services.output_service import OutputError
 from app.services.outputters import book_cohesion, book_html
+from tests.provider_errors import CASES, assert_kept_out
 from tests.test_services.test_book_endnotes import _generate, _smoke_run
 from tests.test_services.test_book_formats import _assert_valid_epub
 
@@ -212,6 +213,20 @@ def test_a_failed_outline_leaves_the_users_order_and_says_so(db, two_runs, monke
     usage = json.loads(out.usage_json)
     assert usage["cohesion"] == {"requested": "full", "applied": "none"}
     assert usage["calls"][0]["ok"] is False and usage["calls"][0]["error"].startswith("RuntimeError")
+
+
+@pytest.mark.parametrize("case", CASES)
+def test_a_failed_outline_quotes_no_key_in_the_book(db, two_runs, monkeypatch, case):
+    """T-5.6.17: the call's words go into the finished book's processing note
+    and its `usage_json`, both stored and read. Mutation check: put `str(e)`
+    back in `book_cohesion._call` and this fails on every case."""
+    user, a, b = two_runs
+    monkeypatch.setattr(book_cohesion, "_default_invoke", FakeModel(case.make()))
+    out = _generate(db, user, [a.id, b.id], formats=[], cohesion="full")
+    assert out.status == "completed"
+    note = next(line for line in out.content_text.splitlines() if "The book outline call failed (" in line)
+    assert_kept_out(case, note)
+    assert_kept_out(case, json.loads(out.usage_json)["calls"][0]["error"])
 
 
 def test_a_failed_prose_call_keeps_the_outline_framing_and_says_so(db, two_runs, monkeypatch):

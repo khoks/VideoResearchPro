@@ -169,7 +169,7 @@ def test_a_guid_that_is_a_url_stays_out(client, log):
 def test_a_guid_that_is_a_url_stays_out_of_whispers_own_lines(client, log):
     """The Whisper helpers log the id they are handed, on their own logger."""
     client.fetch_audio_to_file.return_value = 1024
-    send = MagicMock(return_value=SimpleNamespace(segments=[]))
+    send = MagicMock(return_value=SimpleNamespace(segments=[{"text": "words", "start": 0.0, "end": 1.0}]))
     with (
         patch("app.services.llm_service.whisper_api_key", return_value="not-used"),
         patch("openai.OpenAI"),

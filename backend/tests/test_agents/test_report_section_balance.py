@@ -14,6 +14,7 @@ import pytest
 
 from app.agents import report_agent as ra
 from app.utils import html_balance
+from tests.provider_errors import CASES, assert_kept_out
 
 _SUMMARY = "Executive Summary"
 _CUT = (
@@ -372,6 +373,26 @@ def test_a_channel_narrative_whose_first_call_fails_still_says_so():
     composer = _ChannelComposer([RuntimeError("bad request")])
     out = _compose_channel(composer)
     assert out["final_html"].startswith("<p>Channel narrative generation failed:")
+
+
+@pytest.mark.parametrize("case", CASES)
+def test_a_failed_channel_narrative_quotes_no_key(case):
+    """T-5.6.17: the line is the stored report's body, which its reader opens,
+    so the failure is told by ``error_summary``, through the channel job's
+    entry point. Mutation check: put ``{e}`` back and this fails on every case."""
+    composer = _ChannelComposer([case.make()])
+    with patch.object(ra, "get_llm_for", side_effect=composer):
+        _, body = ra.run_report_agent(job_type="channel", topic="channels", transcript_chunks=[_channel_chunk()])
+    assert body.startswith("<p>Channel narrative generation failed: ")
+    assert_kept_out(case, body)
+
+
+def test_a_failed_channel_narrative_is_escaped():
+    """The words go into HTML, so markup in them is shown, never run."""
+    composer = _ChannelComposer([RuntimeError("<script>alert(1)</script>")])
+    out = _compose_channel(composer)
+    assert "<script>" not in out["final_html"]
+    assert "&lt;script&gt;" in out["final_html"]
 
 
 def test_run_report_agent_closes_a_cut_channel_narrative_in_the_body():

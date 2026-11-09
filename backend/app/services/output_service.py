@@ -43,6 +43,7 @@ from sqlalchemy.orm import Session
 
 from app.models.output import Output
 from app.models.user import User
+from app.utils.log_redaction import error_summary, provider_error_text
 
 logger = logging.getLogger(__name__)
 
@@ -428,7 +429,7 @@ def _run_generation(db: Session, user: User, output: Output) -> Output:
         output.content_text = None
         output.content_path = None
         _discard_artifacts(output)
-        transition_to(db, output, OutputStatus.SKIPPED, progress_message=str(e)[:500])
+        transition_to(db, output, OutputStatus.SKIPPED, progress_message=provider_error_text(e)[:500])
         db.refresh(output)
         return output
     except OutputError as e:
@@ -441,7 +442,9 @@ def _run_generation(db: Session, user: User, output: Output) -> Output:
         db.rollback()
         db.refresh(output)
         _discard_artifacts(output)
-        transition_to(db, output, OutputStatus.FAILED, error_message=str(e), progress_message="Failed")
+        # T-5.6.17: an OutputError is our own sentence, but one can carry a
+        # model call's words (a deck's failed outline), so they are scrubbed.
+        transition_to(db, output, OutputStatus.FAILED, error_message=provider_error_text(e), progress_message="Failed")
         db.refresh(output)
         return output
     except Exception as e:  # noqa: BLE001
@@ -457,7 +460,7 @@ def _run_generation(db: Session, user: User, output: Output) -> Output:
             db,
             output,
             OutputStatus.FAILED,
-            error_message=f"Unexpected error: {e!r}",
+            error_message=f"Unexpected error: {error_summary(e)}",
             progress_message="Failed",
         )
         db.refresh(output)

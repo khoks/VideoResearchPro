@@ -43,6 +43,7 @@ from app.services import source_failure
 from app.services.source_failure import SourceFailure
 from app.sources.registry import connector_for
 from app.sources.types import Candidate
+from app.utils.log_redaction import error_summary
 
 logger = logging.getLogger(__name__)
 
@@ -163,7 +164,7 @@ def dispatch_search(
             )
             continue
         except Exception as e:
-            errors_by_type[st] = f"{type(e).__name__}: {e}"
+            errors_by_type[st] = error_summary(e)
             failures_by_type[st] = source_failure.classify(e)
             candidates_by_type[st] = []
             logger.exception(

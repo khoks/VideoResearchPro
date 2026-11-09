@@ -32,21 +32,45 @@ class SearchFailed(Exception):
     """
 
 
-class TranscriptionCutShort(Exception):
+class PaidTranscriptionLost(Exception):
+    """Whisper was paid for some or all of a recording, and there is no text.
+
+    A job's Whisper limits have to hear about it, and this is how: D-111 keeps
+    limits off the usage meter. The job charges one recording to
+    ``WHISPER_MAX_PER_JOB`` and ``seconds`` to ``WHISPER_MAX_MINUTES_PER_JOB``.
+    ``seconds`` is how far the answered audio reached on the recording's
+    timeline, so an overlap counts once (D-141), and never the declared
+    length, which may not have been heard. Only a connector's ``fetch_text``
+    with Whisper allowed raises one, and nothing a provider said goes in it:
+    its text can quote a key.
+    """
+
+    def __init__(self, seconds: float, message: str) -> None:
+        super().__init__(message)
+        self.seconds = seconds
+
+
+class TranscriptionCutShort(PaidTranscriptionLost):
     """Whisper finished part of a recording and then failed (T-1.7.1.5).
 
     There is no text, because a transcript with a hole in it would read as
-    complete, but the finished chunks were billed, so a job's Whisper limits
-    have to hear about them. This is how: D-111 keeps limits off the usage
-    meter. ``seconds`` is how far those chunks reached on the recording's
-    timeline, so an overlap counts once (D-141). Only a connector's
-    ``fetch_text`` with Whisper allowed can raise it, and nothing a provider
-    said goes in it: its text can quote a key.
+    complete, but the finished chunks were billed.
     """
 
     def __init__(self, seconds: float) -> None:
-        super().__init__(f"Whisper failed {seconds:.0f} seconds into the recording")
-        self.seconds = seconds
+        super().__init__(seconds, f"Whisper failed {seconds:.0f} seconds into the recording")
+
+
+class TranscriptionEmpty(PaidTranscriptionLost):
+    """Whisper answered for the whole recording and wrote no text (T-1.7.1.7).
+
+    Every chunk merged to nothing, or a single file came back with no words.
+    Not a failure part-way, and rare, but every answer was billed. ``seconds``
+    is the length Whisper reported hearing.
+    """
+
+    def __init__(self, seconds: float) -> None:
+        super().__init__(seconds, f"Whisper heard {seconds:.0f} seconds of the recording and wrote no text")
 
 
 @dataclass(frozen=True)

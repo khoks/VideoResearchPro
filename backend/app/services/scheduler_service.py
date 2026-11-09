@@ -48,6 +48,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.models.scheduled_run import ScheduledRun
 from app.services import task_routing_service
+from app.utils.log_redaction import error_summary
 
 logger = logging.getLogger(__name__)
 
@@ -392,7 +393,7 @@ def _dispatch_one(db: Session, run: ScheduledRun, now: datetime, result: dict[st
     except Exception as e:  # noqa: BLE001 — a broker outage must not kill the tick
         logger.exception("scheduler: dispatch failed for row %s kind=%s", run.id, run.kind)
         run.last_status = STATUS_DISPATCH_FAILED
-        run.last_error = f"{type(e).__name__}: {e}"[:2000]
+        run.last_error = error_summary(e, limit=2000)
         run.consecutive_failures += 1
         if run.consecutive_failures <= settings.SCHEDULER_MAX_RETRY_TICKS:
             # Transient (broker down): try again next tick, not next week.

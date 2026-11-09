@@ -30,6 +30,12 @@ Not covered: anything that is not a log record (``print``, a file a library
 writes), and a key in a shape ``scrub_keys`` does not know anywhere but in a
 refusal itself: a refusal's words copied into a dict or a string go by shape
 alone. So a log line passes the exception, never ``e.body`` or a response.
+
+**What is not a log record (T-5.6.17).** A failed run's ``error_message``, the
+socket's error event, a saved search's ``last_error``, an API answer: none of
+them passes the record factory, and a tenant reads some of them. Each such
+place that keeps an exception's words takes them from ``error_summary``, the
+same rule with the exception's class in front.
 """
 from __future__ import annotations
 
@@ -122,6 +128,18 @@ def provider_error_text(exc: BaseException) -> str:
     if any(_is_refusal(seen) for seen in _chain(exc)):
         return type(exc).__name__
     return scrub_keys(_text_of(exc))
+
+
+def error_summary(exc: BaseException, limit: int | None = None) -> str:
+    """What a stored row, a published event or an API answer may say about a
+    failed call (T-5.6.17): ``Class: words``, the words as
+    ``provider_error_text`` leaves them, or the class alone when that left
+    nothing else. Cut to ``limit`` after the scrub, since half a key is still
+    a leak."""
+    name = type(exc).__name__
+    text = provider_error_text(exc).strip()
+    summary = name if not text or text == name else f"{name}: {text}"
+    return summary[:limit] if limit else summary
 
 
 # What cannot hold a key, so is left alone without being rendered.

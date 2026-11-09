@@ -23,6 +23,7 @@ from app.models.output import Output
 from app.models.output_citation import OutputCitation
 from app.services import auth_service, output_artifacts, output_service
 from app.services.outputters import book_cohesion
+from tests.provider_errors import CASES, assert_kept_out
 from tests.test_services.test_book_endnotes import _smoke_run
 
 MARKER = re.compile(r"\[S(\d+)\]")
@@ -177,3 +178,34 @@ def test_estimate_and_kinds(unauthenticated_client, db, user_and_run, monkeypatc
                                       json={"kind": "deck", "title": "D", "source_ids": [run.id]}).json()
     assert [c["use_case"] for c in est["calls"]] == ["author_deck_outline"] and est["cost_usd"] > 0
     assert db.query(Output).filter(Output.kind == "deck").count() == 0
+
+
+@pytest.mark.parametrize("case", CASES)
+def test_a_failed_outline_call_keeps_no_key(db, user_and_run, monkeypatch, case):
+    """T-5.6.17: the call's words reach `outputs.error_message` through the
+    deck's own sentence, which the reader sees. Mutation check: put `str(e)`
+    back in `book_cohesion._call` and this fails on every case."""
+    user, run = user_and_run
+    monkeypatch.setattr(book_cohesion, "_default_invoke", FakeModel(case.make()))
+    out = _generate(db, user, [run.id], None)
+    assert out.status == "failed" and out.error_message.startswith("The slide outline call failed (")
+    assert_kept_out(case, out.error_message)
+
+
+@pytest.mark.parametrize("case", CASES)
+def test_an_unexpected_failure_keeps_no_key(db, user_and_run, monkeypatch, case):
+    """Not an `OutputError`: anything an outputter did not expect, such as a
+    provider's exception from a call it made itself. Mutation check: put
+    `{e!r}` back in `run_generation` and this fails on every case."""
+    from app.services.outputters.deck import DeckOutputter
+
+    user, run = user_and_run
+    error = case.make()
+
+    def explode(self, db, user, output):
+        raise error
+
+    monkeypatch.setattr(DeckOutputter, "generate", explode)
+    out = _generate(db, user, [run.id], None)
+    assert out.status == "failed" and out.error_message.startswith("Unexpected error: ")
+    assert_kept_out(case, out.error_message)

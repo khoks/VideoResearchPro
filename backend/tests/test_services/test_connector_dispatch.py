@@ -17,6 +17,7 @@ from app.services.connector_dispatch import DispatchResult, dispatch_search
 from app.sources import registry
 from app.sources.base import BaseConnector
 from app.sources.types import Candidate
+from tests.provider_errors import CASES, assert_kept_out
 
 
 # ---------------------------------------------------------------------------
@@ -249,3 +250,12 @@ def test_dispatch_search_respects_limit_per_type(clean_registry):
     result = dispatch_search(["video"], query="x", limit_per_type=5)
 
     assert len(result.candidates_by_source_type["video"]) == 5
+
+
+@pytest.mark.parametrize("case", CASES)
+def test_a_search_failures_text_keeps_no_key(clean_registry, case):
+    """T-5.6.17: `errors_by_source_type` is only logged today, but it is a
+    result any caller could keep, so it holds the same rule."""
+    registry.register(_RaisingConnector("reddit_post", case.make()))
+    result = dispatch_search(["reddit_post"], query="x", job_id="job-1")
+    assert_kept_out(case, result.errors_by_source_type["reddit_post"])

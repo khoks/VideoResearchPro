@@ -49,6 +49,7 @@ from app.services.llm_routing import (
 from app.services import output_length as output_length_policy
 from app.services import temporal_service
 from app.utils import html_balance, tiktoken_cache
+from app.utils.log_redaction import error_summary
 from app.utils.youtube_helpers import format_timestamp
 
 logger = logging.getLogger(__name__)
@@ -1065,7 +1066,8 @@ def _map_record(
         status = MAP_UNPARSED
     notes: dict = {"videos": [v for v in videos if v]}
     if error is not None:
-        notes["error"] = f"{type(error).__name__}: {str(error)[:500]}"
+        # T-5.6.17: kept in `job_report_intermediates`, which is not a log.
+        notes["error"] = error_summary(error, limit=600)
     return {
         "batch_index": batch_index,
         "sub_index": sub_index,
@@ -2098,7 +2100,10 @@ def compose_channel_report(state: ReportAgentState) -> dict:
         )
     except Exception as e:
         logger.exception("Channel report composition failed")
-        return {"final_html": f"<p>Channel narrative generation failed: {e}</p>"}
+        # T-5.6.17: the report is stored and read, so the words are scrubbed
+        # first, and escaped, since they go into HTML.
+        failed = html_lib.escape(error_summary(e, limit=300))
+        return {"final_html": f"<p>Channel narrative generation failed: {failed}</p>"}
     closed = [("Channel narrative", outcome)] if outcome in _CLOSED_OUTCOMES else []
     disclosures = _closed_section_disclosures(closed)
     if disclosures:

@@ -11,10 +11,13 @@ from __future__ import annotations
 import uuid
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from app.models.job import Job
 from app.models.output import Output
 from app.services import auth_service, output_service
 from app.services.output_service import OutputStatus
+from tests.provider_errors import CASES, KeyBearing, assert_kept_out
 
 
 def _pro(db, email: str):
@@ -99,6 +102,20 @@ def test_broker_failure_is_recorded_on_the_row(unauthenticated_client, db, tmp_p
     body = r.json()
     assert body["status"] == "failed"
     assert "Could not queue generation" in body["error_message"] and "redis down" in body["error_message"]
+
+
+@pytest.mark.parametrize("case", CASES)
+def test_a_broker_failure_keeps_no_key_on_the_row(unauthenticated_client, db, tmp_path, case: KeyBearing):
+    """T-5.6.17: the row's message is read in the outputs list. Mutation check:
+    put `{e}` back and this fails on every case."""
+    from app.routers import author as author_router
+
+    user, headers = _pro(db, f"k{uuid.uuid4().hex[:6]}@x.com")
+    job = _job(db, user.id, tmp_path)
+    author_router.generate_output.apply_async.side_effect = case.make()
+    body = _book(unauthenticated_client, headers, job.id).json()
+    assert body["status"] == "failed" and body["error_message"].startswith("Could not queue generation: ")
+    assert_kept_out(case, body["error_message"])
 
 
 # ---------------------------------------------------------------------------

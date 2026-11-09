@@ -32,6 +32,7 @@ from app.services import (
     visibility_service,
 )
 from app.services.tier_service import TIER_CAPABILITIES, Tier
+from tests.provider_errors import CASES, assert_kept_out
 
 URL = "/api/v1/saved-searches"
 WEEKLY = {"cadence": "weekly", "hour": 9, "weekday": 0, "timezone": "Europe/London"}
@@ -354,3 +355,26 @@ def test_a_shelf_run_shares_the_routes_core_and_drops_off_shelf_citations(db, pr
     db.refresh(ss)
     # T-8.3.3.10: the cited set is keyed on document_id, whatever the reference named.
     assert json.loads(ss.last_reference_ids_json) == [in_shelf.document_id]
+
+
+class _KeyQuotingAgent(FakeAgent):
+    def __init__(self, error: Exception):
+        super().__init__()
+        self.error = error
+
+    def __call__(self, **kwargs):
+        self.calls.append(kwargs)
+        raise self.error
+
+
+@pytest.mark.parametrize("case", CASES)
+def test_a_failed_run_shows_no_key(client, db, pro, case):
+    """T-5.6.17: `last_error` and the run's `error` are what the page shows,
+    read here through the routes. Mutation check: put `{e}` back in
+    `execute` and this fails on every case."""
+    ss = _saved(db, pro)
+    out = saved_search_service.execute(db, ss.id, trigger="manual", agent=_KeyQuotingAgent(case.make()))
+    assert out["status"] == "failed"
+
+    assert_kept_out(case, client.get(f"{URL}/{ss.id}").json()["last_error"])
+    assert_kept_out(case, client.get(f"{URL}/{ss.id}/runs").json()[0]["error"])

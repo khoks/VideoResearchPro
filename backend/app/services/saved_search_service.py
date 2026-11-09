@@ -39,6 +39,7 @@ from app.models.saved_search import SavedSearch
 from app.models.saved_search_run import SavedSearchRun
 from app.models.user import User
 from app.services import qa_scope_service, scheduler_service, tier_service, usage_service
+from app.utils.log_redaction import error_summary
 
 logger = logging.getLogger(__name__)
 
@@ -537,7 +538,8 @@ def _execute_run(db: Session, ss: SavedSearch, user: User, saved_search_id: str,
         db.rollback()
         ss = db.get(SavedSearch, saved_search_id)
         if ss is not None:
-            _record(db, ss, STATUS_FAILED, f"{type(e).__name__}: {e}", trigger=trigger)
+            # T-5.6.17: `last_error` and the run row are read on the page.
+            _record(db, ss, STATUS_FAILED, error_summary(e), trigger=trigger)
         return {"status": STATUS_FAILED}
 
 

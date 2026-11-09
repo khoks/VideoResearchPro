@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from app.models.audit_log import AuditLog
 from app.utils.client_ip import client_ip
+from app.utils.shared_url_log import traceback_without_text
 
 logger = logging.getLogger(__name__)
 
@@ -165,11 +166,15 @@ def record(
         db.commit()
         db.refresh(row)
         return row
-    except Exception:
-        logger.exception(
-            "audit_service.record: failed to persist event=%s user_id=%s",
+    except Exception as e:
+        # T-4.11.4.4: by its frames and type. A database error's text quotes
+        # the row's values: an address on a failed sign-in, a suggestion's
+        # question, the caller's address and user agent.
+        logger.error(
+            "audit_service.record: failed to persist event=%s user_id=%s: %s",
             event,
             user_id,
+            traceback_without_text(e),
         )
         try:
             db.rollback()

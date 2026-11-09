@@ -43,6 +43,7 @@ from app.connectors.archive import ExportUnreadable, ImportPreview, ImportSource
 from app.connectors.base import ActivityEvent as EventIn
 from app.connectors.base import DerivedFact, ImportedShare
 from app.services import echo_intake_service, echo_processing_service, echo_vectors
+from app.utils.shared_url_log import loggable_filename, traceback_without_text
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +55,13 @@ _SUPPORTED = "WhatsApp chat exports (.txt or .zip) and Google Keep notes from Go
 
 class ImportNotFound(LookupError):
     """No import with that id belongs to this tenant."""
+
+
+class ImportStopped(RuntimeError):
+    """An import failed part-way for a reason that is not the file's (T-4.11.4.4).
+    Its row is already ``failed`` with the words its message carries, and the
+    route answers with them, so the failure never reaches the server's own
+    log of an unhandled exception, which would write its text whole."""
 
 
 def _now() -> datetime:
@@ -86,8 +94,14 @@ def _importer(source: ImportSource, name: str | None):
                 return importer
         except ExportUnreadable:
             raise
-        except Exception:
-            logger.exception("echo: importer %s failed to sniff %r", candidate, source.filename)
+        except Exception as e:
+            # T-4.11.4.4: the file by its kind, the failure by its frames. An
+            # export is named after whoever it is with, and a parser's words
+            # (a date or a number it could not read) come from inside it.
+            logger.error(
+                "echo: importer %s failed to sniff %s: %s",
+                candidate, loggable_filename(source.filename), traceback_without_text(e),
+            )
     importer = registry.importer_for(source.filename)
     if importer is None:
         raise ExportUnreadable(f"This file is not an export Echo can read yet. Supported: {_SUPPORTED}.")
@@ -253,8 +267,15 @@ def run_import(db: Session, user: Any, fileobj: IO[bytes], filename: str, *,
         record.counts_json = json.dumps({**counts, **stats})
         record.finished_at = _now()
         db.commit()
-        logger.exception("echo: import %s failed after %d shares", record.id[:8], counts["shares"])
-        raise
+        # T-4.11.4.4: by its frames and type. A database error's text quotes
+        # the batch's rows, the shares' words, and a parser's quotes the file.
+        logger.error(
+            "echo: import %s failed after %d shares: %s",
+            record.id[:8], counts["shares"], traceback_without_text(e),
+        )
+        if isinstance(e, ExportUnreadable):
+            raise
+        raise ImportStopped(record.error) from e
 
     record.counts_json = json.dumps({**counts, **stats, "embedded": 0})
     record.status = "embedding" if counts["shares"] else "done"

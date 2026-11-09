@@ -305,9 +305,14 @@ def test_startup_warns_about_each_listed_address_with_no_account(db, test_user, 
     with patch("app.services.auth_service.logger") as log:
         with TestClient(app):
             pass
-    warned = [c.args[1] for c in log.warning.call_args_list]
-    assert warned == ["later@company.com", "ops@company.com"], "one per unregistered entry, none for test@example.com"
+    # T-4.11.4.4: each by its place in the list and a masked form, in list
+    # order, and never the whole address.
+    warned = [c.args[1:] for c in log.warning.call_args_list]
+    assert warned == [(2, 3, "o***@c***.com"), (3, 3, "l***@c***.com")], "one per unregistered entry, none for test@example.com"
     assert "register the account before listing it" in log.warning.call_args_list[0].args[0]
+    every_line = " ".join(str(c) for c in log.method_calls).lower()
+    for address in ("ops@company.com", "later@company.com", "test@example.com"):
+        assert address not in every_line
 
 
 def test_startup_reads_nothing_without_a_list(monkeypatch):

@@ -11,6 +11,8 @@ import logging
 import pkgutil
 from typing import Any
 
+from app.utils.shared_url_log import loggable_filename, traceback_without_text
+
 logger = logging.getLogger(__name__)
 
 _CONNECTORS: dict[str, Any] = {}
@@ -61,8 +63,12 @@ def importer_for(filename: str) -> Any | None:
         try:
             if importer.accepts(filename):
                 return importer
-        except Exception:
-            logger.exception("importer %s failed on accepts(%r)", name, filename)
+        except Exception as e:
+            # T-4.11.4.4: an upload's name says who an export is with.
+            logger.error(
+                "importer %s failed on accepts(%s): %s",
+                name, loggable_filename(filename), traceback_without_text(e),
+            )
     return None
 
 

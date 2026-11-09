@@ -15,6 +15,7 @@ from app.config import settings
 from app.models.password_reset_token import PasswordResetToken
 from app.models.user import User
 from app.services import progress_service
+from app.utils.shared_url_log import traceback_without_text
 
 logger = logging.getLogger(__name__)
 
@@ -71,8 +72,10 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
         return False
     try:
         return _pwd_context.verify(plain_password, hashed_password)
-    except Exception:
-        logger.exception("Password verification failed")
+    except Exception as e:
+        # T-4.11.4.4: by its frames and type. Whatever a hashing library says
+        # about a password or a stored hash has no place in a log.
+        logger.error("Password verification failed: %s", traceback_without_text(e))
         return False
 
 
@@ -84,10 +87,35 @@ def get_user_by_id(db: Session, user_id: str) -> User | None:
     return db.query(User).filter(User.id == user_id).first()
 
 
+def operator_entries() -> list[str]:
+    """``ADMIN_EMAILS`` in the order it is written, lower-cased, each address
+    once (empty when unset)."""
+    entries: list[str] = []
+    for entry in (settings.ADMIN_EMAILS or "").split(","):
+        address = entry.strip().lower()
+        if address and address not in entries:
+            entries.append(address)
+    return entries
+
+
 def operator_emails() -> frozenset[str]:
     """``ADMIN_EMAILS`` as a set of lower-cased addresses (empty when unset)."""
-    raw = settings.ADMIN_EMAILS or ""
-    return frozenset(e.strip().lower() for e in raw.split(",") if e.strip())
+    return frozenset(operator_entries())
+
+
+def masked_email(address: str) -> str:
+    """``address`` for a log line (T-4.11.4.4): the first character of the
+    name and of the domain, and the top-level domain, as ``b***@e***.com``.
+    With the address's place in ``ADMIN_EMAILS`` it tells the operator which
+    entry a line is about, and writes none of them down."""
+    name, at, domain = (address or "").partition("@")
+    masked = f"{name[:1]}***"
+    if not at:
+        return masked
+    host, dot, top = domain.rpartition(".")
+    if not dot:
+        return f"{masked}@{domain[:1]}***"
+    return f"{masked}@{host[:1]}***.{top}"
 
 
 def is_operator(db: Session, user: User) -> bool:
@@ -142,8 +170,13 @@ def warn_unregistered_operators(session_factory=None) -> list[str]:
     (``REGISTER_OPERATOR_EMAIL_REFUSED``), so the operator either registers
     first and lists the address afterwards, or signs in with a provider that
     has verified it. Reads nothing when the list is empty.
+
+    T-4.11.4.4: a line names the entry by its place in the list and a masked
+    form (``masked_email``), never the whole address. The list is the
+    operator's own, so that is enough to find the entry.
     """
-    if not operator_emails():
+    entries = operator_entries()
+    if not entries:
         return []
     if session_factory is None:
         from app.database import SessionLocal
@@ -154,13 +187,15 @@ def warn_unregistered_operators(session_factory=None) -> list[str]:
         missing = unregistered_operator_emails(db)
     finally:
         db.close()
-    for email in missing:
+    for email in sorted(missing, key=entries.index):
         logger.warning(
-            "ADMIN_EMAILS lists %s, but no account has that address. Password "
+            "ADMIN_EMAILS entry %d of %d (%s) names no account. Password "
             "registration refuses a listed address: register the account "
             "before listing it, or sign in with Google or GitHub with that "
             "address verified by the provider.",
-            email,
+            entries.index(email) + 1,
+            len(entries),
+            masked_email(email),
         )
     return missing
 

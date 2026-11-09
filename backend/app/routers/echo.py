@@ -904,6 +904,10 @@ def import_endpoint(
         )
     except ExportUnreadable as e:
         raise HTTPException(status_code=422, detail=str(e))
+    except echo_import_service.ImportStopped as e:
+        # T-4.11.4.4: the service logged it by its frames and marked the row
+        # failed; answered here, it never reaches the server's own log whole.
+        raise HTTPException(status_code=500, detail=str(e))
     return _import_item(record)
 
 

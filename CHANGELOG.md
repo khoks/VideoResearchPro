@@ -10,6 +10,52 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Fixed: the logging tests hold against an install's `backend/.env`, and a master test #440 broke (T-4.11.4.3, 2026-11-09)
+
+PR [#443](https://github.com/khoks/VideoResearchPro/pull/443). No decision needed.
+
+- The logging tests' subprocesses run from `backend/`, where `Settings` reads `backend/.env`. Their helpers removed some settings from the child's environment, so an install's `LOG_FORMAT=json` failed three text-format tests and `DEBUG=true` failed one. The helpers now set `LOG_FORMAT` (to its default when a test names none), `DEBUG=false`, `JWT_SECRET` and empty provider keys, since a set variable beats the file.
+- A new `tests/dotenv_settings.py` loads the real `Settings` under a helper's environment with a `.env` the test writes, never the real one, and eight new cases show each helper's values win.
+- #442's test of `_handle_failure`'s fallback failed on master once #440 merged, because #440 moved the write the test broke. It now breaks `_write_unless_stopped`.
+- The suite collects 5,893 tests, seven under the docs' window for "5,400+" (T-8.8.6.13).
+- Test only.
+
+### Changed: a cancelled run stays cancelled, a failed run is never written over, the sync joins on `document_id` (T-5.2.20, T-8.8.6.12, 2026-11-09)
+
+PR [#440](https://github.com/khoks/VideoResearchPro/pull/440). [D-161](docs/decisions.md#d-161--a-job-tasks-status-writes-are-one-conditional-update-the-first-stops-words-win-a-progress-callback-may-end-the-search-and-embedded_in_chroma-follows-the-chunks-2026-11-09).
+
+- A job task delivered after its run was cancelled, as when the revoke reached no live worker, returns at once: no write, no progress and no quota or model call.
+- Every status write a job task makes is conditional on the run being neither failed nor cancelled, so a run the route failed after a worker picked it up, or one cancelled mid-run, is never brought back or written over. The first stop's words stay; a later failure goes only to the log.
+- **Changed, please check:** on the solo pool a cancel during the report now ends `cancelled`, not `completed`, and the unused report file is deleted.
+- A run cancelled during its search stops there: no "Found N videos", no ranking call and no further non-video fetch.
+- Approve writes `extracting` only over `awaiting_approval`, so a resume that already failed is no longer stranded at `extracting`.
+- A document counts as embedded only once its chunks are in the library. Documents that older runs left flagged with no chunks are not repaired (T-5.2.24, the owner's call).
+- The subscription sync selects a job's documents on `document_id`.
+- No migration and no new setting. Restart the API and the worker.
+
+### Changed: the worker's log lines carry no user's words (T-4.11.4.2, 2026-11-09)
+
+PR [#442](https://github.com/khoks/VideoResearchPro/pull/442). [D-160](docs/decisions.md#d-160--a-users-words-leave-the-workers-log-at-the-call-site-an-exception-that-can-quote-a-request-is-logged-by-its-frames-and-a-connectors-search-counts-as-a-shared-link-2026-11-09).
+
+- The worker's lines name a topic, a planner query, a hashtag or a channel name by its length or place, and a pasted channel link by its host. Channel ids and `@handles` stay as written.
+- An exception whose text can quote a request, such as a YouTube `HttpError`, an httpx error or a database error, is logged by its frames and types without its message. A failed YouTube request is logged by its status and reason code, such as `HttpError 403 (quotaExceeded)`.
+- httpx no longer writes its request line, query included, for the eight connector searches or Echo's GitHub calls. A GitHub sync error names the endpoint, not the account or the repository.
+- A 24-character channel name that starts with `UC` is no longer taken for a channel id.
+- The docs now say that `DEBUG=true`'s SQL echo writes each statement's values. `DEBUG` behaves as before. Whether a database error should hide its values when `DEBUG` is off is OQ-45, the owner's call.
+- No migration and no new setting. Restart the worker and the API. Older `.celery.*.log` files keep what was written before.
+
+### Changed: one message per failure at the last sites, and a started run is never reported as not started (T-3.4.1.22, T-3.4.1.23, 2026-11-09)
+
+PR [#441](https://github.com/khoks/VideoResearchPro/pull/441). [D-159](docs/decisions.md#d-159--a-lines-own-surface-waits-for-its-answer-and-the-apps-navigation-does-not-each-action-gets-its-own-line-a-started-run-is-never-offered-twice-and-the-guard-follows-a-line-through-props-and-iserror-2026-11-09).
+
+- The welcome page, a run's approval, subscribe and sync on the channel page and the library's channel list, the trust weight, the shelf form, the template dialog and the label pickers show a failure once, on their own line, with the server's words and nothing on a 401. Pages with no line keep the toast.
+- Subscribe and sync each have their own line. While one channel's request is in flight in the library's list, the other rows wait.
+- A dialog, a picker, the welcome page's Back and steps, and a run's Cancel during an approval wait for the answer. Skip and the app's own navigation do not, and a line left that way is said nowhere (T-3.4.1.21, the owner's ruling).
+- When the welcome page's run starts but recording it fails, the page says "The run started." and offers no second start.
+- A failed shelf edit's line no longer disappears on the next render.
+- The Echo bubble's draft turn says the server's words first, and nothing on a 401.
+- Frontend only. Nothing to restart.
+
 ### Fixed: ten stale phone baselines, and `regenerate_report.py` reads every source type (T-8.8.6.8, T-8.8.6.9, 2026-11-09)
 
 PR [#438](https://github.com/khoks/VideoResearchPro/pull/438). No new decision.

@@ -30,6 +30,14 @@ export function EchoDropZone() {
   const [active, setActive] = useState(false);
   const internal = useRef(false);
   const depth = useRef(0);
+  const mounted = useRef(false);
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     const onDragStart = () => {
@@ -40,6 +48,21 @@ export function EchoDropZone() {
     };
     const wanted = (e: DragEvent) =>
       !internal.current && isShareableDrag(e.dataTransfer ? Array.from(e.dataTransfer.types) : null);
+
+    // One toast for each thing dropped that landed, every file of a drop
+    // included (T-3.4.1.19). Each request's own promise says it: a per-call
+    // `onSuccess` runs for an observer's last `mutate` only, so of several
+    // files only the last was named. A failure is the hook's toast, and the
+    // promise's rejection is handled here. Nothing once the zone has gone with
+    // the session, so a file's name stays off the sign-in page.
+    const added = (request: Promise<unknown>, message: string) => {
+      request.then(
+        () => {
+          if (mounted.current) pushToast('success', message);
+        },
+        () => undefined,
+      );
+    };
 
     const onDragEnter = (e: DragEvent) => {
       if (!wanted(e)) return;
@@ -74,22 +97,13 @@ export function EchoDropZone() {
           navigate('/echo/import', { state: { file: plan.exports[0] } });
         }
         for (const file of plan.files) {
-          upload.mutate(
-            { file, fields: { surface: 'drag_drop' } },
-            { onSuccess: () => pushToast('success', `Added ${file.name} to Echo.`) },
-          );
+          added(upload.mutateAsync({ file, fields: { surface: 'drag_drop' } }), `Added ${file.name} to Echo.`);
         }
         if (plan.skipped) pushToast('info', `Only the first ${MAX_DROP_FILES} files were added.`);
       } else if (plan.kind === 'url') {
-        create.mutate(
-          { url: plan.url, surface: 'drag_drop' },
-          { onSuccess: () => pushToast('success', 'Link added to Echo.') },
-        );
+        added(create.mutateAsync({ url: plan.url, surface: 'drag_drop' }), 'Link added to Echo.');
       } else if (plan.kind === 'text') {
-        create.mutate(
-          { text: plan.text, surface: 'drag_drop' },
-          { onSuccess: () => pushToast('success', 'Text added to Echo.') },
-        );
+        added(create.mutateAsync({ text: plan.text, surface: 'drag_drop' }), 'Text added to Echo.');
       }
     };
 

@@ -122,6 +122,7 @@ backend/
 │   ├── database.py              # SQLAlchemy engine + SessionLocal
 │   ├── dependencies.py          # DI: get_db, get_redis, get_current_user, require_operator
 │   ├── middleware/
+│   │   ├── cors.py              # CORS on the app's one origin list (T-4.11.3.3)
 │   │   └── rate_limit.py        # per-route + per-tier limits (E-5.5)
 │   ├── routers/                 # one file per API area; every route is in api-reference.md
 │   │   ├── auth.py              # /auth: register, login, password reset + change, me, audit log
@@ -187,10 +188,12 @@ backend/
 │   ├── websocket/
 │   │   └── manager.py           # ConnectionManager + Redis listener task
 │   └── utils/
+│       ├── app_origins.py       # the origins CORS answers and sign-in returns to (T-4.11.3.3)
 │       ├── chunking.py          # 256-token chunks (32 overlap) with timestamp mapping
 │       ├── html_builder.py      # Jinja2 env + custom number_format filter
+│       ├── tiktoken_cache.py    # tiktoken's encoding in TIKTOKEN_ENCODINGS_DIR (T-8.8.6.5)
 │       └── ...
-├── tests/                       # 4,900+ tests, mostly pytest + httpx test client
+├── tests/                       # 5,400+ tests, mostly pytest + httpx test client
 ├── alembic/                     # Alembic migrations
 └── scripts/                     # measurement harnesses, backfills (dry run unless --write), and
     ├── fix_anchor_links.py      # the Markdown anchor checker CI runs
@@ -652,7 +655,7 @@ A full call-site audit against a 200-video / 10.6M-token extreme corpus (real re
 - **Limits and records.** Per-route and per-tier rate limits (`middleware/rate_limit.py`, E-5.5), per-user quotas (`quota_metering_service`, HTTP 429), the document caps above, and an audit log (`GET /auth/audit-log`).
 - **Who is calling.** `app/utils/client_ip.py` is the one reader of `X-Forwarded-For`, used by the per-IP limits, the audit log and the address on a session. The header counts only when the socket peer is a proxy named in `TRUSTED_PROXY_IPS`, and it is read from the right, so what a client wrote changes nothing (T-5.5.8). Unset, the caller is the peer, so an install behind a proxy has to set it: README, "Running behind a reverse proxy". The limits count an IPv6 caller by its /64 (T-5.5.9); everything else keeps the full address.
 - **Browser policy.** `middleware/content_security_policy.py` puts a `Content-Security-Policy` on every response. JSON gets `default-src 'none'; frame-ancestors 'none'`, and any other response that no entry names gets that plus `sandbox`, so a new route starts locked. The stored report may keep its inline styles and runs nothing; Swagger's one inline script is allowed by a hash taken from the page as sent. The app's own policy is the host's: README, "Content-Security-Policy for the app".
-- **OAuth redirects.** `GET /auth/oauth/{provider}/start` accepts a `redirect_uri` only on the origin of `APP_BASE_URL` or one of `OAUTH_ALLOWED_REDIRECT_ORIGINS`, compared by scheme, host and port before anything is stored (T-4.11.2.4). The Echo connector routes take no redirect: `echo_connector_service.redirect_uri` builds it from `APP_BASE_URL`.
+- **The app's origins.** One list, `app/utils/app_origins.py`: the origin of `APP_BASE_URL` plus each of `OAUTH_ALLOWED_REDIRECT_ORIGINS`, compared by scheme, host and port, with any wildcard refused (T-4.11.3.3). CORS answers a page on it (`middleware/cors.py`), and `GET /auth/oauth/{provider}/start` accepts a `redirect_uri` only on it, before anything is stored (T-4.11.2.4), so a page the API answers is one sign-in can return to. Both read the settings when they run. The Echo connector routes take no redirect: `echo_connector_service.redirect_uri` builds it from `APP_BASE_URL`.
 
 ### Future (SaaS)
 
@@ -672,7 +675,7 @@ Per [saas-roadmap.md](saas-roadmap.md):
 
 ### Usage per tenant
 
-Usage is metered per tenant and by feature, at a scope rather than at each call site (E-5.2, [D-119](decisions.md#d-119--usage-is-metered-at-a-scope-that-names-the-tenant-and-written-in-a-session-of-its-own-2026-11-04)). `usage_service.metered(db, tenant_id)` names whose work it is. `llm_service.byok_context` opens one, `get_llm_for` attaches a meter to every client it builds, and `quota_service.record` charges each YouTube request to the open scope. The outermost scope writes `usage_records` (per UTC day, feature and metric) and the daily `quota_usage` totals when it closes, through a session of its own, so it never commits or rolls back the caller's. `GET /api/v1/usage` returns the caller's own figures, and `GET /auth/quota` reports them against the tier's limits. Nothing is enforced from these numbers (D-111). Not recorded yet: Whisper audio minutes, and tokens from local models that do not report them.
+Usage is metered per tenant and by feature, at a scope rather than at each call site (E-5.2, [D-119](decisions.md#d-119--usage-is-metered-at-a-scope-that-names-the-tenant-and-written-in-a-session-of-its-own-2026-11-04)). `usage_service.metered(db, tenant_id)` names whose work it is. `llm_service.byok_context` opens one, `get_llm_for` attaches a meter to every client it builds, `quota_service.record` charges each YouTube request to the open scope, and `youtube_service._whisper_transcribe_with_retry` charges each Whisper response's audio seconds as `whisper_seconds` (T-5.2.12). Every hosted Whisper call goes through that one, whichever key pays for it, so a transcription that fails part-way has its billed chunks recorded. The outermost scope writes `usage_records` (per UTC day, feature and metric) and the daily `quota_usage` totals when it closes, through a session of its own, so it never commits or rolls back the caller's. It also writes what it has counted while it is open, at most every `USAGE_FLUSH_INTERVAL_SECONDS` (T-5.2.13), so a worker that dies part-way through a long task loses about that much, not the whole run. `GET /api/v1/usage` returns the caller's own figures, and `GET /auth/quota` reports them against the tier's limits. Nothing is enforced from these numbers (D-111): the per-run Whisper limits (`WHISPER_MAX_PER_JOB`, `WHISPER_MAX_MINUTES_PER_JOB`) count inside the task. Not recorded yet: tokens from local models that do not report them, whose calls count with no tokens.
 
 ### Logs
 

@@ -5,12 +5,12 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.config import settings
 from app.database import Base, engine
 from app.middleware.content_security_policy import ContentSecurityPolicyMiddleware
+from app.middleware.cors import AppOriginsCORSMiddleware
 from app.middleware.rate_limit import RateLimitMiddleware
 from app.routers import (
     admin,
@@ -52,6 +52,12 @@ from app.routers import (
 from app.services import auth_service, byok_service, chroma_service, note_index, search_service
 from app.services.llm_smoke import run_startup_probes
 from app.services.schema_init_service import ensure_schema_at_head
+from app.utils import app_origins, tiktoken_cache
+
+# T-8.8.6.5: tiktoken's encoding in TIKTOKEN_ENCODINGS_DIR rather than the
+# temp folder, before anything counts a token. The worker does the same in
+# app/tasks/celery_app.py; whichever runs first decides, the other agrees.
+tiktoken_cache.use_app_folder(settings.TIKTOKEN_ENCODINGS_DIR)
 
 # Ensure all app.* loggers emit at INFO level.
 # uvicorn sets up root logger handlers; this just lowers the threshold for our loggers.
@@ -92,6 +98,10 @@ async def lifespan(app: FastAPI):
 
     os.makedirs(settings.REPORTS_DIR, exist_ok=True)
     os.makedirs(settings.CHROMA_PERSIST_DIR, exist_ok=True)
+
+    # T-4.11.3.3: the pages CORS answers and sign-in returns to, one list. A
+    # bad entry in it is logged here, at startup, not at the first request.
+    logger.info("App origins (CORS and OAuth sign-in): %s", app_origins.describe())
 
     # Idempotent one-shot backfill of the Q&A library Chroma collection.
     # Upsert on fixed `qa:{id}` chunk IDs means this is safe to run on every
@@ -190,13 +200,10 @@ async def _validation_error_without_values(request: Request, exc: RequestValidat
 # limit) and preflight OPTIONS requests were themselves rate-limited.
 # Found 2026-10-19 verifying S-1.18.2.
 app.add_middleware(RateLimitMiddleware)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:3000"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# T-4.11.3.3: the origins come from APP_BASE_URL and
+# OAUTH_ALLOWED_REDIRECT_ORIGINS, the list OAuth start checks
+# (app/utils/app_origins.py), no longer from a list written here.
+app.add_middleware(AppOriginsCORSMiddleware)
 # T-4.11.2.1: added last, so outermost, so a 429 and a preflight carry it too.
 app.add_middleware(ContentSecurityPolicyMiddleware)
 

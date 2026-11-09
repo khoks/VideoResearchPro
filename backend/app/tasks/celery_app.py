@@ -12,9 +12,15 @@ from celery.signals import (
 from celery.utils.log import get_multiprocessing_logger
 
 from app.config import settings
+from app.utils import tiktoken_cache
 from app.utils.json_logging import json_logs_enabled, use_json_format
 
 logger = logging.getLogger(__name__)
+
+# T-8.8.6.5: tiktoken's encoding in TIKTOKEN_ENCODINGS_DIR, not the temp
+# folder. Here, at the worker's first import, before any task counts a token;
+# a prefork pool's children inherit the variable.
+tiktoken_cache.use_app_folder(settings.TIKTOKEN_ENCODINGS_DIR)
 
 
 @after_setup_logger.connect

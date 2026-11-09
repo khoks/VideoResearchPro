@@ -214,7 +214,9 @@ def _parse_extraction(raw: str) -> dict:
     try:
         data = json.loads(content)
     except json.JSONDecodeError:
-        logger.warning("Knowledge extraction batch returned non-JSON: %r", content[:200])
+        # T-4.11.4.4: its length, not its words. The reply restates the
+        # source, which may be the user's own PDF or a page they pasted.
+        logger.warning("Knowledge extraction batch returned non-JSON of %d characters", len(content))
         return {k: [] for k in _KNOWLEDGE_KEYS}
 
     if not isinstance(data, dict):

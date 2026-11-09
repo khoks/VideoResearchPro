@@ -54,6 +54,7 @@ from app.services.llm_smoke import run_startup_probes
 from app.services.schema_init_service import ensure_schema_at_head
 from app.sources.twitter import client as twitter_client
 from app.utils import app_origins, tiktoken_cache
+from app.utils.shared_url_log import traceback_without_text
 
 # T-8.8.6.5: tiktoken's encoding in TIKTOKEN_ENCODINGS_DIR rather than the
 # temp folder, before anything counts a token. The worker does the same in
@@ -148,8 +149,10 @@ async def lifespan(app: FastAPI):
     # registers before listing. A failure here never stops startup.
     try:
         auth_service.warn_unregistered_operators()
-    except Exception:
-        logger.exception("ADMIN_EMAILS check failed; continuing startup")
+    except Exception as e:
+        # T-4.11.4.4: by its frames and type. A database error's text quotes
+        # the query's values, which are the listed addresses.
+        logger.error("ADMIN_EMAILS check failed; continuing startup: %s", traceback_without_text(e))
 
     try:
         await run_startup_probes()

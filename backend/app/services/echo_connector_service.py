@@ -45,7 +45,6 @@ import json
 import logging
 import secrets
 import time
-import traceback
 import urllib.parse
 import uuid
 from dataclasses import dataclass
@@ -79,6 +78,7 @@ from app.services import (
     echo_service,
     scheduler_service,
 )
+from app.utils.shared_url_log import traceback_without_text
 
 logger = logging.getLogger(__name__)
 
@@ -453,7 +453,9 @@ def run_sync(db: Session, grant_id: str) -> SyncOutcome:
         return SyncOutcome("auth_error" if e.auth else "error", error=grant.last_error)
     except Exception as e:  # unexpected: fail-soft, logged loudly
         db.rollback()
-        logger.error("echo: %s sync crashed for grant %s:\n%s", name, grant_id, _scrub(traceback.format_exc(), *held))
+        # T-4.11.4.4: by its frames and type. A database error's text quotes
+        # the events it was writing, a commit message or a repository's name.
+        logger.error("echo: %s sync crashed for grant %s:\n%s", name, grant_id, _scrub(traceback_without_text(e), *held))
         grant = db.get(EchoConnectorGrant, grant_id)
         if grant is None:
             return SyncOutcome("missing")

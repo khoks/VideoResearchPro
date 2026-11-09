@@ -27,6 +27,7 @@ from app.services import (
     report_service,
 )
 from app.services.llm_service import get_llm_for
+from app.utils.shared_url_log import traceback_without_text
 
 logger = logging.getLogger(__name__)
 
@@ -324,8 +325,10 @@ def ask_question_stream(
             yield f"data: {json.dumps({'type': 'error', 'detail': str(exc.detail)})}\n\n"
             yield "data: [DONE]\n\n"
             return
-        except Exception:
-            logger.exception(f"Streaming Q&A failed for job {job.id}")
+        except Exception as e:
+            # T-4.11.4.4: by its frames and type. The run writes the question
+            # and the answer, and a database error's text quotes both.
+            logger.error("Streaming Q&A failed for job %s: %s", job.id, traceback_without_text(e))
             yield f"data: {json.dumps({'type': 'error', 'detail': 'Q&A failed. Check server logs.'})}\n\n"
             yield "data: [DONE]\n\n"
             return

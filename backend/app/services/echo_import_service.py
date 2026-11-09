@@ -43,6 +43,7 @@ from app.connectors.archive import ExportUnreadable, ImportPreview, ImportSource
 from app.connectors.base import ActivityEvent as EventIn
 from app.connectors.base import DerivedFact, ImportedShare
 from app.services import echo_intake_service, echo_processing_service, echo_vectors
+from app.utils.shared_url_log import loggable_filename, traceback_without_text
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +55,14 @@ _SUPPORTED = "WhatsApp chat exports (.txt or .zip) and Google Keep notes from Go
 
 class ImportNotFound(LookupError):
     """No import with that id belongs to this tenant."""
+
+
+class ImportStopped(RuntimeError):
+    """A preview or an import failed for a reason that is not the file's
+    (T-4.11.4.4). It is already logged by its frames, and a run's row is
+    already ``failed`` with the words its message carries. The route answers
+    with them, so the failure never reaches the server's own log of an
+    unhandled exception, which would write its text whole."""
 
 
 def _now() -> datetime:
@@ -86,8 +95,14 @@ def _importer(source: ImportSource, name: str | None):
                 return importer
         except ExportUnreadable:
             raise
-        except Exception:
-            logger.exception("echo: importer %s failed to sniff %r", candidate, source.filename)
+        except Exception as e:
+            # T-4.11.4.4: the file by its kind, the failure by its frames. An
+            # export is named after whoever it is with, and a parser's words
+            # (a date or a number it could not read) come from inside it.
+            logger.error(
+                "echo: importer %s failed to sniff %s: %s",
+                candidate, loggable_filename(source.filename), traceback_without_text(e),
+            )
     importer = registry.importer_for(source.filename)
     if importer is None:
         raise ExportUnreadable(f"This file is not an export Echo can read yet. Supported: {_SUPPORTED}.")
@@ -115,6 +130,23 @@ def _preview(importer, source: ImportSource, options: dict[str, Any]) -> ImportP
     return ImportPreview(importer=importer.name, label=getattr(importer, "display_name", importer.name), summary=counts)
 
 
+def _preview_or_stop(importer, source: ImportSource, options: dict[str, Any]) -> ImportPreview:
+    """``_preview``, with a failure that is not ``ExportUnreadable`` logged by
+    its frames and raised as ``ImportStopped`` (T-4.11.4.4). A preview reads
+    the whole file, so a cell an importer cannot read (a Goodreads rating or a
+    Spotify play time that is not a number) raises an error quoting it."""
+    try:
+        return _preview(importer, source, options)
+    except ExportUnreadable:
+        raise
+    except Exception as e:
+        logger.error(
+            "echo: importer %s failed to preview %s: %s",
+            getattr(importer, "name", "?"), loggable_filename(source.filename), traceback_without_text(e),
+        )
+        raise ImportStopped(f"Preview stopped: {type(e).__name__}") from e
+
+
 # ---------------------------------------------------------------------------
 # Preview
 # ---------------------------------------------------------------------------
@@ -123,7 +155,7 @@ def _preview(importer, source: ImportSource, options: dict[str, Any]) -> ImportP
 def preview(fileobj: IO[bytes], filename: str, *, importer: str | None = None,
             options: dict[str, Any] | None = None) -> ImportPreview:
     source = _source(fileobj, filename)
-    return _preview(_importer(source, importer), source, dict(options or {}))
+    return _preview_or_stop(_importer(source, importer), source, dict(options or {}))
 
 
 def _validated(importer_name: str, pv: ImportPreview, options: dict[str, Any]) -> dict[str, Any]:
@@ -153,7 +185,7 @@ def run_import(db: Session, user: Any, fileobj: IO[bytes], filename: str, *,
     source = _source(fileobj, filename)
     module = _importer(source, importer)
     raw_options = dict(options or {})
-    pv = _preview(module, source, raw_options)
+    pv = _preview_or_stop(module, source, raw_options)
     opts = _validated(module.name, pv, raw_options)
 
     record = EchoImport(
@@ -253,8 +285,15 @@ def run_import(db: Session, user: Any, fileobj: IO[bytes], filename: str, *,
         record.counts_json = json.dumps({**counts, **stats})
         record.finished_at = _now()
         db.commit()
-        logger.exception("echo: import %s failed after %d shares", record.id[:8], counts["shares"])
-        raise
+        # T-4.11.4.4: by its frames and type. A database error's text quotes
+        # the batch's rows, the shares' words, and a parser's quotes the file.
+        logger.error(
+            "echo: import %s failed after %d shares: %s",
+            record.id[:8], counts["shares"], traceback_without_text(e),
+        )
+        if isinstance(e, ExportUnreadable):
+            raise
+        raise ImportStopped(record.error) from e
 
     record.counts_json = json.dumps({**counts, **stats, "embedded": 0})
     record.status = "embedding" if counts["shares"] else "done"

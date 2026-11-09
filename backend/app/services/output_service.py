@@ -44,6 +44,7 @@ from sqlalchemy.orm import Session
 from app.models.output import Output
 from app.models.user import User
 from app.utils.log_redaction import error_summary, provider_error_text
+from app.utils.shared_url_log import traceback_without_text
 
 logger = logging.getLogger(__name__)
 
@@ -448,10 +449,14 @@ def _run_generation(db: Session, user: User, output: Output) -> Output:
         db.refresh(output)
         return output
     except Exception as e:  # noqa: BLE001
-        logger.exception(
-            "output_service: unexpected generation failure for output_id=%s kind=%s",
+        # T-4.11.4.4: by its frames and type. A database error or a renderer's
+        # quotes what it was given: the book's, deck's or issue's text, and
+        # the title the user typed. The row keeps the words for its owner.
+        logger.error(
+            "output_service: unexpected generation failure for output_id=%s kind=%s: %s",
             output.id,
             output.kind,
+            traceback_without_text(e),
         )
         db.rollback()
         db.refresh(output)

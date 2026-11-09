@@ -1199,9 +1199,12 @@ def _sanitize_citations(answer: str, rag_results: list[dict]) -> tuple[str, int]
         ):
             return match.group(0)
         removed += 1
+        # T-4.11.4.4: lengths, not the words. A citation that matches no
+        # source is the model's own text inside an answer to the user's
+        # question, and can restate it.
         logger.warning(
-            "Stripping fabricated citation: title=%r channel=%r",
-            cited_title, cited_channel,
+            "Stripping a fabricated citation: a title of %d characters, a channel of %d",
+            len(cited_title), len(cited_channel),
         )
         # Replace with a clear marker rather than silently deleting; preserves
         # answer flow but signals that the source could not be verified.

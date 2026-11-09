@@ -43,6 +43,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.models.share import Share
 from app.services import echo_intake_service, echo_media, echo_vectors
+from app.utils.shared_url_log import traceback_without_text
 
 logger = logging.getLogger(__name__)
 
@@ -366,7 +367,9 @@ def process_share(db: Session, share_id: str) -> ProcessResult:
     except ProcessingError as e:
         return _finish(db, share, processing, "failed", error=str(e))
     except Exception as e:  # unexpected: still fail-soft, but logged loudly
-        logger.exception("echo: processing share %s failed", share.id)
+        # T-4.11.4.4: by its frames and type. An unexpected error can quote
+        # the shared link (httpx), the share's text or a file's name.
+        logger.error("echo: processing share %s failed: %s", share.id, traceback_without_text(e))
         return _finish(db, share, processing, "failed", error=f"Processing failed: {type(e).__name__}")
 
     for stale in _DERIVED_FIELDS:
@@ -425,9 +428,11 @@ def _finish(db: Session, share: Share, processing: dict, state: str, error: str 
             from app.services import activity_event_service
 
             activity_event_service.record_share_event(db, share, title=processing.get("title"))
-        except Exception:
+        except Exception as e:
             db.rollback()
-            logger.exception("echo: could not record the share event for %s", share.id)
+            # T-4.11.4.4: by its frames and type. The event carries the
+            # share's title, which a database error's text would quote.
+            logger.error("echo: could not record the share event for %s: %s", share.id, traceback_without_text(e))
     logger.info("echo: share %s -> %s%s", share.id[:8], state, f" ({error})" if error else "")
     # T-3.3.2.6: only the user's own words are voice input; a context-only
     # share never is (D-089).

@@ -1402,10 +1402,11 @@ def _write_unless_stopped(db, job: Job, **fields) -> bool:
 def _update_job(db, job: Job, **kwargs) -> None:
     """Every write a run makes to its own row's status goes through here.
 
-    Raises ``_RunStopped``, writing nothing, when the row is already failed or
-    cancelled (``_write_unless_stopped``), so no status write in a run turns
-    a stopped row back into an active or completed one, and the publish that
-    follows each write never goes out for it.
+    Raises ``_RunStopped``, writing nothing, when the row is already failed,
+    cancelled or completed (``_write_unless_stopped``), so no status write in
+    a run turns an ended row back into an active one, or a stopped one into a
+    completed one, and the publish that follows each write never goes out for
+    it.
     """
     if not _write_unless_stopped(db, job, **kwargs):
         logger.info("[job:%s] the run is %s; it stops here, leaving the row as it is", job.id, job.status)
@@ -1421,18 +1422,28 @@ def _report_progress(db, job: Job, stage: str, pct: int, message: str, data: dic
     which would show the run going again), and the run stops here. Before
     this, the sync's "N videos ingested so far" went out after a stop with no
     check at all, and the per-channel and per-phase publishes followed an
-    ``_is_stopped`` read that a stop could land just after. The write takes
-    that read's place where there was one, so it costs no extra statement;
-    the one after each channel's walk is one UPDATE per channel. The row
-    holds the progress too, so a reload sees what the socket said (cut to
-    the column's 500 characters; a channel input can be a long link).
+    ``_is_stopped`` read that a stop could land just after.
+
+    What each gate costs: one conditional UPDATE, its COMMIT, and the SELECT
+    that refreshes ``job`` (``_write_unless_stopped``), plus one SELECT
+    before them when a commit since the run's last write has expired ``job``
+    and its id is read again (the gate after a channel's walk, which follows
+    the walk's commits). Where an ``_is_stopped`` read stood before the
+    publish, this replaces that one SELECT, so each such gate is now a short
+    write transaction (on SQLite it takes the single writer lock until its
+    COMMIT) plus a read. The gate after each channel's walk, which had no
+    check, adds all of it. These run once per channel or phase, beside a
+    channel's YouTube calls, so the cost is small; the write is what makes
+    the check and the publish one step. The row holds the progress too, so a
+    reload sees what the socket said (cut to the column's 500 characters; a
+    channel input can be a long link).
     """
     _update_job(db, job, progress_pct=pct, progress_message=message[:500])
     progress_service.publish_progress(job.id, stage, pct, message, data=data)
 
 
 def _is_stopped(db, job_id: str) -> bool:
-    """Has the row been cancelled or failed since the run last looked?
+    """Has the row been cancelled, failed or completed since the run last looked?
 
     Read at each phase boundary and before each item of a loop, so a run stops
     at its next check. Until T-5.2.20 only ``cancelled`` was read here, and a

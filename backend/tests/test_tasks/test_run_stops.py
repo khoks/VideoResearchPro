@@ -32,9 +32,11 @@ from __future__ import annotations
 
 import json
 import os
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+from sqlalchemy import event
 
 from app.models.channel import Channel
 from app.models.document import Document
@@ -242,6 +244,59 @@ def test_a_sync_that_is_not_stopped_publishes_every_progress_and_keeps_it(client
     assert _snapshot(db, job_id)["status"] == "completed"
 
 
+def _statements(db, call) -> list[str]:
+    """The statements ``call`` sends the database, by their first word, and
+    each COMMIT."""
+    seen: list[str] = []
+    engine = db.get_bind()
+
+    def on_execute(conn, cursor, statement, parameters, context, executemany):
+        seen.append(statement.split(None, 1)[0].upper())
+
+    def on_commit(conn):
+        seen.append("COMMIT")
+
+    event.listen(engine, "before_cursor_execute", on_execute)
+    event.listen(engine, "commit", on_commit)
+    try:
+        call()
+    finally:
+        event.remove(engine, "before_cursor_execute", on_execute)
+        event.remove(engine, "commit", on_commit)
+    return seen
+
+
+def test_a_gate_costs_a_write_and_a_read_where_the_check_was_one_read(db, worker, test_user):
+    """What ``_report_progress``'s docstring says each gate costs, held to the
+    code. The ``_is_stopped`` read it replaced was one SELECT. The gate is a
+    conditional UPDATE, its COMMIT (on SQLite, the writer lock until then)
+    and the SELECT that refreshes the job; when a commit since the run's last
+    write has expired the job (the gate after a channel's walk follows the
+    walk's commits), reading its id first is one SELECT more. Refused, it
+    costs the same and publishes nothing."""
+    job_id = _sync_row(db, test_user.id, status="searching")
+    job = db.get(Job, job_id)
+
+    assert _statements(db, lambda: job_tasks._is_stopped(db, job_id)) == ["SELECT"]
+    fresh = _statements(db, lambda: job_tasks._report_progress(db, job, "searching", 18, "Walking uploads..."))
+    assert fresh == ["UPDATE", "COMMIT", "SELECT"]
+
+    db.commit()  # as the walk's own commits do: the job is expired
+    after_commit = _statements(db, lambda: job_tasks._report_progress(db, job, "searching", 25, "1 videos..."))
+    assert after_commit == ["SELECT", "UPDATE", "COMMIT", "SELECT"]
+    assert worker.progress.publish_progress.call_count == 2
+
+    db.query(Job).filter(Job.id == job_id).update({"status": "cancelled"}, synchronize_session=False)
+    db.commit()
+
+    def stopped_gate():
+        with pytest.raises(job_tasks._RunStopped):
+            job_tasks._report_progress(db, job, "searching", 25, "2 videos ingested so far...")
+
+    assert _statements(db, stopped_gate) == ["SELECT", "UPDATE", "COMMIT", "SELECT"]
+    assert worker.progress.publish_progress.call_count == 2
+
+
 # ================================================================ T-5.2.22: cancel never writes over an ended run
 
 
@@ -357,6 +412,25 @@ def test_a_revoke_the_broker_refuses_still_cancels(client, db, test_user):
     logger.warning.assert_called_once()
     assert "hunter2" not in repr(logger.warning.call_args)
     assert "ConnectionError" in logger.warning.call_args.args
+
+
+def _cancel_entry() -> str:
+    """The API reference's entry for the cancel route, up to the next one."""
+    text = (Path(__file__).resolve().parents[3] / "docs" / "api-reference.md").read_text(encoding="utf-8")
+    start = text.index("### `POST /api/v1/jobs/{job_id}/cancel`")
+    end = text.index("\n### ", start + 1)
+    return text[start:end]
+
+
+def test_the_api_reference_names_every_status_a_run_will_not_write_over():
+    """The cancel entry states the condition on a run's writes; it names each
+    status ``_write_unless_stopped`` refuses, ``completed`` included since
+    T-5.2.23, so a reader does not take a redelivered task on a completed
+    run to be free to write."""
+    entry = _cancel_entry()
+    condition = entry[entry.index("conditional on the row being"):entry.index("so a cancel that lands")]
+    missing = [status for status in job_tasks._STOPPED_STATUSES if status not in condition]
+    assert missing == [], f"the cancel entry's condition leaves out {missing}: {condition!r}"
 
 
 # ================================================================ T-5.2.23: a finished run is not run again

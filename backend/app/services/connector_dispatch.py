@@ -43,7 +43,7 @@ from app.services import source_failure
 from app.services.source_failure import SourceFailure
 from app.sources.registry import connector_for
 from app.sources.types import Candidate
-from app.utils.log_redaction import error_summary
+from app.utils.shared_url_log import traceback_without_text
 
 logger = logging.getLogger(__name__)
 
@@ -57,10 +57,12 @@ class DispatchResult:
     raised land in `errors_by_source_type` AND get an empty list in
     `candidates_by_source_type` so callers can still iterate uniformly.
 
-    `errors_by_source_type` carries a string describing each failure
-    (`"<ExceptionType>: <message>"` or a context-specific message
-    like `"No connector registered for 'mastodon_post'"`), for the log.
-    Empty when the dispatch ran fully clean.
+    `errors_by_source_type` carries a string describing each failure, for
+    the log: the exception's type, never its words, since a search's
+    exception quotes its request URL and that holds the user's topic
+    (T-4.11.4.2), or a context-specific message like `"No connector
+    registered for 'mastodon_post'"`. Empty when the dispatch ran fully
+    clean.
 
     `failures_by_source_type` has the same keys, as `SourceFailure`, for
     what the run tells its reader. A source in neither map answered; an
@@ -164,12 +166,19 @@ def dispatch_search(
             )
             continue
         except Exception as e:
-            errors_by_type[st] = error_summary(e)
-            failures_by_type[st] = source_failure.classify(e)
+            failure = source_failure.classify(e)
+            errors_by_type[st] = type(e).__name__
+            failures_by_type[st] = failure
             candidates_by_type[st] = []
-            logger.exception(
-                "dispatch_search: connector %r raised during search()",
+            # The type, the status and the frames: what an httpx or Google
+            # error says quotes the search URL, whose query string is the
+            # user's topic (T-4.11.4.2).
+            logger.error(
+                "dispatch_search: connector %r raised during search() (%s%s): %s",
                 st,
+                failure.kind,
+                f", HTTP {failure.status}" if failure.status else "",
+                traceback_without_text(e),
                 extra={"job_id": job_id},
             )
             continue

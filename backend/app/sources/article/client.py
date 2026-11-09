@@ -44,6 +44,8 @@ class ArticleClient:
     # ------------------------------------------------------------------
     # Brave Search
     # ------------------------------------------------------------------
+    # A search's URL holds the user's words, so httpx writes no request line (T-4.11.4.2).
+    @shared_url_fetch()
     def brave_search(self, query: str, limit: int = 10) -> dict:
         """Search Brave Search and return parsed JSON.
 

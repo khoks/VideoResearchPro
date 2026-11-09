@@ -28,6 +28,7 @@ import smtplib
 from email.message import EmailMessage
 
 from app.config import settings
+from app.utils.shared_url_log import traceback_without_text
 
 logger = logging.getLogger(__name__)
 
@@ -138,12 +139,15 @@ def send_email(
         # one place an address belongs: the operator has to deliver it.
         logger.info("send_email: delivered by SMTP")
         return True
-    except Exception:
-        logger.exception(
-            "send_email: SMTP delivery failed for to=%s subject=%r — "
-            "falling back to log so the message is at least preserved",
-            to,
-            subject,
+    except Exception as e:
+        # As the success line: no address and no subject, and the type and
+        # frames rather than the error's text, since smtplib's refusals quote
+        # the recipient (T-4.11.4.2). The fallback below writes the email whole
+        # for the operator to deliver, the one place an address belongs.
+        logger.error(
+            "send_email: SMTP delivery failed — falling back to log so the "
+            "message is at least preserved: %s",
+            traceback_without_text(e),
         )
         _log_email(to, subject, body, html=html)
         return False

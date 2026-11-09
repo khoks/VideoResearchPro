@@ -27,6 +27,7 @@ Repository names, branch names and star targets are metadata only.
 from __future__ import annotations
 
 import logging
+import re
 import urllib.parse
 from collections import Counter
 from datetime import datetime, timezone
@@ -35,6 +36,7 @@ from typing import Any, Callable, Iterator
 import httpx
 
 from app.config import settings
+from app.utils.shared_url_log import shared_url_fetch
 from app.connectors.base import (
     ActivityEvent,
     ConnectorError,
@@ -99,6 +101,26 @@ class HttpResponse:
         self.headers = {k.lower(): v for k, v in (headers or {}).items()}
 
 
+# The account's login and its repositories, as a log line or an error names a
+# path without them (D-157 point 3, T-4.11.4.2).
+_NAMED_PATHS = (
+    (re.compile(r"^/users/[^/]+"), "/users/{login}"),
+    (re.compile(r"^/repos/[^/]+/[^/]+"), "/repos/{repo}"),
+)
+
+
+def _endpoint(path: str) -> str:
+    """``path`` (or a full API URL) as the endpoint it calls, with the login
+    and the repository taken out: ``/repos/{repo}/commits``."""
+    endpoint = urllib.parse.urlsplit(path).path or "/"
+    for pattern, name in _NAMED_PATHS:
+        endpoint = pattern.sub(name, endpoint)
+    return endpoint
+
+
+# httpx's own INFO line would write each URL whole, and a sync's URLs name the
+# account's login and repositories (D-157 point 3, T-4.11.4.2).
+@shared_url_fetch()
 def _default_request(method: str, url: str, *, headers: dict, data: dict | None = None,
                      json: dict | None = None, auth: tuple[str, str] | None = None) -> HttpResponse:
     with httpx.Client(timeout=20.0) as client:
@@ -248,7 +270,7 @@ class GitHubConnector:
         if resp.status == 403 and resp.headers.get("x-ratelimit-remaining") == "0":
             raise ConnectorError("GitHub's hourly limit is used up; the next sync will continue")
         if resp.status not in (200, 304):
-            raise ConnectorError(f"GitHub answered {resp.status} for {path}")
+            raise ConnectorError(f"GitHub answered {resp.status} for {_endpoint(path)}")
         return resp
 
     def _call(self, ctx: SyncContext, path: str, params: dict | None = None,
@@ -319,8 +341,9 @@ class GitHubConnector:
             except ConnectorError as e:
                 if e.auth or "hourly limit" in str(e):
                     raise
-                # An empty or deleted repository answers 409/404: skip it.
-                logger.info("github: skipping commits of %s: %s", full_name, e)
+                # An empty or deleted repository answers 409/404: skip it. Not
+                # by its name, which is the account's (D-157 point 3).
+                logger.info("github: skipping one repository's commits: %s", e)
                 return
             items = resp.data if isinstance(resp.data, list) else []
             for c in items:

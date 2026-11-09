@@ -233,9 +233,11 @@ class MastodonConnector(BaseConnector):
         # when planning query reformulations.
         phrases, words = _topic_hashtags(query)
         if not phrases and not words:
+            # The query's length, never its words: it is the user's topic
+            # (T-4.11.4.2).
             logger.info(
-                "Mastodon search: query %r normalised to empty hashtag, skipping",
-                query,
+                "Mastodon search: a query of %d characters normalised to no hashtag, skipping",
+                len(query or ""),
             )
             return []
         client = mastodon_client.get_client()
@@ -264,7 +266,12 @@ class MastodonConnector(BaseConnector):
         except Exception as e:
             if not found:
                 raise
-            logger.warning("Mastodon search failed for hashtag %r: %s", tag, e)
+            # The hashtag is made from the user's topic, and an httpx error
+            # quotes the URL it is in, so neither (T-4.11.4.2).
+            logger.warning(
+                "Mastodon search failed for a hashtag of %d characters: %s",
+                len(tag), type(e).__name__,
+            )
             return
         if isinstance(statuses, list):
             for status in statuses:

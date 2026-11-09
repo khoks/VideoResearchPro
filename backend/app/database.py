@@ -10,10 +10,19 @@ from app.config import settings
 db_path = settings.DATABASE_URL.replace("sqlite:///", "")
 os.makedirs(os.path.dirname(db_path) if os.path.dirname(db_path) else ".", exist_ok=True)
 
+def engine_options(debug: bool) -> dict[str, Any]:
+    """What the app's engine logs. ``DEBUG`` echoes every statement with its
+    bound values, as it always has. Otherwise a database error leaves its
+    values out: its text quotes them (a user's question, a note, a share's
+    words, an address), and it reaches a log as a traceback, a Celery task's
+    failure line and the error a run stores (T-4.11.4.2)."""
+    return {"echo": debug, "hide_parameters": not debug}
+
+
 engine = create_engine(
     settings.DATABASE_URL,
     connect_args={"check_same_thread": False},
-    echo=settings.DEBUG,
+    **engine_options(settings.DEBUG),
 )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

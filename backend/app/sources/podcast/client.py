@@ -52,6 +52,8 @@ class PodcastClient:
     # ------------------------------------------------------------------
     # iTunes Search
     # ------------------------------------------------------------------
+    # A search's URL holds the user's words, so httpx writes no request line (T-4.11.4.2).
+    @shared_url_fetch()
     def itunes_search(self, query: str, limit: int = 10) -> dict:
         """Search iTunes for podcast shows matching `query`.
 

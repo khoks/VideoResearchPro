@@ -1,4 +1,5 @@
-"""A shared link stays out of the logs, all but its host (T-3.7.2.9).
+"""A shared link stays out of the logs, all but its host (T-3.7.2.9), and so do
+the user's words a request carries (T-4.11.4.2).
 
 A link a user pasted or shared can carry something private anywhere after the
 host: a token in the query string, a name in the path. A private podcast feed
@@ -7,14 +8,24 @@ log line about one says the host and nothing else, and says the exception's
 type rather than its text, because that text can quote the URL
 (``raise_for_status``, Playwright's "navigating to ...").
 
+A search request is the same: its URL holds the user's own words, a topic or a
+query a planner wrote from one, in its query string (``?q=``) or its path
+(Mastodon's hashtag timeline). So does a YouTube ``HttpError``, which quotes
+the request it answered, and so does a channel the user named, which can be a
+pasted link. ``traceback_without_text`` keeps where such an exception was
+raised and drops what it said, and ``loggable_channel_input`` says what kind of
+channel input a line is about without repeating it.
+
 httpx writes a line of its own for every request, whole URL included, at INFO,
 and a Celery worker logs at INFO. ``shared_url_fetch`` silences that line
-around a fetch of a shared link and leaves every other caller's alone.
+around a fetch of a shared link, or a search, and leaves every other caller's
+alone.
 """
 from __future__ import annotations
 
 import logging
 import re
+import traceback
 from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -42,6 +53,72 @@ def loggable_id(source_id: str) -> str:
     return _URL_IN_AN_ID.sub(lambda url: host_of(url[0]), source_id)
 
 
+# A YouTube channel id, and a handle: the channel's own public name.
+_CHANNEL_ID = re.compile(r"UC[\w-]{22}")
+_HANDLE = re.compile(r"@[\w.-]{1,100}")
+# A link pasted without its scheme: `youtube.com/@name`, `www.youtube.com/...`.
+_BARE_LINK = re.compile(r"[\w-]+(\.[\w-]+)+/", re.ASCII)
+
+
+def loggable_channel_input(channel_input: object) -> str:
+    """A channel a user named, for a log line (T-4.11.4.2).
+
+    A channel id or an ``@handle`` is the channel's public name and stands as
+    written. A link comes down to its host, since anything after it can carry
+    something private, a share's tracking id for one. Anything else is the
+    user's own words, the name a search falls back on, and goes by its length.
+    """
+    value = str(channel_input or "").strip()
+    if _CHANNEL_ID.fullmatch(value) or _HANDLE.fullmatch(value):
+        return value
+    if "://" in value:
+        return f"a link on {host_of(value)}"
+    if _BARE_LINK.match(value):
+        return f"a link on {host_of('https://' + value)}"
+    return f"a name of {len(value)} characters"
+
+
+_CAUSE = "\nThe above exception was the direct cause of the following exception:\n\n"
+_CONTEXT = "\nDuring handling of the above exception, another exception occurred:\n\n"
+
+
+def _type_name(exc: BaseException) -> str:
+    cls = type(exc)
+    return cls.__qualname__ if cls.__module__ == "builtins" else f"{cls.__module__}.{cls.__qualname__}"
+
+
+def traceback_without_text(exc: BaseException) -> str:
+    """``exc``'s traceback with what each exception said left out (T-4.11.4.2).
+
+    The frames and the types stay, so an operator still sees where and how it
+    failed; the words go, because an ``HttpError`` or an httpx error quotes the
+    request URL, and a search's URL holds the user's words. A cause or a
+    context is shown as Python shows it, oldest first. A log line passes this
+    as an argument at ``logger.error`` in place of ``logger.exception``, whose
+    traceback would repeat the words.
+    """
+    parts: list[str] = []
+    current: BaseException | None = exc
+    seen: set[int] = set()
+    while current is not None and id(current) not in seen and len(seen) < 8:
+        seen.add(id(current))
+        try:
+            frames = "".join(traceback.format_tb(current.__traceback__))
+        except Exception:  # noqa: BLE001 - a log line must not raise
+            frames = ""
+        head = "Traceback (most recent call last), what it said left out:\n" if frames else ""
+        parts.append(f"{head}{frames}{_type_name(current)}\n")
+        if current.__cause__ is not None:
+            parts.append(_CAUSE)
+            current = current.__cause__
+        elif current.__context__ is not None and not current.__suppress_context__:
+            parts.append(_CONTEXT)
+            current = current.__context__
+        else:
+            current = None
+    return "".join(reversed(parts)).rstrip("\n")
+
+
 class _HttpxRequestLine(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
         return not _fetching_shared_url.get()
@@ -54,7 +131,9 @@ logging.getLogger("httpx").addFilter(_HttpxRequestLine())
 
 @contextmanager
 def shared_url_fetch() -> Iterator[None]:
-    """httpx writes no request line inside this. Also usable as a decorator."""
+    """httpx writes no request line inside this. Also usable as a decorator,
+    on a fetch of a shared link and on a search, whose URL holds the user's
+    words."""
     token = _fetching_shared_url.set(True)
     try:
         yield

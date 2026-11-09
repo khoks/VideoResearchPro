@@ -34,7 +34,7 @@ from app.tasks.celery_app import celery_app
 from app.utils.chunking import chunk_transcript
 from app.utils.html_builder import build_report_html, save_report
 from app.utils.log_redaction import error_summary, scrub_keys
-from app.utils.shared_url_log import loggable_id
+from app.utils.shared_url_log import loggable_channel_input, loggable_id, traceback_without_text
 
 logger = logging.getLogger(__name__)
 
@@ -635,11 +635,14 @@ def _search_non_video_sources(job: Job, source_types: list[str], shares: dict[st
 
     if result.has_errors:
         for st, err in result.errors_by_source_type.items():
+            # `err` is the exception's type, never its words (T-4.11.4.2).
+            failure = result.failures_by_source_type.get(st)
             logger.warning(
-                "[job:%s] dispatch_search error for source_type=%s: %s",
+                "[job:%s] dispatch_search error for source_type=%s: %s (%s)",
                 job.id,
                 st,
                 err,
+                failure.kind if failure else "failed",
             )
     return result
 
@@ -883,9 +886,12 @@ def _persist_search_candidates(
                 job_id, len(rows), len(selected_ids),
                 max(0, len(rows) - len(selected_ids)),
             )
-    except Exception:
-        logger.exception(
-            "[job:%s] Persisting search candidates failed; job continues", job_id
+    except Exception as e:
+        # A database error quotes the statement's values, and each payload
+        # holds the planner query it was found by (T-4.11.4.2).
+        logger.error(
+            "[job:%s] Persisting search candidates failed; job continues: %s",
+            job_id, traceback_without_text(e),
         )
         try:
             db.rollback()
@@ -1329,7 +1335,11 @@ def execute_topic_job(self, job_id: str) -> None:
             return
         meter.enter_context(usage_service.metered(db, job.tenant_id))
 
-        logger.info(f"[job:{job_id}] Topic job starting: topic='{job.topic}', num_videos={job.num_videos}")
+        # The topic's length, never its words (T-4.11.4.2): the row has them.
+        logger.info(
+            f"[job:{job_id}] Topic job starting: topic of {len(job.topic or '')} characters, "
+            f"num_videos={job.num_videos}"
+        )
 
         _update_job(db, job, status="searching", progress_pct=5,
                     progress_message="Searching for relevant videos...", celery_task_id=self.request.id)
@@ -1375,7 +1385,7 @@ def execute_topic_job(self, job_id: str) -> None:
             from app.services import llm_service
 
             logger.info(
-                f"[job:{job_id}] Starting Search Agent for topic: '{job.topic}'"
+                f"[job:{job_id}] Starting Search Agent: YouTube target {youtube_target}"
             )
             # T-5.6.4: BYOK context — Studio users' API keys cover the
             # search-agent's LLM calls (search_plan_queries +
@@ -1421,14 +1431,16 @@ def execute_topic_job(self, job_id: str) -> None:
                     "[job:%s] YouTube search unavailable: %s", job_id, type(e).__name__
                 )
                 failures["video"] = source_failure.classify(e)
-            except Exception:
+            except Exception as e:
                 # The agent's model, or a bug, which says nothing about
                 # YouTube, so not `classify`: an LLM SDK's 401 would read as
                 # YouTube refusing. What the other sources found stands; with
                 # nothing to keep, the handler below reports this as itself.
                 if not any(found.values()):
                     raise
-                logger.exception("[job:%s] YouTube search failed", job_id)
+                logger.error(
+                    "[job:%s] YouTube search failed: %s", job_id, traceback_without_text(e)
+                )
                 failures["video"] = source_failure.SourceFailure(source_failure.FAILED)
             logger.info(
                 f"[job:{job_id}] Search Agent complete: found "
@@ -1527,7 +1539,11 @@ def execute_topic_job(self, job_id: str) -> None:
                     "Try a broader topic, different search instructions, or "
                     "relax the duration filters."
                 )
-            logger.warning(f"[job:{job_id}] {msg}")
+            # The message names the topic for its reader; the log does not.
+            logger.warning(
+                f"[job:{job_id}] No candidates found across source_types={source_types} "
+                f"({len(unavailable)} unavailable); failing the run"
+            )
             _handle_failure(db, job_id, msg)
             return
 
@@ -1543,7 +1559,11 @@ def execute_topic_job(self, job_id: str) -> None:
         )
 
     except Exception as e:
-        logger.exception(f"[job:{job_id}] Topic job failed during search: {e}")
+        # The type and the frames: an error in the search phase can quote a
+        # request that carried the topic. Its words go on the row (T-4.11.4.2).
+        logger.error(
+            "[job:%s] Topic job failed during search: %s", job_id, traceback_without_text(e)
+        )
         _handle_failure(db, job_id, error_summary(e))
     finally:
         meter.close()
@@ -1598,14 +1618,16 @@ def execute_channel_job(self, job_id: str) -> None:
                 f"Processing channel {i + 1}/{len(channel_list)}: {channel_input}"
             )
 
-            # Resolve channel ID
-            logger.info(f"[job:{job_id}] Channel {i + 1}/{len(channel_list)}: resolving '{channel_input}'")
+            # Resolve channel ID. A channel input can be a pasted link or a
+            # name, so the log names its kind, never the input (T-4.11.4.2).
+            named = loggable_channel_input(channel_input)
+            logger.info(f"[job:{job_id}] Channel {i + 1}/{len(channel_list)}: resolving {named}")
             channel_id = connector.resolve_creator_id(channel_input, job_id=job_id)
             if not channel_id:
-                logger.warning(f"[job:{job_id}] Could not resolve channel: '{channel_input}', skipping")
+                logger.warning(f"[job:{job_id}] Could not resolve channel {i + 1} ({named}), skipping")
                 continue
 
-            logger.info(f"[job:{job_id}] Channel '{channel_input}' → {channel_id}, "
+            logger.info(f"[job:{job_id}] Channel {i + 1} → {channel_id}, "
                         f"fetching up to {videos_per_channel} videos")
 
             # Fetch candidate items from the channel; we only need the IDs
@@ -1672,7 +1694,11 @@ def execute_channel_job(self, job_id: str) -> None:
                                                f"Found {video_count} videos. Please review and approve.")
 
     except Exception as e:
-        logger.exception(f"[job:{job_id}] Channel job failed during search: {e}")
+        # A channel resolved by search quotes the channel input in its
+        # HttpError, so the type and the frames; the words go on the row.
+        logger.error(
+            "[job:%s] Channel job failed during search: %s", job_id, traceback_without_text(e)
+        )
         _handle_failure(db, job_id, error_summary(e))
     finally:
         meter.close()
@@ -2458,7 +2484,8 @@ def execute_subscription_job(self, job_id: str) -> None:
             channel_id = connector.resolve_creator_id(channel_input, job_id=job_id)
             if not channel_id:
                 logger.warning(
-                    f"[job:{job_id}] Could not resolve channel: '{channel_input}', skipping"
+                    f"[job:{job_id}] Could not resolve channel {i + 1} "
+                    f"({loggable_channel_input(channel_input)}), skipping"
                 )
                 continue
 
@@ -2659,7 +2686,10 @@ def execute_subscription_job(self, job_id: str) -> None:
         logger.info(f"[job:{job_id}] Subscription job COMPLETED")
 
     except Exception as e:
-        logger.exception(f"[job:{job_id}] Subscription job failed: {e}")
+        # As the channel job: a channel resolved by search quotes its input.
+        logger.error(
+            "[job:%s] Subscription job failed: %s", job_id, traceback_without_text(e)
+        )
         _handle_failure(db, job_id, error_summary(e))
     finally:
         meter.close()
@@ -2760,8 +2790,14 @@ def _handle_failure(db, job_id: str, error: str) -> None:
         if job:
             _update_job(db, job, status="failed", error_message=error)
         progress_service.publish_error(job_id, error)
-    except Exception:
-        logger.exception(f"[job:{job_id}] _handle_failure also failed while recording error: {error!r}")
+    except Exception as e:
+        # Not the error itself, which can name the topic ("No candidates found
+        # for topic ..."), and not the database error's text, which quotes the
+        # statement's values, the error among them (T-4.11.4.2).
+        logger.error(
+            "[job:%s] _handle_failure also failed while recording an error of %d characters: %s",
+            job_id, len(error), traceback_without_text(e),
+        )
         # Last-ditch: open a fresh session and update the row directly so the
         # UI doesn't hang on a transient status.
         try:
@@ -2775,5 +2811,8 @@ def _handle_failure(db, job_id: str, error: str) -> None:
                     fresh.commit()
             finally:
                 fresh.close()
-        except Exception:
-            logger.exception(f"[job:{job_id}] _handle_failure: fresh-session fallback also failed")
+        except Exception as e:
+            logger.error(
+                "[job:%s] _handle_failure: fresh-session fallback also failed: %s",
+                job_id, traceback_without_text(e),
+            )

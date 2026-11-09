@@ -701,6 +701,8 @@ Body `{ "urls": ["https://…", …] }`, 1–100 entries. Each URL is resolved t
 
 400 when `urls` is missing, empty or longer than 100. `invalid_url` rows carry no `source_type`; `extraction_failed` rows carry no `document_id`.
 
+Each new document keeps who posted it and when (T-1.5.8.4). A Facebook, Instagram, LinkedIn or X post is read for its own metadata first (JSON-LD, Open Graph and `article:` tags, `twitter:creator`); an X post's address gives its handle, and an X status id or a LinkedIn activity id the moment it was posted. trafilatura's author and date fill whatever that leaves out, and are all an article gets. The author, and the `@handle` where the platform has one, go in the document's `source_metadata_json` and reach its citations. The date is the document's `published_at`, in UTC, shown on its row in `GET /library/videos` and counted by library Q&A's corpus figures. An unknown date, or one before 1995 or after tomorrow, is left null ([D-072](decisions.md#d-072--two-dates-per-source-era-at-ingest-time-as-a-ranking-preference-qa-statistics-from-the-database-2026-10-19)). A document that was already in the library is not read again.
+
 ### `GET /api/v1/library/pdf/{digest}.pdf`
 Serves the uploaded bytes (`application/pdf`) for the document whose `source_id` is `pdf:<digest>`; 404 if the document or the file is missing. Citations deep-link here with `#page=N`. The route sits under the router-level bearer-auth dependency and does **not** accept `?token=`, so a plain link or a new tab 401s; the frontend fetches the bytes with the header and opens a blob URL, keeping the `#page=N` fragment — from the Library row and, since T-8.8.1.5, from every PDF citation.
 

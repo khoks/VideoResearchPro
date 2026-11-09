@@ -27,6 +27,7 @@ from typing import Any
 import httpx
 
 from app.config import settings
+from app.sources import _http_retry
 from app.utils.rate_limiter import RateLimiter
 
 logger = logging.getLogger(__name__)
@@ -49,14 +50,18 @@ class HNClient:
     def get_json(self, path: str, params: dict[str, Any] | None = None) -> Any:
         """GET ``HN_API_BASE + path`` and return the parsed JSON.
 
-        Rate-limited per `HN_RATE_LIMIT_RPM`. Any HTTP failure raises
-        ``httpx.HTTPError``. There is no auth retry path because the
+        Rate-limited per `HN_RATE_LIMIT_RPM`. A timeout, a connection error
+        or a 5xx is tried once more (T-1.5.11.2); any HTTP failure after that
+        raises ``httpx.HTTPError``. There is no auth retry path because the
         endpoint is unauthenticated.
         """
         url = f"{HN_API_BASE}{path}"
-        self._limiter.wait()
         headers = {"User-Agent": settings.HN_USER_AGENT}
-        resp = httpx.get(url, params=params, headers=headers, timeout=self._timeout)
+        resp = _http_retry.send(
+            lambda: httpx.get(url, params=params, headers=headers, timeout=self._timeout),
+            url=url,
+            limiter=self._limiter,
+        )
         resp.raise_for_status()
         return resp.json()
 

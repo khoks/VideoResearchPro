@@ -52,6 +52,7 @@ from app.routers import (
 from app.services import auth_service, byok_service, chroma_service, note_index, search_service
 from app.services.llm_smoke import run_startup_probes
 from app.services.schema_init_service import ensure_schema_at_head
+from app.sources.twitter import client as twitter_client
 from app.utils import app_origins, tiktoken_cache
 
 # T-8.8.6.5: tiktoken's encoding in TIKTOKEN_ENCODINGS_DIR rather than the
@@ -102,6 +103,9 @@ async def lifespan(app: FastAPI):
     # T-4.11.3.3: the pages CORS answers and sign-in returns to, one list. A
     # bad entry in it is logged here, at startup, not at the first request.
     logger.info("App origins (CORS and OAuth sign-in): %s", app_origins.describe())
+
+    # T-1.5.9.1: whether X search is on, from the token's presence alone.
+    twitter_client.log_token_presence()
 
     # Idempotent one-shot backfill of the Q&A library Chroma collection.
     # Upsert on fixed `qa:{id}` chunk IDs means this is safe to run on every

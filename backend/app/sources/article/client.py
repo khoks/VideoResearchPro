@@ -26,6 +26,7 @@ import feedparser
 import httpx
 
 from app.config import settings
+from app.sources import _http_retry
 from app.utils.rate_limiter import RateLimiter
 from app.utils.shared_url_log import shared_url_fetch
 
@@ -55,7 +56,6 @@ class ArticleClient:
             raise RuntimeError(
                 "BRAVE_SEARCH_API_KEY is unset; cannot run Brave search"
             )
-        self._limiter.wait()
         params = {
             "q": query,
             "count": max(1, min(20, limit)),
@@ -65,11 +65,15 @@ class ArticleClient:
             "X-Subscription-Token": settings.BRAVE_SEARCH_API_KEY,
             "Accept": "application/json",
         }
-        resp = httpx.get(
-            settings.BRAVE_SEARCH_BASE,
-            params=params,
-            headers=headers,
-            timeout=self._timeout,
+        resp = _http_retry.send(
+            lambda: httpx.get(
+                settings.BRAVE_SEARCH_BASE,
+                params=params,
+                headers=headers,
+                timeout=self._timeout,
+            ),
+            url=settings.BRAVE_SEARCH_BASE,
+            limiter=self._limiter,
         )
         resp.raise_for_status()
         return resp.json()
@@ -88,13 +92,16 @@ class ArticleClient:
         ``httpx.HTTPError`` rather than feedparser's less-actionable
         exception shapes.
         """
-        self._limiter.wait()
         headers = {"User-Agent": settings.ARTICLE_USER_AGENT}
-        resp = httpx.get(
-            feed_url,
-            headers=headers,
-            timeout=self._timeout,
-            follow_redirects=True,
+        resp = _http_retry.send(
+            lambda: httpx.get(
+                feed_url,
+                headers=headers,
+                timeout=self._timeout,
+                follow_redirects=True,
+            ),
+            url=feed_url,
+            limiter=self._limiter,
         )
         resp.raise_for_status()
         return feedparser.parse(resp.content)

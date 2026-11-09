@@ -22,12 +22,14 @@ import feedparser
 import httpx
 
 from app.config import settings
+from app.sources import _http_retry
 from app.utils.rate_limiter import RateLimiter
 from app.utils.shared_url_log import shared_url_fetch
 
 logger = logging.getLogger(__name__)
 
 ITUNES_SEARCH_BASE = "https://itunes.apple.com/search"
+ITUNES_LOOKUP_BASE = "https://itunes.apple.com/lookup"
 
 # A download now goes to disk, so nothing stops a feed whose enclosure never
 # ends until the disk does. Fifty hours of speech at 64 kbit/s, far past any
@@ -58,18 +60,21 @@ class PodcastClient:
         ``collectionName``, ``artistName``, ``feedUrl``, ``artworkUrl600``,
         ``primaryGenreName``, ``releaseDate``.
         """
-        self._limiter.wait()
         params = {
             "term": query,
             "entity": "podcast",
             "limit": max(1, min(200, limit)),  # iTunes caps at 200
         }
         headers = {"User-Agent": settings.PODCAST_USER_AGENT}
-        resp = httpx.get(
-            ITUNES_SEARCH_BASE,
-            params=params,
-            headers=headers,
-            timeout=self._timeout,
+        resp = _http_retry.send(
+            lambda: httpx.get(
+                ITUNES_SEARCH_BASE,
+                params=params,
+                headers=headers,
+                timeout=self._timeout,
+            ),
+            url=ITUNES_SEARCH_BASE,
+            limiter=self._limiter,
         )
         resp.raise_for_status()
         return resp.json()
@@ -83,14 +88,17 @@ class PodcastClient:
         we extract the trailing ID and resolve it to the show's
         ``feedUrl`` for ingest.
         """
-        self._limiter.wait()
         params = {"id": str(collection_id), "entity": "podcast"}
         headers = {"User-Agent": settings.PODCAST_USER_AGENT}
-        resp = httpx.get(
-            "https://itunes.apple.com/lookup",
-            params=params,
-            headers=headers,
-            timeout=self._timeout,
+        resp = _http_retry.send(
+            lambda: httpx.get(
+                ITUNES_LOOKUP_BASE,
+                params=params,
+                headers=headers,
+                timeout=self._timeout,
+            ),
+            url=ITUNES_LOOKUP_BASE,
+            limiter=self._limiter,
         )
         resp.raise_for_status()
         return resp.json()
@@ -110,9 +118,12 @@ class PodcastClient:
         failures surface as ``httpx.HTTPError`` rather than feedparser's
         less-actionable exception shapes.
         """
-        self._limiter.wait()
         headers = {"User-Agent": settings.PODCAST_USER_AGENT}
-        resp = httpx.get(feed_url, headers=headers, timeout=self._timeout, follow_redirects=True)
+        resp = _http_retry.send(
+            lambda: httpx.get(feed_url, headers=headers, timeout=self._timeout, follow_redirects=True),
+            url=feed_url,
+            limiter=self._limiter,
+        )
         resp.raise_for_status()
         # feedparser returns a special FeedParserDict; we coerce to a
         # plain dict shape for typing simplicity at the call site, but

@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, status
 from sqlalchemy import func
@@ -945,6 +946,20 @@ def _ingest_single_paste_url(url: str, db: Session, current_user) -> dict:
     extracted_extra = extracted.extra or {}
     title = (extracted_extra.get("extracted_title") or url)[:500]
     author = (extracted_extra.get("extracted_author") or "")[:200]
+    # T-1.5.8.4: a social post's own author, handle and date where its page
+    # or address gives them, else trafilatura's. The date is the post's
+    # publish date (D-072): timezone-aware UTC like the other connectors',
+    # and None, never a placeholder, when nothing dated it.
+    handle = (extracted_extra.get("extracted_handle") or "")[:100]
+    published_at = extracted_extra.get("extracted_published_at")
+    if not isinstance(published_at, datetime):
+        published_at = None
+    source_metadata = {
+        "author": author,
+        "extractor": extracted_extra.get("extractor_source", ""),
+    }
+    if handle:
+        source_metadata["handle"] = handle
 
     doc = Document(
         source_type=source_type,
@@ -958,12 +973,8 @@ def _ingest_single_paste_url(url: str, db: Session, current_user) -> dict:
         transcript_source=extracted.text_source,
         language=extracted.language,
         word_count=extracted.word_count,
-        source_metadata_json=json.dumps(
-            {
-                "author": author,
-                "extractor": extracted_extra.get("extractor_source", ""),
-            }
-        ),
+        published_at=published_at,
+        source_metadata_json=json.dumps(source_metadata),
     )
     db.add(doc)
     db.commit()

@@ -26,6 +26,7 @@ from typing import Any
 import httpx
 
 from app.config import settings
+from app.sources import _http_retry
 from app.utils.rate_limiter import RateLimiter
 
 logger = logging.getLogger(__name__)
@@ -46,19 +47,26 @@ class TwitterClient:
         """GET ``<TWITTER_API_BASE><path>`` and return parsed JSON.
 
         Rate-limited; raises `RuntimeError` when no bearer token is
-        configured (caller must check `is_enabled()` first).
+        configured (caller must check `is_enabled()` first). X bills what
+        it serves (D-139), so a request is tried once more only when
+        nothing answered it: a timeout or a connection that never opened,
+        never a 5xx or a 429 (T-1.5.11.2).
         """
         if not settings.TWITTER_BEARER_TOKEN:
             raise RuntimeError(
                 "TWITTER_BEARER_TOKEN unset — Twitter API path is gated"
             )
         url = f"{settings.TWITTER_API_BASE}{path}"
-        self._limiter.wait()
         headers = {
             "Authorization": f"Bearer {settings.TWITTER_BEARER_TOKEN}",
             "User-Agent": settings.TWITTER_USER_AGENT,
         }
-        resp = httpx.get(url, params=params, headers=headers, timeout=self._timeout)
+        resp = _http_retry.send(
+            lambda: httpx.get(url, params=params, headers=headers, timeout=self._timeout),
+            url=url,
+            limiter=self._limiter,
+            policy=_http_retry.UNANSWERED_ONLY,
+        )
         resp.raise_for_status()
         return resp.json()
 
@@ -149,6 +157,27 @@ class TwitterClient:
     def is_enabled() -> bool:
         """True iff the operator has supplied a bearer token."""
         return bool(settings.TWITTER_BEARER_TOKEN)
+
+
+def log_token_presence() -> None:
+    """Say at API startup whether ``TWITTER_BEARER_TOKEN`` is set (T-1.5.9.1).
+
+    Presence only: the line holds neither the token nor any part of it, and
+    the same test as ``/health``'s ``twitter_search_enabled``. Whether X
+    accepts the token is not checked, because that takes a call X bills
+    (D-009, D-139); the first search says so, and a refusal holds the
+    source (D-141).
+    """
+    if TwitterClient.is_enabled():
+        logger.info(
+            "X / Twitter: TWITTER_BEARER_TOKEN is set, so tweet search is on "
+            "(not checked against X here: that takes a paid call)"
+        )
+    else:
+        logger.info(
+            "X / Twitter: TWITTER_BEARER_TOKEN is not set, so tweets come by "
+            "pasted URL only"
+        )
 
 
 _INSTANCE: TwitterClient | None = None

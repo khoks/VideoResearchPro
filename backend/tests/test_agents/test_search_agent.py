@@ -601,6 +601,66 @@ def test_run_search_agent_end_to_end(fake_videos):
     assert mock_get_llm.call_count == 2
 
 
+def _run_with_progress(fake_videos, callback):
+    """The whole graph, offline, with ``callback`` as its progress callback.
+    Returns the result (or the exception) and how many models were asked for."""
+    with patch.object(search_agent, "get_llm_for") as mock_get_llm, \
+         patch.object(search_agent.youtube_service, "search_videos", return_value=fake_videos), \
+         patch.object(search_agent.youtube_service, "get_video_details", return_value={
+             v["video_id"]: {"duration_seconds": v["duration_seconds"]} for v in fake_videos}), \
+         patch.object(search_agent.youtube_service, "get_channel_subscribers", return_value={}):
+        mock_get_llm.side_effect = [
+            _fake_llm_returning(_plan_payload(["q1", "q2"])),
+            _fake_llm_returning(json.dumps(["v1", "v2"])),
+        ]
+        try:
+            outcome = search_agent.run_search_agent(
+                topic="quantum computing", num_videos=2, progress_callback=callback)
+        except Exception as e:  # the case under test
+            outcome = e
+    return outcome, mock_get_llm.call_count
+
+
+def _stop_before_ranking(pct, message):
+    if pct == 12:  # after execute_searches, before rank_and_curate
+        raise search_agent.SearchStopped
+
+
+def test_a_callback_that_raises_search_stopped_ends_the_search_there(fake_videos):
+    """T-5.2.20: a topic run stopped during its search ends it at the next
+    progress report, so the ranking call is never made."""
+    outcome, models_asked = _run_with_progress(fake_videos, _stop_before_ranking)
+
+    assert isinstance(outcome, search_agent.SearchStopped)
+    assert models_asked == 1, "the plan only: rank_and_curate never ran"
+
+
+def test_any_other_callback_error_is_still_swallowed(fake_videos):
+    def broken(pct, message):
+        raise RuntimeError("progress store down")
+
+    (curated, _queries, _unresolved), models_asked = _run_with_progress(fake_videos, broken)
+
+    assert len(curated) == 2
+    assert models_asked == 2
+
+
+def test_mutation_a_notify_that_lets_nothing_through_ranks_for_nobody(fake_videos, monkeypatch):
+    """``_notify`` matching another class swallows the stop, as it did every
+    error before T-5.2.20: the search runs on to its ranking call."""
+    raised = search_agent.SearchStopped
+    monkeypatch.setattr(search_agent, "SearchStopped", type("Unrelated", (Exception,), {}))
+
+    def stop_before_ranking(pct, message):
+        if pct == 12:
+            raise raised
+
+    (curated, _queries, _unresolved), models_asked = _run_with_progress(fake_videos, stop_before_ranking)
+
+    assert models_asked == 2
+    assert len(curated) == 2
+
+
 def test_a_refusal_comes_out_of_the_whole_graph_as_itself(fake_videos):
     """T-1.5.14.1: the run tells a spent quota from an empty result by its
     type, so it has to survive LangGraph. The job's handler catches this

@@ -687,10 +687,13 @@ def _store_non_video_candidates(db, job: Job, result, limits: dict[str, int]) ->
     from app.sources.registry import connector_for
 
     stored = 0
+    stopped = False
     # Library rows already embedded that this search dated (T-1.6.7).
     newly_dated: list[Document] = []
     searched = result.candidates_by_source_type
     for st, candidates in searched.items():
+        if stopped:
+            break
         if not candidates:
             continue
         connector = connector_for(st)
@@ -698,6 +701,16 @@ def _store_non_video_candidates(db, job: Job, result, limits: dict[str, int]) ->
         if st in _WHISPER_FALLBACK_SOURCE_TYPES:
             fetch_kwargs["allow_whisper"] = False
         for cand in candidates[: limits.get(st, 0)]:
+            # T-5.2.20: a fetch can spend model calls (a social connector
+            # classifies the post and its top comments inline, D-023), so a
+            # run cancelled or failed meanwhile stops before the next one.
+            # Each candidate is committed below, which is what lets a cancel
+            # land between them: an open write transaction holds SQLite's
+            # lock, so the cancel route's write waited on it, and the check's
+            # fresh read would drop changes not yet flushed.
+            if _is_stopped(db, job.id):
+                stopped = True
+                break
             try:
                 extracted = connector.fetch_text(cand, **fetch_kwargs)
             except Exception:
@@ -713,6 +726,7 @@ def _store_non_video_candidates(db, job: Job, result, limits: dict[str, int]) ->
             if extracted is not None and "classification" in extracted.extra:
                 classification = extracted.extra["classification"]
 
+            dated_before = len(newly_dated)
             try:
                 document = _upsert_candidate_and_link(
                     db,
@@ -724,8 +738,14 @@ def _store_non_video_candidates(db, job: Job, result, limits: dict[str, int]) ->
                 )
                 if document is not None:
                     _cache_document_text(db, document, extracted)
+                db.commit()
                 stored += 1
             except Exception:
+                # This candidate alone is lost: the session stays usable for
+                # the next one, and a date its row did not keep is never
+                # stamped on its chunks.
+                db.rollback()
+                del newly_dated[dated_before:]
                 logger.exception(
                     "[job:%s] persist failed for %s/%s",
                     job.id,
@@ -746,6 +766,9 @@ def _store_non_video_candidates(db, job: Job, result, limits: dict[str, int]) ->
         stored,
         len(searched),
     )
+    if stopped:
+        logger.info("[job:%s] Run stopped (cancelled or failed) while fetching candidates, exiting", job.id)
+        raise _RunStopped("stopped while fetching candidates")
     return stored
 
 
@@ -1294,6 +1317,27 @@ def _approved_documents(db, job_id: str) -> list[Document]:
     )
 
 
+def _insert_and_mark_embedded(db, new_chunks: list[dict], chunked: list[Document]) -> None:
+    """Put a run's new chunks in Chroma, then flag their documents embedded.
+
+    The flag says the chunks are in the library, so it is set only once
+    ``insert_chunks`` has returned. Both extraction loops used to commit it as
+    each document was chunked, while the chunks reached Chroma only here: a
+    run stopped (cancelled, or failed by a route, T-5.2.20) or raising between
+    the two left documents flagged embedded with no chunks, and every later
+    job reused them without inserting anything, so no Q&A, for any tenant,
+    could retrieve them. Unflagged, the next job that selects one embeds it,
+    from the transcript cache or a fresh fetch (``insert_chunks`` upserts, so
+    a repeat is harmless).
+    """
+    if new_chunks:
+        chroma_service.insert_chunks(new_chunks)
+    for document in chunked:
+        if hasattr(document, "embedded_in_chroma"):
+            document.embedded_in_chroma = True
+    db.commit()
+
+
 # A row in one of these states is over, whoever ended it: the user cancelled
 # it, a route failed it (a dispatch whose reply was lost), or the run itself
 # failed. A run never writes over one (T-5.2.18, T-5.2.20).
@@ -1303,7 +1347,9 @@ _STOPPED_STATUSES = ("failed", "cancelled")
 class _RunStopped(Exception):
     """The row was cancelled or failed while this run was going (T-5.2.20).
 
-    Raised by ``_update_job`` when its write found the row stopped. Every
+    Raised by ``_update_job`` when its write found the row stopped, and by the
+    topic search when a check inside it did (the search agent's progress
+    callback, ``_store_non_video_candidates``). Every
     entry point catches it before its ``except Exception``, so it is neither
     logged as a failure nor handed to ``_handle_failure``: the row keeps the
     status and the words whoever stopped it wrote.
@@ -1463,7 +1509,7 @@ def execute_topic_job(self, job_id: str) -> None:
             logger.info(f"[job:{job_id}] Run stopped (cancelled or failed) before the YouTube search, exiting")
             return
         if wants_video:
-            from app.agents.search_agent import run_search_agent
+            from app.agents.search_agent import SearchStopped, run_search_agent
             from app.services import llm_service
 
             logger.info(
@@ -1477,9 +1523,13 @@ def execute_topic_job(self, job_id: str) -> None:
                 # S-1.11.8: sub-progress during the multi-minute search phase.
                 # Written first and published only when it was: a stopped
                 # row keeps its words, and its page gets no progress event,
-                # which would show it searching again (T-5.2.20).
-                if _write_unless_stopped(db, job, progress_pct=pct, progress_message=message):
-                    progress_service.publish_progress(job_id, "searching", pct, message)
+                # which would show it searching again (T-5.2.20). A refused
+                # write ends the search here: the agent swallows every other
+                # callback error, so without this it ran its remaining nodes,
+                # YouTube units and the ranking call included, for nobody.
+                if not _write_unless_stopped(db, job, progress_pct=pct, progress_message=message):
+                    raise SearchStopped
+                progress_service.publish_progress(job_id, "searching", pct, message)
 
             candidate_pool: list[dict] = []
             unresolved_channels: list = []
@@ -1505,6 +1555,9 @@ def execute_topic_job(self, job_id: str) -> None:
                         candidates_out=candidate_pool,
                         published_after_days=job.published_after_days,
                     )
+            except SearchStopped:
+                logger.info("[job:%s] the run is stopped; the search ends with it", job_id)
+                raise _RunStopped("stopped during the search") from None
             except _YOUTUBE_SEARCH_FAILURES as e:
                 # YouTube failed. One source of the run, reported as the
                 # others are. Never `str(e)`: an HttpError's message holds the
@@ -1527,6 +1580,14 @@ def execute_topic_job(self, job_id: str) -> None:
                 f"{len(curated_videos)} candidate videos "
                 f"({len(unresolved_channels)} unresolved channel hints)"
             )
+            # T-5.2.20: the search is the multi-minute part of a topic run, so
+            # it is where a cancel most likely lands, and its last node
+            # reports no progress. Stop before persisting what it found and
+            # before any non-video text is fetched (each fetch classifies
+            # inline, D-023: model calls charged to the run's owner).
+            if _is_stopped(db, job_id):
+                logger.info(f"[job:{job_id}] Run stopped (cancelled or failed) during the YouTube search, exiting")
+                return
             _persist_search_candidates(db, job_id, candidate_pool, curated_videos)
             # No visibility grant here (T-5.2.10). Candidates are not approved
             # yet, but their links default to approved=True, so a grant at this
@@ -1553,12 +1614,13 @@ def execute_topic_job(self, job_id: str) -> None:
                 )
                 db.commit()
 
-        progress_service.publish_progress(
-            job_id,
-            "searching",
-            15,
-            f"Found {len(curated_videos)} videos. Fetching details...",
-        )
+        # Written first and published only when it was, like the agent's
+        # progress (T-5.2.20): the event carries a status the page applies,
+        # so for a run stopped meanwhile it would show the run searching
+        # again. A refused write ends the run here.
+        found_videos_message = f"Found {len(curated_videos)} videos. Fetching details..."
+        _update_job(db, job, progress_pct=15, progress_message=found_videos_message)
+        progress_service.publish_progress(job_id, "searching", 15, found_videos_message)
 
         # Save YouTube videos to the global library and link to this job.
         for v in curated_videos:
@@ -1810,6 +1872,9 @@ def resume_job_after_approval(self, job_id: str) -> None:
 
         all_chunks: list[dict] = []
         new_chunks: list[dict] = []
+        # The documents new_chunks came from, flagged embedded once those
+        # chunks are in Chroma (_insert_and_mark_embedded), never before.
+        chunked: list[Document] = []
         fetched_count = 0
         reused_count = 0
         newly_processed_count = 0
@@ -1891,8 +1956,7 @@ def resume_job_after_approval(self, job_id: str) -> None:
                     )
                     all_chunks.extend(chunks)
                     new_chunks.extend(chunks)
-                    if hasattr(video, "embedded_in_chroma"):
-                        video.embedded_in_chroma = True
+                    chunked.append(video)
                     db.commit()
                     newly_processed_count += 1
                     fetched_count += 1
@@ -1985,9 +2049,7 @@ def resume_job_after_approval(self, job_id: str) -> None:
                     )
                     all_chunks.extend(chunks)
                     new_chunks.extend(chunks)
-
-                    if hasattr(video, "embedded_in_chroma"):
-                        video.embedded_in_chroma = True
+                    chunked.append(video)
 
                     newly_processed_count += 1
                     fetched_count += 1
@@ -2086,8 +2148,7 @@ def resume_job_after_approval(self, job_id: str) -> None:
             f"into global ChromaDB collection '{global_collection_name}' "
             f"(skipped {len(all_chunks) - len(new_chunks)} already-embedded chunks)"
         )
-        if new_chunks:
-            chroma_service.insert_chunks(new_chunks)
+        _insert_and_mark_embedded(db, new_chunks, chunked)
         _update_job(db, job, chroma_collection_name=global_collection_name)
         logger.info(
             f"[job:{job_id}] RAG built: {len(new_chunks)} new chunks indexed in "
@@ -2220,6 +2281,8 @@ def _run_extraction_and_rag(self, db, job) -> None:
 
     all_chunks: list[dict] = []
     new_chunks: list[dict] = []
+    # Flagged embedded once new_chunks are in Chroma, as after an approval.
+    chunked: list[Document] = []
     fetched_count = 0
     reused_count = 0
     newly_processed_count = 0
@@ -2290,8 +2353,7 @@ def _run_extraction_and_rag(self, db, job) -> None:
                 )
                 all_chunks.extend(chunks)
                 new_chunks.extend(chunks)
-                if hasattr(video, "embedded_in_chroma"):
-                    video.embedded_in_chroma = True
+                chunked.append(video)
                 db.commit()
                 newly_processed_count += 1
                 fetched_count += 1
@@ -2378,9 +2440,7 @@ def _run_extraction_and_rag(self, db, job) -> None:
                 )
                 all_chunks.extend(chunks)
                 new_chunks.extend(chunks)
-
-                if hasattr(video, "embedded_in_chroma"):
-                    video.embedded_in_chroma = True
+                chunked.append(video)
 
                 newly_processed_count += 1
                 fetched_count += 1
@@ -2470,8 +2530,7 @@ def _run_extraction_and_rag(self, db, job) -> None:
         f"into global ChromaDB collection '{global_collection_name}' "
         f"(skipped {len(all_chunks) - len(new_chunks)} already-embedded chunks)"
     )
-    if new_chunks:
-        chroma_service.insert_chunks(new_chunks)
+    _insert_and_mark_embedded(db, new_chunks, chunked)
     _update_job(db, job, chroma_collection_name=global_collection_name)
     logger.info(
         f"[job:{job_id}] RAG built: {len(new_chunks)} new chunks indexed in "

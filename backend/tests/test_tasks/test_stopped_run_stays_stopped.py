@@ -23,6 +23,15 @@ Two edges T-5.2.18 left:
   writes ``extracting`` after it has queued the resume, writes it only over
   ``awaiting_approval``.
 
+From the review: the topic search stops where a stop lands. A refused
+progress write ends the search agent (``SearchStopped``), a check after the
+agent stops the run before it keeps anything or fetches a non-video post (each
+fetch classifies inline, D-023, model calls charged to the owner), the 'Found
+N videos' progress is a guarded write, and each post is committed and checked
+before the next fetch. And a document is flagged ``embedded_in_chroma`` only
+once its chunks are in Chroma, so a stopped run leaves nothing flagged without
+its chunks.
+
 Every case runs the real task, with the test database, an in-memory Chroma and
 fakes for every connector, the search agent, the era call and the report: no
 network and no model.
@@ -32,7 +41,11 @@ Mutation checks, one per mechanism, each beside the case it breaks:
 reading ``cancelled`` alone fetches the next document; an unconditional
 ``_write_unless_stopped`` (the write before this change) turns the row back;
 ``update_job_status`` without ``only_from`` covers the resume's failure; and
-the subscription sync joined on ``video_id`` picks the wrong documents.
+the subscription sync joined on ``video_id`` picks the wrong documents;
+without the check after the search its pool is kept, and without any stop it
+fetches every post; an unguarded 'Found' write publishes after the cancel;
+without the per-candidate check every post is fetched; and a flag set as each
+document is chunked strands it for every later job.
 """
 from __future__ import annotations
 
@@ -47,12 +60,15 @@ import pytest
 from app.models.channel import Channel
 from app.models.document import Document
 from app.models.job import Job
+from app.models.job_search_candidate import JobSearchCandidate
 from app.models.job_video import JobVideo
 from app.models.transcript_cache import TranscriptCache
+from app.agents.search_agent import SearchStopped
 from app.models.usage_record import UsageRecord
 from app.routers.jobs import _NOT_QUEUED
 from app.services import chroma_service, job_service, temporal_service
-from app.sources.types import CreatorMetadata, ExtractedText
+from app.services.connector_dispatch import DispatchResult
+from app.sources.types import Candidate, CreatorMetadata, ExtractedText
 from app.tasks import job_tasks
 from app.tasks.celery_app import celery_app
 
@@ -304,51 +320,227 @@ def test_mutation_without_the_start_guard_a_cancelled_run_opens_its_scope(client
 # ---------------------------------------------------------------- second edge: failed after pickup
 
 
-def _picked_video_search(db, job_id_box: list[str]):
-    """A search agent during which the route fails the row, between two
-    progress reports, and which then returns one video."""
+PICKED = {"video_id": "vPicked00001", "title": "Picked", "channel_id": CHANNEL,
+          "channel_name": "Stopped Channel", "url": "https://www.youtube.com/watch?v=vPicked00001"}
+
+
+def _picked_video_search(stop, raised: list[Exception] | None = None):
+    """A search agent during which ``stop()`` lands, between two progress
+    reports, and which then returns one video. What the second report raised
+    goes to ``raised`` and on out, as ``run_search_agent`` lets
+    ``SearchStopped`` through its ``_notify``."""
     def search(**kwargs):
         kwargs["progress_callback"](10, "Planning searches...")
-        _route_fails(db, job_id_box[0], _NOT_QUEUED)
-        kwargs["progress_callback"](12, "Ranking candidates...")
-        return ([{"video_id": "vPicked00001", "title": "Picked", "channel_id": CHANNEL,
-                  "channel_name": "Stopped Channel", "url": "https://www.youtube.com/watch?v=vPicked00001"}],
-                ["tariffs"], [])
+        stop()
+        try:
+            kwargs["progress_callback"](12, "Ranking candidates...")
+        except Exception as e:
+            if raised is not None:
+                raised.append(e)
+            raise
+        return ([dict(PICKED)], ["tariffs"], [])
     return search
 
 
-def _topic_run_failed_mid_search(db, worker) -> str:
+def _topic_run_failed_mid_search(db, worker, raised: list[Exception] | None = None) -> str:
     job = Job(job_type="topic", topic="tariffs", status="pending", tenant_id="tenant-mid-search")
     db.add(job)
     db.commit()
-    worker.search.side_effect = _picked_video_search(db, [job.id])
+    worker.search.side_effect = _picked_video_search(lambda: _route_fails(db, job.id, _NOT_QUEUED), raised)
     REAL_TASKS["execute_topic_job"].run(job.id)
     return job.id
 
 
 def test_a_topic_run_failed_after_pickup_is_not_written_over(db, worker):
     """The worker wrote ``searching`` before the route's failure landed. The
-    search goes on (no check sits inside the agent), but its next progress
-    report is not written or published, and its ``awaiting_approval`` is
-    refused: the row keeps the route's words and the run ends there."""
-    job_id = _topic_run_failed_mid_search(db, worker)
+    agent's next progress report is not written or published, and it raises
+    ``SearchStopped``, which ends the search there (the agent's remaining
+    nodes never run) and the run with it: nothing it found is kept, and the
+    row keeps the route's words."""
+    raised: list[Exception] = []
+    job_id = _topic_run_failed_mid_search(db, worker, raised)
 
     row = _snapshot(db, job_id)
     assert (row["status"], row["error_message"], row["progress_message"]) == ("failed", _NOT_QUEUED, "Failed")
     assert _status_changes(worker) == ["searching"], "never awaiting_approval"
     reported = [c.args[3] for c in worker.progress.publish_progress.call_args_list if c.args[1] == "searching"]
-    assert "Planning searches..." in reported
-    assert "Ranking candidates..." not in reported
+    assert reported == ["Planning searches..."]
+    assert [type(e) for e in raised] == [SearchStopped]
+    assert db.query(Document).filter(Document.video_id == PICKED["video_id"]).count() == 0
     worker.progress.publish_error.assert_not_called()
 
 
 def test_mutation_an_unguarded_write_takes_the_failed_topic_run_to_approval(db, worker, monkeypatch):
+    """With the checks gone too, so that only the conditional write could
+    have held the row."""
     monkeypatch.setattr(job_tasks, "_write_unless_stopped", _unguarded_write)
+    monkeypatch.setattr(job_tasks, "_is_stopped", lambda db_, job_id: False)
 
     job_id = _topic_run_failed_mid_search(db, worker)
 
     assert _snapshot(db, job_id)["status"] == "awaiting_approval"
     assert "awaiting_approval" in _status_changes(worker)
+
+
+# ---------------------------------------------------------------- the topic search stops where a stop lands
+#
+# The search is the multi-minute part of a topic run, so a cancel most likely
+# lands there. Every non-video candidate's fetch classifies inline (D-023),
+# model calls charged to the run's owner, so a run stopped during the search
+# must not reach them; and a progress event after the cancel would show the
+# page searching again.
+
+
+def _reddit(source_id: str) -> Candidate:
+    return Candidate(source_type="reddit_post", source_id=source_id, title=f"Post {source_id}",
+                     source_url=f"https://www.reddit.com/r/test/comments/{source_id}/")
+
+
+def _topic_run_with_posts(client, db, worker, monkeypatch, test_user, source_types: list[str], *,
+                          during_search=None, on_fetch=None) -> str:
+    """A topic run over ``source_types`` whose Reddit search found two posts.
+    ``during_search(job_id)`` lands while the (fake) YouTube search agent
+    runs, after its last progress report, as during ``rank_and_curate``;
+    ``on_fetch(job_id, source_id)`` during a post's fetch."""
+    job = Job(job_type="topic", topic="tariffs", status="pending", tenant_id=test_user.id, num_videos=10,
+              source_types_json=json.dumps(source_types))
+    db.add(job)
+    db.commit()
+    if on_fetch is not None:
+        worker.connector.on_fetch = lambda source_id: on_fetch(job.id, source_id)
+    monkeypatch.setattr(job_tasks, "_search_non_video_sources", lambda job_, types, shares: DispatchResult(
+        candidates_by_source_type={"reddit_post": [_reddit("t3_post01"), _reddit("t3_post02")]}))
+    monkeypatch.setattr("app.sources.registry.connector_for", lambda source_type: worker.connector)
+
+    def search(**kwargs):
+        kwargs["progress_callback"](10, "Planning searches...")
+        kwargs["candidates_out"].append(dict(PICKED))
+        if during_search is not None:
+            during_search(job.id)
+        return ([dict(PICKED)], ["tariffs"], [])
+
+    worker.search.side_effect = search
+    REAL_TASKS["execute_topic_job"].run(job.id)
+    return job.id
+
+
+def _searching_reports(worker) -> list[str]:
+    return [c.args[3] for c in worker.progress.publish_progress.call_args_list if c.args[1] == "searching"]
+
+
+def test_a_topic_run_cancelled_during_its_search_fetches_nothing(client, db, worker, monkeypatch, test_user):
+    """The agent finishes (its ranking reports no progress), the check after
+    it stops the run: nothing it found is persisted, no post is fetched, and
+    the page gets no event after the cancel."""
+    job_id = _topic_run_with_posts(client, db, worker, monkeypatch, test_user, ["video", "reddit_post"],
+                                   during_search=lambda job_id: _cancel(client, job_id))
+
+    assert worker.connector.fetched == []
+    assert _searching_reports(worker) == ["Planning searches..."]
+    assert _status_changes(worker) == ["searching"]
+    row = _snapshot(db, job_id)
+    assert (row["status"], row["progress_message"]) == ("cancelled", CANCELLED_WORDS)
+    assert db.query(Document).filter(Document.video_id == PICKED["video_id"]).count() == 0
+    assert db.query(JobVideo).filter(JobVideo.job_id == job_id).count() == 0
+    assert db.query(JobSearchCandidate).filter(JobSearchCandidate.job_id == job_id).count() == 0
+
+
+def test_mutation_without_the_check_after_the_search_its_pool_is_kept(client, db, worker, monkeypatch, test_user):
+    """Only the check after the agent keeps a stopped run's candidate pool
+    out of the database. (The guarded write after it still stops the
+    fetches.)"""
+    monkeypatch.setattr(job_tasks, "_is_stopped", lambda db_, job_id: False)
+
+    job_id = _topic_run_with_posts(client, db, worker, monkeypatch, test_user, ["video", "reddit_post"],
+                                   during_search=lambda job_id: _cancel(client, job_id))
+
+    assert db.query(JobSearchCandidate).filter(JobSearchCandidate.job_id == job_id).count() == 1
+    assert worker.connector.fetched == []
+
+
+def test_mutation_without_any_stop_a_cancelled_search_fetches_every_post(client, db, worker, monkeypatch, test_user):
+    """The run as the review found it: the search runs to its end and the
+    run goes on through the 'Found' event to every post's fetch."""
+    monkeypatch.setattr(job_tasks, "_is_stopped", lambda db_, job_id: False)
+    monkeypatch.setattr(job_tasks, "_write_unless_stopped", _unguarded_write)
+
+    _topic_run_with_posts(client, db, worker, monkeypatch, test_user, ["video", "reddit_post"],
+                          during_search=lambda job_id: _cancel(client, job_id))
+
+    assert worker.connector.fetched == ["t3_post01", "t3_post02"]
+    assert "Found 1 videos. Fetching details..." in _searching_reports(worker)
+
+
+def _cancel_while_persisting(client, monkeypatch):
+    """The cancel lands just after the check that follows the agent."""
+    real = job_tasks._persist_search_candidates
+
+    def cancel_then_persist(db_, job_id, pool, curated):
+        _cancel(client, job_id)
+        return real(db_, job_id, pool, curated)
+
+    monkeypatch.setattr(job_tasks, "_persist_search_candidates", cancel_then_persist)
+
+
+def test_a_cancel_after_the_check_stops_at_the_found_write(client, db, worker, monkeypatch, test_user):
+    """The 'Found N videos' progress is written first and published only when
+    it was, so a cancel that lands after the check still gets no event."""
+    _cancel_while_persisting(client, monkeypatch)
+
+    job_id = _topic_run_with_posts(client, db, worker, monkeypatch, test_user, ["video", "reddit_post"])
+
+    assert _searching_reports(worker) == ["Planning searches..."]
+    assert worker.connector.fetched == []
+    assert (_snapshot(db, job_id)["status"]) == "cancelled"
+
+
+def test_mutation_an_unguarded_found_write_publishes_searching_after_the_cancel(
+    client, db, worker, monkeypatch, test_user
+):
+    """And the per-candidate check is what still keeps the posts unfetched."""
+    _cancel_while_persisting(client, monkeypatch)
+    monkeypatch.setattr(job_tasks, "_write_unless_stopped", _unguarded_write)
+
+    _topic_run_with_posts(client, db, worker, monkeypatch, test_user, ["video", "reddit_post"])
+
+    assert "Found 1 videos. Fetching details..." in _searching_reports(worker)
+    assert worker.connector.fetched == []
+
+
+def _cancel_on_the_first_post(client):
+    def on_fetch(job_id, source_id):
+        if source_id == "t3_post01":
+            _cancel(client, job_id)
+    return on_fetch
+
+
+def test_a_run_cancelled_during_a_fetch_fetches_no_further_post(client, db, worker, monkeypatch, test_user):
+    """Each candidate is committed and the next one checked first: the post in
+    hand finishes, the next is never fetched, and the run never reaches
+    approval."""
+    job_id = _topic_run_with_posts(client, db, worker, monkeypatch, test_user, ["reddit_post"],
+                                   on_fetch=_cancel_on_the_first_post(client))
+
+    assert worker.connector.fetched == ["t3_post01"]
+    row = _snapshot(db, job_id)
+    assert (row["status"], row["progress_message"]) == ("cancelled", CANCELLED_WORDS)
+    assert "awaiting_approval" not in _status_changes(worker)
+    assert db.get(JobVideo, (job_id, _document_id(db, "t3_post01"))) is not None, "the post in hand was kept"
+
+
+def test_mutation_without_the_per_candidate_check_every_post_is_fetched(client, db, worker, monkeypatch, test_user):
+    """The approval write is still refused: the check saves the fetches."""
+    monkeypatch.setattr(job_tasks, "_is_stopped", lambda db_, job_id: False)
+
+    job_id = _topic_run_with_posts(client, db, worker, monkeypatch, test_user, ["reddit_post"],
+                                   on_fetch=_cancel_on_the_first_post(client))
+
+    assert worker.connector.fetched == ["t3_post01", "t3_post02"]
+    assert _snapshot(db, job_id)["status"] == "cancelled"
+
+
+def _document_id(db, source_id: str) -> str:
+    return db.query(Document.document_id).filter(Document.source_id == source_id).scalar()
 
 
 def _sync_failed_mid_walk(db, worker, tenant_id: str) -> str:
@@ -667,8 +859,8 @@ def test_the_sync_extracts_its_documents_by_document_id(db, worker, monkeypatch,
     assert sorted(chunked) == sorted([ids["a"], ids["c"], ids["d"]])
     assert worker.connector.fetched == ["vDocIdD00001"], "A and C reused from their cache, D read"
     assert _snapshot(db, ids["job"])["status"] == "completed"
-    stored = chroma_service.get_global_collection().get(where={"document_id": ids["d"]})
-    assert stored["ids"], "D's chunks are in the library"
+    assert _chunk_ids(ids["d"]), "D's chunks are in the library"
+    assert _flagged_embedded(db, ids["d"]), "and D is flagged so, once they are"
 
 
 def test_mutation_the_sync_joined_on_video_id_picks_the_wrong_documents(db, worker, monkeypatch, test_user):
@@ -687,3 +879,110 @@ def test_mutation_the_sync_joined_on_video_id_picks_the_wrong_documents(db, work
 
     assert ids["b"] in chunked
     assert ids["a"] not in chunked and ids["c"] not in chunked
+
+
+# ---------------------------------------------------------------- the embedded flag follows the chunks
+#
+# A document is flagged embedded only once its chunks are in Chroma. Both
+# extraction loops used to commit the flag as each document was chunked, while
+# the chunks reached Chroma only at the RAG build: a run stopped (or raising)
+# between the two left documents flagged with no chunks, and every later job
+# reused them without inserting anything, so no Q&A could retrieve them.
+
+
+def _chunk_ids(document_id: str) -> list[str]:
+    return chroma_service.get_global_collection().get(where={"document_id": document_id})["ids"]
+
+
+def _flagged_embedded(db, document_id: str) -> bool:
+    db.expire_all()
+    return bool(db.get(Document, document_id).embedded_in_chroma)
+
+
+def _document_of(db, video_id: str) -> Document:
+    db.expire_all()
+    return db.query(Document).filter(Document.video_id == video_id).one()
+
+
+def _next_job_selects(db, worker, video_id: str) -> str:
+    """A later run, after an approval, whose selection includes the video.
+    Its transcript is cached, as ``youtube_service`` caches every fetch (the
+    fake connector does not), so a flagged document reads as fully reused."""
+    doc = _document_of(db, video_id)
+    if db.get(TranscriptCache, doc.document_id) is None:
+        _cached(db, doc)
+    job = Job(job_type="topic", topic="tariffs", status="extracting", tenant_id="tenant-next-job")
+    db.add(job)
+    db.flush()
+    db.add(JobVideo(job_id=job.id, document_id=doc.document_id, video_id=video_id, approved=True))
+    db.commit()
+    worker.connector.on_fetch = None
+    REAL_TASKS["resume_job_after_approval"].run(job.id)
+    return job.id
+
+
+def test_a_stopped_run_leaves_the_document_it_chunked_unflagged(db, worker):
+    """The route failed the row while the first video was read: its text is
+    kept, but its chunks never reached Chroma, so it is not flagged."""
+    _resume_failed_mid_extraction(db, worker)
+
+    doc = _document_of(db, "vMidRun00001")
+    assert doc.transcript_status == "fetched"
+    assert not doc.embedded_in_chroma
+    assert _chunk_ids(doc.document_id) == []
+
+
+def test_the_next_job_embeds_what_a_stopped_run_chunked(db, worker):
+    _resume_failed_mid_extraction(db, worker)
+
+    job_id = _next_job_selects(db, worker, "vMidRun00001")
+
+    doc = _document_of(db, "vMidRun00001")
+    assert _snapshot(db, job_id)["status"] == "completed"
+    assert _chunk_ids(doc.document_id), "its chunks are in the library now"
+    assert doc.embedded_in_chroma
+
+
+def test_mutation_a_flag_set_as_each_document_is_chunked_strands_it(db, worker, monkeypatch):
+    """The flag committed before the RAG build, as both loops did: the next
+    job takes the document as fully reused and inserts nothing for it."""
+    real = job_tasks._ensure_era
+
+    def flag_while_chunking(db_, video, segments, job_id):
+        real(db_, video, segments, job_id)
+        video.embedded_in_chroma = True
+        db_.commit()
+
+    monkeypatch.setattr(job_tasks, "_ensure_era", flag_while_chunking)
+    _resume_failed_mid_extraction(db, worker)
+    monkeypatch.setattr(job_tasks, "_ensure_era", real)
+
+    _next_job_selects(db, worker, "vMidRun00001")
+
+    doc = _document_of(db, "vMidRun00001")
+    assert doc.embedded_in_chroma
+    assert _chunk_ids(doc.document_id) == [], "flagged, and nothing any Q&A could retrieve"
+
+
+def test_an_insert_that_raises_leaves_its_documents_unflagged(db, worker, monkeypatch):
+    job_id = _job_with_videos(db, "tenant-insert-fails", ["vInsertFail1"])
+
+    def insert_fails(chunks):
+        raise RuntimeError("chroma is unavailable")
+
+    monkeypatch.setattr(chroma_service, "insert_chunks", insert_fails)
+    REAL_TASKS["resume_job_after_approval"].run(job_id)
+
+    assert _snapshot(db, job_id)["status"] == "failed"
+    doc = _document_of(db, "vInsertFail1")
+    assert doc.transcript_status == "fetched"
+    assert not doc.embedded_in_chroma
+
+
+def test_a_sync_cancelled_mid_extraction_leaves_its_upload_unflagged(client, db, worker, test_user):
+    _sync_cancelled_mid_extraction(client, db, worker, test_user)
+
+    doc = _document_of(db, "vSyncCancel1")
+    assert doc.transcript_status == "fetched"
+    assert not doc.embedded_in_chroma
+    assert _chunk_ids(doc.document_id) == []

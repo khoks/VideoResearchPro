@@ -84,6 +84,10 @@ let host: HTMLDivElement;
 let root: Root;
 let rejections: unknown[];
 const onRejection = (reason: unknown) => rejections.push(reason);
+// Node's process, where an unhandled rejection is reported. The app's types
+// leave Node out, so it is named here.
+type RejectionListener = (event: 'unhandledRejection', listener: (reason: unknown) => void) => void;
+const node = (globalThis as unknown as { process: { on: RejectionListener; off: RejectionListener } }).process;
 
 async function mount(node: React.ReactNode, path = '/echo') {
   act(() =>
@@ -119,13 +123,13 @@ beforeEach(() => {
   revoke.mockReset().mockResolvedValue(undefined);
   clearToasts();
   rejections = [];
-  process.on('unhandledRejection', onRejection);
+  node.on('unhandledRejection', onRejection);
 });
 
 afterEach(() => {
   act(() => root.unmount());
   host.remove();
-  process.off('unhandledRejection', onRejection);
+  node.off('unhandledRejection', onRejection);
 });
 
 describe('the callback page', () => {

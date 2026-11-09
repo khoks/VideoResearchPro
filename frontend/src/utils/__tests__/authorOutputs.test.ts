@@ -214,4 +214,12 @@ describe('S-6.3.2 deck sources', () => {
     expect(describeCreateError({ response: { status: 409, data: { detail: 'No report yet.' } } }, 'deck')).toBe('No report yet.');
     expect(describeCreateError({ response: { status: 404, data: {} } }, 'deck')).toBe('A chosen source is no longer in your library.');
   });
+
+  it('has a sentence for a failure the server gave no words for, not axios’s (T-3.4.1.17)', () => {
+    expect(describeCreateError({ message: 'Network Error' }, 'book')).toBe('Generation failed. Try again.');
+    expect(describeCreateError({ response: { status: 500, data: 'Internal Server Error' }, message: 'Request failed with status code 500' }, 'book')).toBe(
+      'Generation failed. Try again.',
+    );
+    expect(describeCreateError({ response: { status: 429, data: { detail: 'Slow down.' } } }, 'book')).toBe('Slow down.');
+  });
 });

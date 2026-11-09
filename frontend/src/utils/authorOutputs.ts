@@ -136,7 +136,12 @@ export function outputMediaType(output: Pick<OutputItem, 'kind'>): string {
   return output.kind === 'book' ? 'text/markdown' : 'text/plain';
 }
 
-/** Turn a create-output failure into one honest sentence. */
+/**
+ * Turn a create-output failure into one honest sentence: the one toast
+ * `useCreateOutput` says. A 401 is never said (the session-expiry path owns it,
+ * T-3.4.1.17), and a failure with no words of the server's gets a sentence,
+ * not axios's "Network Error".
+ */
 export function describeCreateError(err: HttpErrorLike | null | undefined, kind: string): string {
   const status = err?.response?.status;
   const detail = detailFromErrorBody(err?.response?.data);
@@ -153,10 +158,8 @@ export function describeCreateError(err: HttpErrorLike | null | undefined, kind:
       return detail ?? 'A chosen document has no knowledge report yet.';
     case 403:
       return detail ?? 'Author Studio is a Pro feature. Upgrade to create outputs.';
-    case 401:
-      return 'Your session expired. Sign in again and retry.';
     default:
-      return detail ?? err?.message ?? 'Generation failed. Try again.';
+      return detail ?? 'Generation failed. Try again.';
   }
 }
 

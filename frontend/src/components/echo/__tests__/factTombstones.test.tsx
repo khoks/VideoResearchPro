@@ -3,6 +3,10 @@
  * under "Kept deleted" and "Allow again" clears one through the API; the
  * delete dialog says which rows will be kept deleted, from the server's answer
  * (T-3.2.1.14), so a row the user wrote that a connector wants is included.
+ *
+ * T-3.4.1.17: a failed "Allow again" is one toast, from `useClearFactTombstone`,
+ * under the app's own query client, and none for a 401. Mutation check, run on
+ * 2026-11-09: `meta` off the hook fails each failure row but `sessionEnded` with two.
  */
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -10,6 +14,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FactTombstone, PersonalContextItem } from '../../../services/echoApi';
 import { useJobStore } from '../../../stores/jobStore';
+import { createQueryClient } from '../../../services/queryClient';
+import { FAILURE_KINDS, clearToasts, expectedToasts, failures, toastMessages } from '../../../services/__tests__/failures';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -48,8 +54,7 @@ async function flush() {
   }
 }
 
-async function mount(enabled = true) {
-  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+async function mount(enabled = true, qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })) {
   act(() =>
     root.render(
       <QueryClientProvider client={qc}>
@@ -104,6 +109,19 @@ describe('FactTombstones', () => {
     api.listFactTombstones.mockClear();
     await mount(false);
     expect(api.listFactTombstones).not.toHaveBeenCalled();
+  });
+});
+
+describe('one toast (T-3.4.1.17)', () => {
+  it.each(FAILURE_KINDS)('a failed “Allow again” (%s) is said once', async (kind) => {
+    api.clearFactTombstone.mockRejectedValueOnce(failures[kind]());
+    await mount(true, createQueryClient());
+    clearToasts();
+    const allow = Array.from(host.querySelectorAll('button')).find((b) => b.textContent?.trim() === 'Allow again')!;
+    await act(async () => allow.click());
+    await flush();
+    expect(api.clearFactTombstone).toHaveBeenCalledTimes(1);
+    expect(toastMessages()).toEqual(expectedToasts(kind, 'Could not allow it again.'));
   });
 });
 

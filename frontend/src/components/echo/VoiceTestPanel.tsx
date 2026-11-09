@@ -2,19 +2,12 @@ import { useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { usePickVoiceTest, useScoreVoiceTest, useStartVoiceTest, useVoiceTest, useVoiceTestPoll } from '../../hooks/useEcho';
 import type { VoiceGate, VoiceTest, VoiceTestOffer, VoiceTestSide } from '../../services/echoApi';
-import { useJobStore } from '../../stores/jobStore';
 import { useColors } from '../../hooks/useTheme';
 import { fonts, fontSize, fontWeight, lineHeight, radius, space } from '../../theme';
 import { ProgressBar } from '../common/ProgressBar';
 import { Button, Skeleton } from '../primitives';
 
 const SIDES: VoiceTestSide[] = ['A', 'B'];
-
-function errorMessage(err: unknown, fallback: string): string {
-  const detail = (err as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail;
-  if (detail && typeof detail === 'object' && 'message' in detail) return String((detail as { message: unknown }).message);
-  return typeof detail === 'string' ? detail : fallback;
-}
 
 function percent(share: number): number {
   return Math.round(share * 100);
@@ -114,7 +107,6 @@ function LastResult({ test, gate }: { test: VoiceTest | null; gate: VoiceGate })
 function Offer({ offer, passed, shown }: { offer: VoiceTestOffer; passed: boolean; shown: string[] }) {
   const c = useColors();
   const text = useTextStyle();
-  const pushToast = useJobStore((s) => s.pushToast);
   const start = useStartVoiceTest();
   // A user who has passed asks for it first: a fail would turn drafting off.
   const [retake, setRetake] = useState(false);
@@ -154,11 +146,8 @@ function Offer({ offer, passed, shown }: { offer: VoiceTestOffer; passed: boolea
         minutes. Nothing starts until you press the button.
       </p>
       {passed && <p style={text}>Your new result replaces this one. If you don't pass, Speak as me turns off until you do.</p>}
-      <Button
-        size="sm"
-        loading={start.isPending}
-        onClick={() => start.mutate(undefined, { onError: (err) => pushToast('error', errorMessage(err, "Couldn't start the test. Try again.")) })}
-      >
+      {/* A failure is said by the hook, once, even after the reader has left (T-3.4.1.17). */}
+      <Button size="sm" loading={start.isPending} onClick={() => start.mutate()}>
         Start the test
       </Button>
     </div>
@@ -168,7 +157,6 @@ function Offer({ offer, passed, shown }: { offer: VoiceTestOffer; passed: boolea
 function Pairs({ test }: { test: VoiceTest }) {
   const c = useColors();
   const text = useTextStyle();
-  const pushToast = useJobStore((s) => s.pushToast);
   const pick = usePickVoiceTest();
   const score = useScoreVoiceTest();
   const { pairs, picks } = test;
@@ -191,7 +179,6 @@ function Pairs({ test }: { test: VoiceTest }) {
           const next = after !== -1 ? after : before;
           if (next !== -1) setIndex(next);
         },
-        onError: (err) => pushToast('error', errorMessage(err, "Couldn't save that pick. Try again.")),
       },
     );
   };
@@ -236,11 +223,7 @@ function Pairs({ test }: { test: VoiceTest }) {
           Next
         </Button>
         {complete && (
-          <Button
-            size="sm"
-            loading={score.isPending}
-            onClick={() => score.mutate(test.id, { onError: (err) => pushToast('error', errorMessage(err, "Couldn't score the test. Try again.")) })}
-          >
+          <Button size="sm" loading={score.isPending} onClick={() => score.mutate(test.id)}>
             See my result
           </Button>
         )}

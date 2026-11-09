@@ -45,7 +45,7 @@ export function NewsletterCard() {
           setDirty(false);
           pushToast('success', enabled ? 'Your digest is on.' : 'Your digest is off.');
         },
-        onError: () => pushToast('error', 'Could not save the digest settings.'),
+        // A failure is said by the hook, once (T-3.4.1.17).
       },
     );
 
@@ -106,7 +106,6 @@ export function NewsletterCard() {
                   onClick={() =>
                     sendNow.mutate(undefined, {
                       onSuccess: () => pushToast('info', 'Making an issue now; it appears in your outputs when it is ready.'),
-                      onError: () => pushToast('error', 'Could not start an issue.'),
                     })
                   }
                 >

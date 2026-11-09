@@ -24,7 +24,7 @@ import {
   processingStateLabel,
   shareReadingLabel,
 } from '../utils/echoShares';
-import { detailFromErrorBody, type HttpErrorLike } from '../utils/ingestResults';
+import type { HttpErrorLike } from '../utils/ingestResults';
 import { importedProvenance, importerLabel } from '../utils/echoImports';
 
 const PAGE = 100;
@@ -84,7 +84,7 @@ export function EchoInboxPage() {
         pushToast('success', 'Share deleted, with its file and anything derived from it.');
         setDeleting(null);
       },
-      onError: () => pushToast('error', 'Delete failed. The share may already be gone.'),
+      // Every failure on this page is said by its hook, once (T-3.4.1.17).
     });
   };
 
@@ -243,10 +243,7 @@ function ShareCard({ share, onDelete }: { share: Share; onDelete: () => void }) 
   const save = (payload: Parameters<typeof update.mutate>[0]['payload'], ok?: () => void) =>
     update.mutate(
       { id: share.id, payload },
-      {
-        onSuccess: () => ok?.(),
-        onError: (err) => pushToast('error', detailFromErrorBody((err as HttpErrorLike).response?.data) ?? 'Could not save.'),
-      },
+      { onSuccess: () => ok?.() },
     );
 
   const download = async () => {
@@ -438,7 +435,7 @@ function ProcessingLine({ share }: { share: Share }) {
             variant="tertiary"
             loading={reprocess.isPending}
             onClick={() =>
-              reprocess.mutate(share.id, { onError: () => pushToast('error', 'Could not queue the retry.') })
+              reprocess.mutate(share.id)
             }
           >
             Retry
@@ -451,11 +448,7 @@ function ProcessingLine({ share }: { share: Share }) {
           variant="secondary"
           loading={addToLibrary.isPending}
           onClick={() =>
-            addToLibrary.mutate(share.id, {
-              onSuccess: () => pushToast('success', 'Added to your library.'),
-              onError: (err) =>
-                pushToast('error', detailFromErrorBody((err as HttpErrorLike).response?.data) ?? 'Could not add it to the library.'),
-            })
+            addToLibrary.mutate(share.id, { onSuccess: () => pushToast('success', 'Added to your library.') })
           }
           title="Add this page to your research library. Only you will see it there."
         >

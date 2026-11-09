@@ -10,6 +10,60 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Changed: one list of allowed origins, and the app's own tiktoken folder (T-4.11.3.3, T-8.8.6.5, T-4.11.3.1, 2026-11-09)
+
+PR [#427](https://github.com/khoks/VideoResearchPro/pull/427). [D-152](docs/decisions.md#d-152--cors-reads-the-oauth-origin-list-and-the-app-keeps-tiktokens-encoding-in-a-folder-of-its-own-2026-11-09).
+
+- CORS now answers the same origins as Google and GitHub sign-in: the origin of `APP_BASE_URL` plus `OAUTH_ALLOWED_REDIRECT_ORIGINS`, compared by scheme, host and port. An entry containing `*` is refused and logged, and startup logs the list in use.
+- **Changed, please check:** `localhost:3000` no longer passes CORS. An app opened anywhere other than `http://localhost:5173` needs `APP_BASE_URL` set to that address, or its origin added to `OAUTH_ALLOWED_REDIRECT_ORIGINS`, or every API call fails in the browser.
+- **Added:** `TIKTOKEN_ENCODINGS_DIR` (default `./data/tiktoken`). The API and the worker keep tiktoken's encoding there, copied over from the temp folder when a copy is already there, so a cleared temp folder plus a network drop no longer fails a job at chunking. A `TIKTOKEN_CACHE_DIR` already set wins, and an empty setting keeps tiktoken's own default.
+- **Fixed:** with the folder named, two processes downloading the encoding at once could fail chunking on Windows. Every load in the app now goes through one helper that reads the other process's copy.
+- `docs/architecture.md`'s usage paragraph now says Whisper seconds are recorded and that usage is written part-way.
+- No migration. Restart the API and the worker.
+
+### Changed: credentials out of URLs and logs (T-5.4.23, T-1.7.1.6, T-5.6.16, T-4.11.3.2, 2026-11-09)
+
+PR [#425](https://github.com/khoks/VideoResearchPro/pull/425). [D-151](docs/decisions.md#d-151--the-sockets-token-is-a-subprotocol-provider-errors-are-scrubbed-as-each-log-record-is-made-and-json-logs-hold-their-format-from-the-first-line-2026-11-09).
+
+- **Changed:** the live-progress socket sends its token as a WebSocket subprotocol, never as `?token=` in the URL. A socket's JWT had reached the gitignored `.uvicorn.log`. No route now takes a credential from a URL, and a browser tab still running the old script cannot connect until it is reloaded.
+- uvicorn's log lines redact credential query values and anything shaped like a JWT, under both log formats.
+- A refused API key is kept out of every log record, tracebacks included: a provider's refusal is named by its type, and key shapes are taken out of any other text. `/health/llm`'s error text is scrubbed too. This also covers the install's YouTube key, which a YouTube `HttpError` carries in its URL.
+- Podcast log lines name the host, never a feed or audio URL.
+- Under `LOG_FORMAT=json`, the Celery worker's and beat's start banners are off, and the blank `JWT_SECRET` warning comes out as JSON.
+- Not covered: provider error text stored on rows such as `jobs.error_message` (T-5.6.17).
+- No migration. Restart the services, reload open tabs, and delete the repo root's `.uvicorn.log`.
+
+### Added: the cut-off note survives a reload, and reaches Q&A history and saved searches (T-1.15.4.8, T-1.15.4.9, 2026-11-09)
+
+PR [#426](https://github.com/khoks/VideoResearchPro/pull/426). [D-150](docs/decisions.md#d-150--the-cut-off-flag-is-stored-as-what-the-check-found-a-cut-answer-is-never-a-saved-searchs-baseline-and-a-cut-first-answer-stands-in-on-the-card-2026-11-09).
+
+- Each Q&A exchange stores whether its answer was cut off (`answer_cut_off`, migration `7bc07679d355`, no backfill), so the note on job, library and shelf cards and in the Echo panel survives a reload. History reads send `true` or nothing, so an older row claims nothing. After a reload the **Ask again at Deep depth** offer is gone, because the ask's depth is not stored.
+- Q&A-history answers are checked for a cut too, with the same warning and the same note.
+- **Fixed:** a saved search whose answer was cut off sent a false "No longer cites X" alert and email, then a second false alert on the next full answer. A cut run now reads **Cut off** in the run history, raises no alert and never becomes the baseline. A saved search whose first answer was cut says so on its card.
+- `requirements.txt` declares `pydantic>=2.12.0`.
+- The migration applies on the next API start. Start the API before the worker, as `restart_services.ps1` does.
+
+### Changed: subscription syncs and quota (T-1.11.11.6, T-1.11.11.5, T-5.2.15, T-1.5.14.6, T-1.7.1.5, 2026-11-09)
+
+PR [#424](https://github.com/khoks/VideoResearchPro/pull/424). [D-149](docs/decisions.md#d-149--fetch_text-may-raise-transcriptioncutshort-a-sync-reads-only-what-the-library-lacks-the-job-limit-never-refuses-a-subscribe-and-a-held-source-can-be-tried-anyway-2026-11-09).
+
+- **Fixed:** every subscription sync re-read the details of every video on the channel, because the library lookup compared a YouTube id with the UUID key. A sync now reads only what the library lacks, and never renames a shared document "Unknown".
+- The lazy audio-language lookup appears as `videos_audio_language` in the quota log. Older rows keep `videos`.
+- **Changed:** **Sync now** answers 429 at the job limit, as a new run does. Subscribing still succeeds and says the first sync has not started (`sync_note`). A sync the broker refused no longer leaves a row stuck on "Syncing…".
+- **Added:** **Try Podcasts anyway**, and the same for any held source, beside its note on the form. The source's answer ends the hold, and a refusal renews it. A template or Duplicate that carries a held source now submits.
+- A transcription that fails part-way now counts toward `WHISPER_MAX_PER_JOB` and the minute cap, by how far it got.
+- No migration and no new setting.
+
+### Changed: an expired session keeps the page, a waiting share, clarify, Tabs keys and one toast (T-5.4.22, T-3.7.6.3, T-8.13.4.1, T-8.13.4.2, T-1.5.13.7, T-2.2.5, T-3.4.1.15, T-1.15.3.10, 2026-11-05)
+
+PR [#423](https://github.com/khoks/VideoResearchPro/pull/423). [D-148](docs/decisions.md#d-148--a-401-ends-a-session-in-react-and-keeps-the-page-in-this-tab-a-waiting-share-gets-a-link-a-mutation-that-answers-its-own-failures-says-so-and-tabs-opens-on-focus-2026-11-05).
+
+- **Changed:** when a session ends while a page is open, signing in again returns to that page, with no reload. Another open tab still loses its page, because it cannot tell this from a sign-out (OQ-41). A sign-out now also clears the Echo thread and the toasts.
+- A share waiting from the share sheet shows a **Review it** link on other pages. Nothing is added until you tap on the review page.
+- A failed clarify on the job page becomes a direct ask, and question suggestions go away while clarify runs, on the job and library pages.
+- The job page says **Number of results** for a run over other sources. `Tabs` takes arrows, Home and End. A failed draft shows one toast. `BatchExtract` starts from the account's default depth.
+- No migration and no owner step.
+
 ### Changed: test infrastructure, and Setext headings in books (T-8.8.6.1, T-8.8.6.2, T-8.8.6.4, T-2.8.6, 2026-11-05)
 
 PR [#421](https://github.com/khoks/VideoResearchPro/pull/421). [D-147](docs/decisions.md#d-147--the-rendering-parser-decides-what-is-a-heading-in-book-markdown-a-rewrite-parses-what-it-will-emit-and-the-suites-tiktoken-file-lives-at-a-fixed-path-2026-11-05).

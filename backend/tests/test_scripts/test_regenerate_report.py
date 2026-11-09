@@ -6,6 +6,14 @@ Offline: the report agent and the HTML builder are stubbed, era extraction is
 off (``--no-era``), and building any model client raises, so no request can
 leave the process. The rest is real: the script's ``main``, its query, the
 worker's ``_load_cached_segments`` reading the test database, and the chunker.
+The one test that runs without ``--no-era`` stubs the era call and the Chroma
+stamp instead, so the store is never opened.
+
+What a run writes is said in ``--help``, which the owner reads before running
+it: without ``--no-era``, eras go to the documents and their stored chunks, for
+every source type (the review of #438). ``test_help_says_what_a_run_writes``
+fails on the docstring that left that out; ``test_no_era_writes_no_era``
+fails when ``--no-era`` is ignored.
 
 Mutation checks (each failed the named tests when this shipped, and
 ``test_a_video_only_job_is_read_as_before`` passed through all three):
@@ -224,3 +232,85 @@ def test_a_document_with_no_cached_text_is_counted_by_its_type(db, mixed_job, of
     assert {c["metadata"]["document_id"] for c in chunks} == {mixed_job["video"], mixed_job["article"]}
     (summary,) = [line for line in lines if "without cached text" in line]
     assert summary.startswith("2 chunks from 2 documents (1 without cached text, 1 pdf)")
+
+
+ERA = {"era_start": 1950, "era_end": 1955, "era_confidence": 0.8, "is_retrospective": True}
+
+
+@pytest.fixture
+def era_calls(monkeypatch):
+    """Record each era extraction (by the document's title) and each Chroma
+    stamp (by ``document_id``) instead of making them."""
+    from app.config import settings
+    from app.services import metadata_backfill_service, temporal_service
+
+    calls: dict[str, list[str]] = {"extracted": [], "stamped": []}
+
+    def extract(title, description, published_at, segments_or_text, llm=None):
+        calls["extracted"].append(title)
+        return dict(ERA)
+
+    def stamp(document, **kwargs):
+        calls["stamped"].append(document.document_id)
+        return 1
+
+    monkeypatch.setattr(settings, "TEMPORAL_SCOPE_ENABLED", True)
+    monkeypatch.setattr(temporal_service, "extract_discussed_era", extract)
+    monkeypatch.setattr(metadata_backfill_service, "stamp_chunk_temporal_fields", stamp)
+    return calls
+
+
+def test_help_says_what_a_run_writes(monkeypatch, capsys) -> None:
+    """``--help`` tells the owner that a run without ``--no-era`` writes eras
+    to the documents and their stored Chroma chunks, and what ``--no-era``
+    spares."""
+    monkeypatch.setattr(sys, "argv", ["regenerate_report.py", "--help"])
+
+    with pytest.raises(SystemExit) as exited:
+        regenerate_report.main()
+
+    assert exited.value.code == 0
+    text = " ".join(capsys.readouterr().out.split())
+    assert "Writes to live data unless `--no-era` is passed" in text
+    assert "for every source type" in text
+    assert "written to the document's `discussed_era_json`" in text
+    assert "stamped on its stored Chroma chunks" in text
+    assert "no era written to the documents or their stored Chroma chunks" in text
+
+
+def test_a_run_without_no_era_writes_eras_for_every_source_type(
+    db, mixed_job, offline, era_calls, monkeypatch, tmp_path,
+) -> None:
+    """What ``--help`` says, done: each undated document of the job, the PDF
+    and the pasted page beside the video, gets an era persisted and stamped on
+    its stored chunks."""
+    reports, _ = offline
+    monkeypatch.setattr(
+        sys, "argv", ["regenerate_report.py", "--job", JOB_ID, "--out", str(tmp_path / "era.html")],
+    )
+
+    assert regenerate_report.main() == 0
+
+    assert sorted(era_calls["extracted"]) == ["Levee history", "River video", "The town moved"]
+    assert sorted(era_calls["stamped"]) == sorted([mixed_job["video"], mixed_job["pdf"], mixed_job["article"]])
+    db.expire_all()
+    pdf = db.query(Document).filter(Document.document_id == mixed_job["pdf"]).one()
+    assert json.loads(pdf.discussed_era_json) == ERA
+    (chunks,) = reports
+    assert len(chunks) == 3
+
+
+def test_no_era_writes_no_era(db, mixed_job, offline, era_calls) -> None:
+    """``--no-era`` makes no era call and writes no era anywhere."""
+    reports, _ = offline
+
+    assert regenerate_report.main() == 0
+
+    assert era_calls == {"extracted": [], "stamped": []}
+    db.expire_all()
+    assert all(
+        doc.discussed_era_json is None
+        for doc in db.query(Document).filter(Document.document_id.in_(mixed_job.values()))
+    )
+    (chunks,) = reports
+    assert len(chunks) == 3

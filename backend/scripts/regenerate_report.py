@@ -13,8 +13,13 @@ left out, and the log counts those by source type.
     ./venv/Scripts/python scripts/regenerate_report.py --job 0d4db8c3-... --out /tmp/after.html
 
 Costs the same as the job's original report phase (~$12 on the 200-video
-reference corpus, ~50 minutes). Era extraction (R3) runs for any document
-that has none yet and is persisted, which is the normal ingest behaviour.
+reference corpus, ~50 minutes).
+
+Writes to live data unless `--no-era` is passed: each document with no
+discussed era yet gets one (R3), one model call each, for every source type.
+The era is written to the document's `discussed_era_json` and, for a document
+already embedded, stamped on its stored Chroma chunks (metadata only, no
+re-embed, T-1.17.3.3), as a job does. `--no-era` skips both.
 """
 from __future__ import annotations
 
@@ -53,7 +58,11 @@ def main() -> int:
     ap.add_argument("--out", type=Path, required=True, help="where to write the regenerated HTML")
     ap.add_argument("--save", action="store_true", help="also replace the job's stored report")
     ap.add_argument("--limit", type=int, default=0, help="only the first N approved documents (smoke runs)")
-    ap.add_argument("--no-era", action="store_true", help="skip discussed-era extraction for undated documents")
+    ap.add_argument(
+        "--no-era", action="store_true",
+        help="skip discussed-era extraction for undated documents: no model call for it, "
+             "and no era written to the documents or their stored Chroma chunks",
+    )
     ap.add_argument(
         "--persist-intermediates", action="store_true",
         help="store this run's map/reduce intermediates under the job (S-1.14.6), "

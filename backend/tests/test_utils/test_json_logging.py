@@ -64,7 +64,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from app.config import settings
+from app.config import Settings, settings
 from app.utils import json_logging
 from app.utils.json_logging import AppStderrHandler, JsonFormatter, configure_logging, route_model_libraries
 
@@ -499,12 +499,52 @@ _X_LINE = "X / Twitter: TWITTER_BEARER_TOKEN is not set, so tweets come by paste
 _TEXT_LINE = re.compile(r"\d{4}-\d\d-\d\d \d\d:\d\d:\d\d,\d{3} (?P<level>[A-Z]+) (?P<logger>[\w.]+): (?P<message>.*)")
 
 
-def _run_split(script: str, tmp_path: Path, log_format: str | None) -> tuple[list[str], list[str]]:
-    """``_run``, keeping stdout and stderr apart. No provider key, no mail
-    server and no X token reach the process."""
+def _kept_out(env: dict[str, str]) -> list[str]:
+    """The settings ``_API_LINES`` must not see the install's value of: every
+    provider key, the mail server (it would send the reset email for real)
+    and the X token (its line would read "is set")."""
+    names = {name for name in Settings.model_fields if name.endswith("_API_KEY")}
+    names |= {name for name in env if name.upper().endswith("_API_KEY")}
+    return sorted(names | {"SMTP_HOST", "TWITTER_BEARER_TOKEN"})
+
+
+def _api_env(tmp_path: Path, log_format: str | None) -> dict[str, str]:
+    """``_env`` with each of ``_kept_out`` set empty. Set, not removed: the
+    process runs from backend/, where ``Settings`` reads ``.env``, and a
+    variable that is missing lets that file's value in, where an empty one
+    beats it. An empty ``SMTP_HOST`` is still no mail server, so the reset
+    email takes the log fallback."""
     env = _env(tmp_path, log_format, JWT_SECRET="a-long-random-value-for-this-test-alone")
-    for name in [key for key in env if key.endswith("_API_KEY")] + ["SMTP_HOST", "TWITTER_BEARER_TOKEN"]:
-        env.pop(name, None)
+    for name in _kept_out(env):
+        env[name] = ""
+    return env
+
+
+def test_the_api_lines_keep_the_installs_secrets_out(tmp_path, monkeypatch):
+    """A ``backend/.env`` holding a mail server, an X token and provider keys
+    (the install's own, in the main checkout) is read by the subprocess, since
+    it runs from backend/: none of them may reach it."""
+    env = _api_env(tmp_path, None)
+    names = _kept_out(env)
+    dotenv = tmp_path / "install.env"
+    dotenv.write_text("".join(f"{name}=from-the-install\n" for name in names), encoding="utf-8")
+    for name in names:
+        if name in env:
+            monkeypatch.setenv(name, env[name])
+        else:
+            monkeypatch.delenv(name, raising=False)
+
+    loaded = Settings(_env_file=dotenv, _env_file_encoding="utf-8")
+
+    assert {"SMTP_HOST", "TWITTER_BEARER_TOKEN", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GOOGLE_API_KEY"} <= set(names)
+    seen = {name: getattr(loaded, name) for name in names if name in Settings.model_fields}
+    assert seen == dict.fromkeys(seen, ""), "the install's .env reached the process"
+
+
+def _run_split(script: str, tmp_path: Path, log_format: str | None) -> tuple[list[str], list[str]]:
+    """``_run``, keeping stdout and stderr apart, with no provider key, no
+    mail server and no X token (``_api_env``)."""
+    env = _api_env(tmp_path, log_format)
     done = subprocess.run(
         [_PYTHON, "-c", script], cwd=_BACKEND, env=env, capture_output=True, text=True, encoding="utf-8", timeout=900
     )

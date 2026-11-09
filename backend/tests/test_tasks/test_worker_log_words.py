@@ -256,7 +256,8 @@ def test_handle_failures_fallback_names_neither_the_error_nor_its_values(db, job
     job = Job(job_type="topic", topic=TOPIC, num_videos=1, tenant_id="tenant-log-words")
     db.add(job)
     db.commit()
-    monkeypatch.setattr(job_tasks, "_update_job", broken_update)
+    # The row's write since T-5.2.20 (#440), which no longer goes through _update_job.
+    monkeypatch.setattr(job_tasks, "_write_unless_stopped", broken_update)
     monkeypatch.setattr(job_tasks, "SessionLocal", broken_session)
     monkeypatch.setattr(job_tasks.progress_service, "publish_error", lambda *a, **kw: None)
 

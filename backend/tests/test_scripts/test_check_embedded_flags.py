@@ -317,6 +317,36 @@ def test_a_store_that_belongs_to_another_database_writes_nothing(library, db, tm
     assert _flags(db) == before
 
 
+def test_an_empty_store_writes_nothing_unless_the_owner_says_it_was_emptied(library, db, tmp_path, monkeypatch):
+    """The likeliest wrong store: the API's startup creates the configured
+    collection (``get_or_create_collection``), so an install that embedded
+    under ``videoresearchpro_global`` and lost its pin reads an empty
+    ``pratidhvani_global``. No chunk is scanned, so neither the mismatch guard
+    nor the missing-collection refusal fires, and every flagged document
+    would look chunkless."""
+    chroma_service.get_chroma_client().create_collection("an_empty_store", embedding_function=None)
+    monkeypatch.setattr(embedded_flag_service.settings, "CHROMA_GLOBAL_COLLECTION_NAME", "an_empty_store")
+    before = _flags(db)
+
+    code, report = _run(tmp_path, "--write")
+
+    assert code == 1 and "an_empty_store holds no chunks" in report["stopped"]
+    assert "CHROMA_GLOBAL_COLLECTION_NAME" in report["stopped"] and "CHROMA_PERSIST_DIR" in report["stopped"]
+    assert report["chunks_scanned"] == 0 and report["without_chunks"] == 9
+    assert report["cleared"] == 0 and _flags(db) == before
+
+    code, dry = _run(tmp_path)
+    assert code == 1 and dry["stopped"] == report["stopped"], "the dry run says so too"
+    assert dry["to_clear"] == 8, "and still shows what a write would clear"
+
+    code, fresh = _run(tmp_path, "--write", "--document-ids", library["unflagged_none"])
+    assert code == 0 and not fresh["stopped"], "nothing flagged in scope: nothing to doubt"
+
+    code, wiped = _run(tmp_path, "--write", "--empty-store-ok")
+    assert code == 0 and not wiped["stopped"] and wiped["cleared"] == 8
+    assert _flags(db) == {did: did == library["empty"] for did in before}, "every flag but the empty one"
+
+
 def test_a_missing_collection_is_neither_created_nor_cleared_against(library, db, tmp_path, monkeypatch):
     monkeypatch.setattr(embedded_flag_service.settings, "CHROMA_GLOBAL_COLLECTION_NAME", "no_such_collection")
     before = _flags(db)

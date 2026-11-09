@@ -49,9 +49,16 @@ A dry run writes nothing (the CLI also holds its session read-only).
 ``write`` clears the flag on the ``cached`` and ``fetch_again`` documents,
 each re-checked against Chroma just before the write, so one a job embedded
 since the scan keeps its flag. Nothing in Chroma changes. A scan that stops
-part-way, or a collection none of whose chunks belongs to a document in this
-database (the wrong ``DATABASE_URL`` or ``CHROMA_PERSIST_DIR``), writes
-nothing: either would make documents with chunks look chunkless. The CLI is
+part-way, a collection none of whose chunks belongs to a document in this
+database (the wrong ``DATABASE_URL`` or ``CHROMA_PERSIST_DIR``), or a
+collection with no chunks at all while documents are flagged, writes nothing:
+each would make documents with chunks look chunkless. The empty one is the
+likeliest form of the mistake, because the API's startup creates the
+configured collection (``get_or_create_collection``): an install that
+embedded under the legacy ``videoresearchpro_global`` and lost its
+``CHROMA_GLOBAL_COLLECTION_NAME`` pin, or an API started from another working
+directory, leaves an empty collection for this check to read. A store that
+really was emptied is cleared only with ``empty_store_ok``. The CLI is
 ``scripts/check_embedded_flags.py``; ``--write`` is the owner's step.
 """
 from __future__ import annotations
@@ -197,12 +204,15 @@ def check_embedded_flags(
     write: bool = False,
     page_size: int = 1000,
     document_ids: Iterable[str] | None = None,
+    empty_store_ok: bool = False,
 ) -> FlagCheckReport:
     """Find documents flagged embedded with no chunk; with ``write``, unflag them.
 
     ``document_ids`` narrows which documents are checked; the whole
     collection is still scanned, since any chunk may name them. A dry run
-    leaves the session with nothing to commit.
+    leaves the session with nothing to commit. A collection with no chunks
+    while documents are flagged stops the check unless ``empty_store_ok``
+    says the store really was emptied.
     """
     report = FlagCheckReport(write=write, collection=settings.CHROMA_GLOBAL_COLLECTION_NAME)
     try:
@@ -272,6 +282,14 @@ def check_embedded_flags(
             f"none of the {report.chunks_scanned} chunks in {report.collection} belongs to a "
             "document in this database; check DATABASE_URL and CHROMA_PERSIST_DIR. "
             "Nothing written"
+        )
+        return report
+    if not report.chunks_scanned and report.flagged and not empty_store_ok:
+        report.stopped = (
+            f"{report.collection} holds no chunks, yet {report.flagged} document(s) are flagged "
+            "embedded; check CHROMA_GLOBAL_COLLECTION_NAME (an install that embedded before "
+            "T-2.6.1 keeps its chunks in videoresearchpro_global) and CHROMA_PERSIST_DIR. "
+            "Nothing written. If the store really was emptied, run again with --empty-store-ok"
         )
         return report
     if write and report.to_clear:

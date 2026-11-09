@@ -25,15 +25,19 @@ LLM call and no network request. Dry run is the default: it cannot write (on
 SQLite the session runs with ``PRAGMA query_only``). ``--write`` is the
 owner's step: it clears the flag on the cached and fetch-again documents,
 each re-checked against Chroma just before, and changes nothing in Chroma. A
-scan that stops part-way, or a store none of whose chunks belongs to this
-database, writes nothing. Idempotent: a second run finds nothing to clear.
-Run it when no job is ingesting.
+scan that stops part-way, a store none of whose chunks belongs to this
+database, or a collection with no chunks while documents are flagged (the API
+creates the configured collection empty when CHROMA_GLOBAL_COLLECTION_NAME or
+CHROMA_PERSIST_DIR points the wrong way) writes nothing; --empty-store-ok says
+the store really was emptied. Idempotent: a second run finds nothing to
+clear. Run it when no job is ingesting.
 
 Usage (from backend/):
     ./venv/Scripts/python scripts/check_embedded_flags.py
     ./venv/Scripts/python scripts/check_embedded_flags.py --document-ids <id>,<id>
     ./venv/Scripts/python scripts/check_embedded_flags.py --json out.json
     ./venv/Scripts/python scripts/check_embedded_flags.py --write   # owner step
+    ./venv/Scripts/python scripts/check_embedded_flags.py --write --empty-store-ok   # a wiped store
 """
 from __future__ import annotations
 
@@ -71,6 +75,10 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument("--document-ids", default="", help="comma-separated document ids")
     parser.add_argument("--page-size", type=int, default=1000, help="chunks per metadata read")
     parser.add_argument("--json", dest="json_path", default=None, help="write the report here")
+    parser.add_argument(
+        "--empty-store-ok", action="store_true",
+        help="the collection really was emptied: check against it although it holds no chunks",
+    )
     return parser.parse_args(argv)
 
 
@@ -121,6 +129,7 @@ def main(argv: list[str] | None = None) -> int:
             write=args.write,
             page_size=max(1, args.page_size),
             document_ids=document_ids or None,
+            empty_store_ok=args.empty_store_ok,
         )
     finally:
         if not args.write:

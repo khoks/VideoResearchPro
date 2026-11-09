@@ -30,7 +30,10 @@ Mutation checks (each failed the named test when this shipped):
 - ``_safe`` leaving an argument that is neither text nor an exception as it is
   (``test_an_argument_that_is_not_text_is_judged_by_its_text``);
 - ``_safe`` replacing such an argument by its text when it held no key
-  (``test_an_ordinary_record_is_left_exactly_as_it_was``).
+  (``test_an_ordinary_record_is_left_exactly_as_it_was``);
+- ``_env`` removing the provider keys again, or leaving out its ``LOG_FORMAT``
+  or its ``DEBUG`` (``test_an_installs_dotenv_cannot_reach_the_server``,
+  T-4.11.4.3: the servers run from backend/, where ``Settings`` reads ``.env``).
 """
 from __future__ import annotations
 
@@ -62,6 +65,7 @@ from websockets.exceptions import InvalidStatus
 from websockets.sync.client import connect
 
 from app.agents import qa_agent
+from app.config import Settings
 from app.services import llm_service
 from app.services.llm_routing import UseCaseConfig
 from app.utils import log_redaction
@@ -74,6 +78,7 @@ from app.utils.log_redaction import (
     redact_url_credentials,
     scrub_keys,
 )
+from tests.dotenv_settings import settings_loaded_as
 
 _BACKEND = Path(__file__).resolve().parents[2]
 _PYTHON = sys.executable
@@ -507,10 +512,22 @@ print("TOKEN", auth_service.create_access_token(user.id, db=db)[0])
 """
 
 
+def _provider_keys(env: dict[str, str]) -> set[str]:
+    return {name for name in Settings.model_fields if name.endswith("_API_KEY")} | {
+        name for name in env if name.upper().endswith("_API_KEY")
+    }
+
+
 def _env(tmp_path: Path, **extra: str) -> dict[str, str]:
-    """No provider key, no Redis that answers, and a database of its own."""
-    env = {key: value for key, value in os.environ.items() if not key.endswith("_API_KEY")}
-    env.pop("LOG_FORMAT", None)
+    """No provider key, no Redis that answers, and a database of its own; the
+    default log format unless a test names one.
+
+    Each is set, never removed (T-4.11.4.3): the server runs from backend/,
+    where ``Settings`` reads ``.env``, and a variable that is missing lets that
+    file's value in, where one that is set beats it, an empty one included."""
+    env = dict(os.environ)
+    for name in _provider_keys(env):
+        env[name] = ""
     env.update(
         DATABASE_URL=f"sqlite:///{(tmp_path / 'app.db').as_posix()}",
         CHROMA_PERSIST_DIR=str(tmp_path / "chroma"),
@@ -518,10 +535,33 @@ def _env(tmp_path: Path, **extra: str) -> dict[str, str]:
         CELERY_BROKER_URL="memory://",
         CELERY_RESULT_BACKEND="cache+memory://",
         JWT_SECRET="a-long-random-value-for-this-test-alone",
+        LOG_FORMAT=Settings.model_fields["LOG_FORMAT"].default,
+        DEBUG="false",
         PYTHONIOENCODING="utf-8",
-        **extra,
     )
+    env.update(extra)
     return env
+
+
+@pytest.mark.parametrize(
+    ("extra", "wanted"), [({}, "text"), ({"LOG_FORMAT": "json"}, "json")], ids=["default", "json"]
+)
+def test_an_installs_dotenv_cannot_reach_the_server(tmp_path, monkeypatch, extra, wanted):
+    """T-4.11.4.3: ``_env`` removed the provider keys and ``LOG_FORMAT``, so an
+    install's ``.env`` put its keys in the server and its format on the log
+    the tests read. The file holds the other format each time."""
+    env = _env(tmp_path, **extra)
+    keys = sorted(_provider_keys(env))
+    dotenv = {"LOG_FORMAT": "text" if wanted == "json" else "json", "DEBUG": "true"}
+    dotenv |= dict.fromkeys(keys, "from-the-install")
+
+    loaded = settings_loaded_as(env, dotenv, folder=tmp_path, monkeypatch=monkeypatch)
+
+    assert {"OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GOOGLE_API_KEY", "YOUTUBE_API_KEY"} <= set(keys)
+    assert loaded.LOG_FORMAT == wanted
+    assert loaded.DEBUG is False
+    seen = {name: getattr(loaded, name) for name in keys if name in Settings.model_fields}
+    assert seen == dict.fromkeys(seen, "")
 
 
 @contextmanager

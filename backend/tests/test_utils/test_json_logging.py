@@ -47,6 +47,16 @@ putting the root logger back after an in-process migration
 (``schema_init_service._keeping_the_root_logger``) fails
 ``test_text_writes_an_app_line_once_after_a_migration`` (Alembic's format,
 no time).
+
+Every subprocess runs from backend/, so ``Settings`` there reads the install's
+``.env`` too (T-4.11.4.3). Mutation checks, each run when this shipped:
+removing ``LOG_FORMAT`` from ``_env`` again when a test passes ``None`` fails
+``test_an_installs_dotenv_cannot_change_what_a_process_logs`` for both helpers;
+leaving out its ``DEBUG`` or its ``JWT_SECRET`` fails every case of it. With a
+``backend/.env`` of ``LOG_FORMAT=json``, the three ``test_text_`` tests that
+pass ``None`` failed before the fix, and with ``DEBUG=true``
+``test_json_writes_each_line_once`` did; with both, and a blank ``JWT_SECRET``,
+every subprocess test here passed after it.
 """
 from __future__ import annotations
 
@@ -67,6 +77,7 @@ import pytest
 from app.config import Settings, settings
 from app.utils import json_logging
 from app.utils.json_logging import AppStderrHandler, JsonFormatter, configure_logging, route_model_libraries
+from tests.dotenv_settings import settings_loaded_as
 
 _BACKEND = Path(__file__).resolve().parents[2]
 _PYTHON = sys.executable
@@ -272,23 +283,36 @@ def test_every_model_load_routes_the_libraries_first():
 # ---------------------------------------------------------------------------
 
 
+# The format of a process that names none. ``_env`` writes it in, and not as
+# "": that reads as text too, but as an unknown value, and the process says so
+# ("LOG_FORMAT='' is neither text nor json; using text").
+_DEFAULT_LOG_FORMAT = Settings.model_fields["LOG_FORMAT"].default
+_JWT_SECRET = "a-long-random-value-for-this-test-alone"
+
+
 def _env(tmp_path: Path, log_format: str | None, **extra: str) -> dict[str, str]:
     """Settings come from the environment, and nothing a process opens is the
     install's: the database and Chroma live in ``tmp_path``, the broker in
-    memory."""
-    env = {
+    memory.
+
+    A setting that changes what a test reads is set, never left out (T-4.11.4.3).
+    The process runs from backend/, where ``Settings`` reads ``.env``, and a
+    variable that is missing lets that file's value in, where one that is set
+    beats it. So ``log_format=None`` is the default format, whatever the
+    install's ``.env`` says; ``DEBUG`` would put SQLAlchemy's echo of every
+    statement on stdout, bare lines, and a blank ``JWT_SECRET`` a warning."""
+    return {
         **os.environ,
         "DATABASE_URL": f"sqlite:///{(tmp_path / 'app.db').as_posix()}",
         "CHROMA_PERSIST_DIR": str(tmp_path / "chroma"),
         "CELERY_BROKER_URL": "memory://",
         "CELERY_RESULT_BACKEND": "cache+memory://",
+        "DEBUG": "false",
+        "JWT_SECRET": _JWT_SECRET,
         "PYTHONIOENCODING": "utf-8",
         **extra,
+        "LOG_FORMAT": _DEFAULT_LOG_FORMAT if log_format is None else log_format,
     }
-    env.pop("LOG_FORMAT", None)
-    if log_format is not None:
-        env["LOG_FORMAT"] = log_format
-    return env
 
 
 def _run(script: str, tmp_path: Path, log_format: str | None, **extra: str) -> list[str]:
@@ -509,12 +533,10 @@ def _kept_out(env: dict[str, str]) -> list[str]:
 
 
 def _api_env(tmp_path: Path, log_format: str | None) -> dict[str, str]:
-    """``_env`` with each of ``_kept_out`` set empty. Set, not removed: the
-    process runs from backend/, where ``Settings`` reads ``.env``, and a
-    variable that is missing lets that file's value in, where an empty one
-    beats it. An empty ``SMTP_HOST`` is still no mail server, so the reset
-    email takes the log fallback."""
-    env = _env(tmp_path, log_format, JWT_SECRET="a-long-random-value-for-this-test-alone")
+    """``_env`` with each of ``_kept_out`` set empty: set, not removed, for the
+    reason ``_env`` gives. An empty ``SMTP_HOST`` is still no mail server, so
+    the reset email takes the log fallback."""
+    env = _env(tmp_path, log_format)
     for name in _kept_out(env):
         env[name] = ""
     return env
@@ -526,19 +548,32 @@ def test_the_api_lines_keep_the_installs_secrets_out(tmp_path, monkeypatch):
     it runs from backend/: none of them may reach it."""
     env = _api_env(tmp_path, None)
     names = _kept_out(env)
-    dotenv = tmp_path / "install.env"
-    dotenv.write_text("".join(f"{name}=from-the-install\n" for name in names), encoding="utf-8")
-    for name in names:
-        if name in env:
-            monkeypatch.setenv(name, env[name])
-        else:
-            monkeypatch.delenv(name, raising=False)
 
-    loaded = Settings(_env_file=dotenv, _env_file_encoding="utf-8")
+    loaded = settings_loaded_as(env, dict.fromkeys(names, "from-the-install"), folder=tmp_path, monkeypatch=monkeypatch)
 
     assert {"SMTP_HOST", "TWITTER_BEARER_TOKEN", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GOOGLE_API_KEY"} <= set(names)
     seen = {name: getattr(loaded, name) for name in names if name in Settings.model_fields}
     assert seen == dict.fromkeys(seen, ""), "the install's .env reached the process"
+
+
+@pytest.mark.parametrize("build", [_env, _api_env], ids=["_env", "_api_env"])
+@pytest.mark.parametrize(("log_format", "wanted"), [(None, "text"), ("text", "text"), ("json", "json")])
+def test_an_installs_dotenv_cannot_change_what_a_process_logs(tmp_path, monkeypatch, build, log_format, wanted):
+    """T-4.11.4.3: the text tests pass ``None``, and a ``LOG_FORMAT=json`` in
+    the install's ``.env`` turned their processes to JSON (three of them
+    failed); ``DEBUG=true`` there put SQLAlchemy's echo on stdout, which
+    ``test_json_writes_each_line_once`` read as a line that is not JSON. Every
+    subprocess here starts from one of these two helpers, ``_celery`` and
+    ``_run`` from ``_env``, ``_run_split`` from ``_api_env``. The file holds
+    the other format each time, so neither direction can come from it."""
+    env = build(tmp_path, log_format)
+    dotenv = {"LOG_FORMAT": "text" if wanted == "json" else "json", "DEBUG": "true", "JWT_SECRET": "from-the-install"}
+
+    loaded = settings_loaded_as(env, dotenv, folder=tmp_path, monkeypatch=monkeypatch)
+
+    assert loaded.LOG_FORMAT == wanted
+    assert loaded.DEBUG is False
+    assert loaded.JWT_SECRET == _JWT_SECRET
 
 
 def _run_split(script: str, tmp_path: Path, log_format: str | None) -> tuple[list[str], list[str]]:

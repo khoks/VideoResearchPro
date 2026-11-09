@@ -1,6 +1,6 @@
 # Pratidhvani — Decision Log
 
-**Status:** living doc (last refreshed 2026-11-05). Owner: [`/knowledge-curator`](../.claude/skills/knowledge-curator/SKILL.md) skill.
+**Status:** living doc (last refreshed 2026-11-09). Owner: [`/knowledge-curator`](../.claude/skills/knowledge-curator/SKILL.md) skill.
 
 This is the chronological record of every product / engineering decision made on this project that is **not** trivially recoverable from `git log`. Use it to recall *why* a path was chosen and what alternatives were rejected, so future-you doesn't relitigate settled questions.
 
@@ -2727,6 +2727,8 @@ All single-run evidence. The S-1.18.8 protocol re-run should carry both of the f
 
 **Linked initiatives / PRs.** [S-8.8.1](initiatives.md#s-881--report-content-endpoint-and-sanitised-renderer) (PR [#244](https://github.com/khoks/VideoResearchPro/pull/244)), [S-8.8.2](initiatives.md#s-882--citation-hover-cards-and-footnotes) (PR [#254](https://github.com/khoks/VideoResearchPro/pull/254)), T-8.8.1.5, S-1.14.17, D-079.
 
+**Status-changed 2026-11-09:** the addendum's "what remains" is closed. `/ws/jobs` takes its token as a WebSocket subprotocol offered after `bearer`, never in the URL, so no route takes a credential from a URL ([D-151](#d-151--the-sockets-token-is-a-subprotocol-provider-errors-are-scrubbed-as-each-log-record-is-made-and-json-logs-hold-their-format-from-the-first-line-2026-11-09), T-5.4.23, PR [#425](https://github.com/khoks/VideoResearchPro/pull/425)).
+
 ## D-086 — Markdown readers: react-markdown's own pipeline run once with a tree transform; the outline is the two shallowest structural heading levels (2026-10-19)
 
 **Status:** accepted. It deviates from the M8 plan's sketch (`<ReactMarkdown>` with `rehype-slug`) for the reason below.
@@ -4299,6 +4301,8 @@ For reference: run 9's outcome (1–0–2, 8.67 vs 8.67) passes the amended rule
 
 **Status-changed 2026-11-05:** the items left open here are closed: a cut answer is noticed, the shelf has a depth select, and a failed clarify no longer blocks the library page ([D-145](#d-145--a-cut-off-flag-is-a-fact-about-one-reply-the-offer-keeps-the-cards-scope-and-the-server-never-applies-the-accounts-default-depth-2026-11-05), T-1.15.4.5, T-1.15.4.6, S-8.13.3, PR [#419](https://github.com/khoks/VideoResearchPro/pull/419)). OQ-29 stays the owner's.
 
+**Status-changed 2026-11-09:** how often answers are cut is still unmeasured, but every new exchange now stores what the check found, `false` included, so it can be measured ([D-150](#d-150--the-cut-off-flag-is-stored-as-what-the-check-found-a-cut-answer-is-never-a-saved-searchs-baseline-and-a-cut-first-answer-stands-in-on-the-card-2026-11-09), T-1.15.4.8, PR [#426](https://github.com/khoks/VideoResearchPro/pull/426)).
+
 ## D-133 — The tagger abstains without Hindi evidence, the presence floor reads grammar, an offline lexicon sees English in Devanagari, and scores are quoted from the production row (2026-11-04)
 
 **Status:** accepted (2026-11-04). Made while building T-1.16.2.15, T-1.16.2.8, T-1.16.1.10, T-1.16.2.14 and T-1.17.3.3 (PR [#403](https://github.com/khoks/VideoResearchPro/pull/403)) and its review fixes, not ruled by the owner. Points 1 to 3 are addenda to [D-080](#d-080--code-mixing-detection-a-lexicon-tagger-not-an-llm-pass-2026-10-19). [D-112](#d-112--the-remaining-rulings-of-2026-10-25-map-batching-public-sharing-the-code-mixing-threshold-and-the-quick-calls-2026-10-25)'s 0.6 threshold stands until T-1.16.2.7.
@@ -4489,6 +4493,8 @@ For reference: run 9's outcome (1–0–2, 8.67 vs 8.67) passes the amended rule
 
 **Status-changed 2026-11-05:** point 4 now reads as a refusal. A claiming reply that cites only mail is refused, naming the email, so there is no draft for `unverified_source` to sit under ([D-142](#d-142--a-draft-with-nothing-behind-it-is-refused-a-register-needs-a-saved-draft-and-overlapping-syncs-are-settled-by-the-databases-insert-2026-11-05), T-3.4.1.11, PR [#416](https://github.com/khoks/VideoResearchPro/pull/416)). `unverified_source` still applies to a mixed draft and to a reply that claims nothing. The owner may want to rule on this (OQ-35, which touches OQ-30).
 
+**Status-changed 2026-11-05:** point 9 stands. A share waiting behind a deep link now gets a **Review it** link on every other page, never a second redirect ([D-148](#d-148--a-401-ends-a-session-in-react-and-keeps-the-page-in-this-tab-a-waiting-share-gets-a-link-a-mutation-that-answers-its-own-failures-says-so-and-tabs-opens-on-focus-2026-11-05), T-3.7.6.3, PR [#423](https://github.com/khoks/VideoResearchPro/pull/423)).
+
 ## D-138 — Code attempts count on a shared row, sockets end with their session, one reader takes the client address from the right, and a rotated key is reported (2026-11-05)
 
 **Status:** accepted (2026-11-05). Made while building T-5.4.16, T-5.4.18, T-5.4.19, T-5.5.8, T-5.6.10 and T-5.6.11 (PR [#411](https://github.com/khoks/VideoResearchPro/pull/411)) and its review fixes, not ruled by the owner. It builds on [D-124](#d-124--second-factor-attempts-count-on-the-ticket-one-bearer-check-for-http-and-the-socket-and-a-validation-error-never-quotes-what-was-sent-2026-11-04). T-5.4.17 and OQ-21 stay the owner's.
@@ -4599,6 +4605,8 @@ For reference: run 9's outcome (1–0–2, 8.67 vs 8.67) passes the amended rule
 
 **Linked initiatives / PRs.** E-5.4 (T-5.4.20, T-5.4.22), [S-4.11.2](initiatives.md#s-4112--gaps-the-docs-audit-documented-and-did-not-fix) (T-4.11.2.3, T-4.11.2.5), E-2.2 (T-2.2.1 to T-2.2.5), T-1.5.13.5, T-6.1.3.7, T-6.7.1.7, T-7.1.1.6; PR [#414](https://github.com/khoks/VideoResearchPro/pull/414); [D-111](#d-111--operator-only-tier-switching-and-an-honest-pricing-page-2026-10-25), [D-112](#d-112--the-remaining-rulings-of-2026-10-25-map-batching-public-sharing-the-code-mixing-threshold-and-the-quick-calls-2026-10-25).
 
+**Status-changed 2026-11-05:** the consequence about T-5.4.22 is amended. A 401 no longer reloads the page: it ends the session in React, and the tab that met it keeps its page through the sign-in. Point 2 stands for other tabs (OQ-41). A share waiting behind a deep link now gets a link on other pages (T-3.7.6.3). Both in [D-148](#d-148--a-401-ends-a-session-in-react-and-keeps-the-page-in-this-tab-a-waiting-share-gets-a-link-a-mutation-that-answers-its-own-failures-says-so-and-tabs-opens-on-focus-2026-11-05), PR [#423](https://github.com/khoks/VideoResearchPro/pull/423).
+
 ## D-141 — A connector's search raises on failure, a refusal is a 24-hour hold on a source's own endpoint, non-video sources search before YouTube, and a recording counts once (2026-11-05)
 
 **Status:** accepted (2026-11-05). Made while building S-1.5.14, T-1.5.13.6 and T-1.7.1.1 to T-1.7.1.3 (PR [#415](https://github.com/khoks/VideoResearchPro/pull/415)) and its review fixes, not ruled by the owner. Point 2 reverses the connectors' "degrade to an empty list" contract, and points 4 to 6 change what [D-114](#d-114--which-sources-a-topic-run-searches-settings-decide-one-budget-for-the-run-no-whisper-before-approval-2026-10-29)'s split does with a share a source cannot fill. OQ-33 and OQ-34 stay the owner's.
@@ -4640,6 +4648,8 @@ For reference: run 9's outcome (1–0–2, 8.67 vs 8.67) passes the amended rule
 
 **Linked initiatives / PRs.** E-1.5 ([S-1.5.14](initiatives.md#s-1514--sources-that-quietly-return-nothing), T-1.5.13.6), E-1.7 ([S-1.7.1](initiatives.md#s-171--podcast-text-path-follow-ups)), OQ-33, OQ-34, OQ-36; PR [#415](https://github.com/khoks/VideoResearchPro/pull/415); [D-111](#d-111--operator-only-tier-switching-and-an-honest-pricing-page-2026-10-25), [D-114](#d-114--which-sources-a-topic-run-searches-settings-decide-one-budget-for-the-run-no-whisper-before-approval-2026-10-29), [D-135](#d-135--the-publish-window-is-a-preference-that-leads-the-inferred-profile-a-window-that-cannot-act-is-refused-and-starters-name-only-sources-that-need-no-search-credential-2026-11-04), [D-146](#d-146--a-pool-never-carries-the-session-max_concurrent_jobs-is-per-user-a-key-check-says-good-or-bad-only-when-the-provider-did-and-whispers-key-and-count-hold-on-every-sync-2026-11-05).
 
+**Status-changed 2026-11-09:** point 3 is extended: a held source chosen on the form is tried, and its own answer ends or renews the hold, so **Try X anyway** is the manual way to clear one (T-1.5.14.6). Point 7 is extended: a recording Whisper finished only part of counts once, at its reach on the timeline, through `TranscriptionCutShort` (T-1.7.1.5). Both in [D-149](#d-149--fetch_text-may-raise-transcriptioncutshort-a-sync-reads-only-what-the-library-lacks-the-job-limit-never-refuses-a-subscribe-and-a-held-source-can-be-tried-anyway-2026-11-09), PR [#424](https://github.com/khoks/VideoResearchPro/pull/424). Podcast logs name the host alone ([D-151](#d-151--the-sockets-token-is-a-subprotocol-provider-errors-are-scrubbed-as-each-log-record-is-made-and-json-logs-hold-their-format-from-the-first-line-2026-11-09), T-1.7.1.6, PR [#425](https://github.com/khoks/VideoResearchPro/pull/425)).
+
 ## D-142 — A draft with nothing behind it is refused, a register needs a saved draft, and overlapping syncs are settled by the database's insert (2026-11-05)
 
 **Status:** accepted (2026-11-05). Made while building T-3.2.1.13, T-3.2.1.14 and T-3.4.1.11 (PR [#416](https://github.com/khoks/VideoResearchPro/pull/416)) and its review fixes, not ruled by the owner. Point 2 supersedes [D-102](#d-102--speak-as-me-two-switches-guards-in-code-the-reply-in-the-users-language-2026-10-20)'s "flagged `ungrounded`"; D-102's other points stand, including an advisory critic. Point 3 reads [D-137](#d-137--a-share-target-posts-to-a-worker-scoped-to-one-path-and-waits-for-one-tap-mail-is-unverified-text-that-never-trains-the-voice-shared-links-go-through-the-public-address-guard-2026-11-04) point 4 as a refusal, and the owner may want to rule on it (OQ-35). Point 6 narrows D-102's "a stopped draft is not counted". Speak as me is off on this install, so nothing here changes anything live.
@@ -4677,6 +4687,8 @@ For reference: run 9's outcome (1–0–2, 8.67 vs 8.67) passes the amended rule
 - `globalErrorToastMessage` skips the three stops the panel shows, which also stops the private-name stop doubling. `daily_cap` still shows two toasts (T-3.4.1.15).
 
 **Linked initiatives / PRs.** E-3.2 (T-3.2.1.13, T-3.2.1.14), E-3.4 (T-3.4.1.11 to T-3.4.1.15), OQ-30, OQ-35; PR [#416](https://github.com/khoks/VideoResearchPro/pull/416); [D-102](#d-102--speak-as-me-two-switches-guards-in-code-the-reply-in-the-users-language-2026-10-20), [D-134](#d-134--a-live-manual-fact-holds-its-key-against-every-source-a-401-retries-one-call-a-lease-guards-the-refresh-token-and-a-changed-row-beats-a-refresh-answer-2026-11-04), [D-137](#d-137--a-share-target-posts-to-a-worker-scoped-to-one-path-and-waits-for-one-tap-mail-is-unverified-text-that-never-trains-the-voice-shared-links-go-through-the-public-address-guard-2026-11-04).
+
+**Status-changed 2026-11-05:** `daily_cap` no longer shows two toasts. `useCreateDraft` answers every failure in its own `onError` and sets `meta.errorsShownHere` ([D-148](#d-148--a-401-ends-a-session-in-react-and-keeps-the-page-in-this-tab-a-waiting-share-gets-a-link-a-mutation-that-answers-its-own-failures-says-so-and-tabs-opens-on-focus-2026-11-05), T-3.4.1.15, PR [#423](https://github.com/khoks/VideoResearchPro/pull/423)).
 
 ## D-143 — The API's Content-Security-Policy is locked by default, OAuth redirects are compared as origins, a socket ends at its token's expiry, and a shared link is logged by host alone (2026-11-05)
 
@@ -4716,6 +4728,8 @@ For reference: run 9's outcome (1–0–2, 8.67 vs 8.67) passes the amended rule
 
 **Linked initiatives / PRs.** [S-4.11.2](initiatives.md#s-4112--gaps-the-docs-audit-documented-and-did-not-fix) (T-4.11.2.1, T-4.11.2.2, T-4.11.2.4, T-4.11.2.7), T-3.7.2.9, T-5.4.21, T-5.4.23, T-5.5.9, T-1.7.1.6, [S-4.11.3](initiatives.md#s-4113--follow-ups-from-the-operations-pass); PR [#420](https://github.com/khoks/VideoResearchPro/pull/420); [D-138](#d-138--code-attempts-count-on-a-shared-row-sockets-end-with-their-session-one-reader-takes-the-client-address-from-the-right-and-a-rotated-key-is-reported-2026-11-05).
 
+**Status-changed 2026-11-09:** point 4's origin list now also decides CORS, and `localhost:3000` is no longer a default ([D-152](#d-152--cors-reads-the-oauth-origin-list-and-the-app-keeps-tiktokens-encoding-in-a-folder-of-its-own-2026-11-09), T-4.11.3.3, PR [#427](https://github.com/khoks/VideoResearchPro/pull/427)). The consequence about uvicorn's socket line was wrong: such a line was in the repo root's gitignored `.uvicorn.log`, from April, its token expired. The socket's token is now a subprotocol ([D-151](#d-151--the-sockets-token-is-a-subprotocol-provider-errors-are-scrubbed-as-each-log-record-is-made-and-json-logs-hold-their-format-from-the-first-line-2026-11-09), T-5.4.23, PR [#425](https://github.com/khoks/VideoResearchPro/pull/425)). The same PR closes two more consequences: Celery's banners and the `JWT_SECRET` warning follow `LOG_FORMAT=json` (T-4.11.3.2), and podcast logs name the host alone (T-1.7.1.6).
+
 ## D-144 — A fifth voice label `other` names no language to write in, a job fills gaps and only the backfill rewrites, and the declared audio language is a key on the document (2026-11-05)
 
 **Status:** accepted (2026-11-05). Made while building T-1.16.2.16, T-3.3.2.11 and T-1.11.11.4 (PR [#418](https://github.com/khoks/VideoResearchPro/pull/418)) and its review fixes, not ruled by the owner. Point 1 amends [D-099](#d-099--signal-extraction-verbatim-checked-examples-language-free-beliefs-stylometry-without-a-model-2026-10-19) and the voice test's procedure ([D-100](#d-100--voice-match-gate-mode-a-passes-on-synthetic-writers-speak-as-me-may-be-built-and-is-enabled-per-user-only-after-the-user-as-judge-test-2026-10-19), T-3.4.1.8). Point 2 extends [D-133](#d-133--the-tagger-abstains-without-hindi-evidence-the-presence-floor-reads-grammar-an-offline-lexicon-sees-english-in-devanagari-and-scores-are-quoted-from-the-production-row-2026-11-04) point 5, and point 3 extends [D-117](#d-117--the-caption-track-is-the-one-in-the-spoken-language-auto-dubs-are-read-from-the-players-audio-tracks-2026-10-29) point 5.
@@ -4749,6 +4763,8 @@ For reference: run 9's outcome (1–0–2, 8.67 vs 8.67) passes the amended rule
 - No write run and no new owner step. The four `--write` steps under S-1.16.2 keep their order. Restart the worker: the 10-30 evidence shows a running worker can stay on old code for days.
 
 **Linked initiatives / PRs.** E-1.16 (T-1.16.2.16), E-3.3 (T-3.3.2.11), E-3.4 (T-3.4.1.8, T-3.4.1.16), E-1.11 (T-1.11.11.4 to T-1.11.11.6); PR [#418](https://github.com/khoks/VideoResearchPro/pull/418); [D-099](#d-099--signal-extraction-verbatim-checked-examples-language-free-beliefs-stylometry-without-a-model-2026-10-19), [D-100](#d-100--voice-match-gate-mode-a-passes-on-synthetic-writers-speak-as-me-may-be-built-and-is-enabled-per-user-only-after-the-user-as-judge-test-2026-10-19), [D-117](#d-117--the-caption-track-is-the-one-in-the-spoken-language-auto-dubs-are-read-from-the-players-audio-tracks-2026-10-29), [D-127](#d-127--the-in-app-voice-test-is-a-rolled-back-what-if-on-the-echo_draft-use-case-and-an-open-tests-answers-stay-out-of-the-export-2026-11-04), [D-133](#d-133--the-tagger-abstains-without-hindi-evidence-the-presence-floor-reads-grammar-an-offline-lexicon-sees-english-in-devanagari-and-scores-are-quoted-from-the-production-row-2026-11-04).
+
+**Status-changed 2026-11-09:** both items noticed here are closed. The lazy lookup logs as `videos_audio_language`, and a sync looks videos up by `Document.video_id` ([D-149](#d-149--fetch_text-may-raise-transcriptioncutshort-a-sync-reads-only-what-the-library-lacks-the-job-limit-never-refuses-a-subscribe-and-a-held-source-can-be-tried-anyway-2026-11-09), T-1.11.11.5, T-1.11.11.6, PR [#424](https://github.com/khoks/VideoResearchPro/pull/424)). A document read before no longer gets the audio-language key through a sync, so it keeps the lazy lookup.
 
 ## D-145 — A cut-off flag is a fact about one reply, the offer keeps the card's scope, and the server never applies the account's default depth (2026-11-05)
 
@@ -4791,6 +4807,8 @@ For reference: run 9's outcome (1–0–2, 8.67 vs 8.67) passes the amended rule
 
 **Linked initiatives / PRs.** E-1.15 (T-1.15.3.6, T-1.15.3.9, T-1.15.3.10, T-1.15.4.5 to T-1.15.4.9, OQ-37), E-8.13 ([S-8.13.3](initiatives.md#s-8133--the-library-page-stops-at-a-failed-clarify), T-8.13.4.1), T-4.11.2.6; PR [#419](https://github.com/khoks/VideoResearchPro/pull/419); [D-125](#d-125--a-knowledge-reports-depth-applies-d-064-without-a-bracket-and-belongs-to-the-shared-artifact-and-a-failed-synthesis-never-reaches-it-2026-11-04), [D-132](#d-132--qa-brief-keeps-the-whole-thinking-reserve-a-cut-off-report-offers-deep-a-citation-with-no-document-casts-no-vote-and-clarify-is-one-optional-route-2026-11-04).
 
+**Status-changed 2026-11-09:** the flag is now stored, which this entry's first alternative set aside for want of a migration: `answer_cut_off` on all three exchange tables, NULL for older rows, and on the wire a stored row still says `true` or nothing ([D-150](#d-150--the-cut-off-flag-is-stored-as-what-the-check-found-a-cut-answer-is-never-a-saved-searchs-baseline-and-a-cut-first-answer-stands-in-on-the-card-2026-11-09), T-1.15.4.8, T-1.15.4.9, PR [#426](https://github.com/khoks/VideoResearchPro/pull/426)). Point 2 stands, so after a reload the note stays and the offer goes (OQ-39). `BatchExtract` starts from the preference, and the job page's clarify no longer dead-ends ([D-148](#d-148--a-401-ends-a-session-in-react-and-keeps-the-page-in-this-tab-a-waiting-share-gets-a-link-a-mutation-that-answers-its-own-failures-says-so-and-tabs-opens-on-focus-2026-11-05), T-1.15.3.10, T-8.13.4.1, PR [#423](https://github.com/khoks/VideoResearchPro/pull/423)).
+
 ## D-146 — A pool never carries the `Session`, `MAX_CONCURRENT_JOBS` is per user, a key check says good or bad only when the provider did, and Whisper's key and count hold on every sync (2026-11-05)
 
 **Status:** accepted (2026-11-05). Made while building T-5.6.12, T-5.6.13, T-5.2.14 and T-5.6.8 (PR [#417](https://github.com/khoks/VideoResearchPro/pull/417)) and its review fixes, not ruled by the owner. Point 5 reverses what PR [#415](https://github.com/khoks/VideoResearchPro/pull/415) told the owner about subscription jobs, so the owner has yet to confirm it (OQ-36). [D-111](#d-111--operator-only-tier-switching-and-an-honest-pricing-page-2026-10-25) and [D-131](#d-131--whisper-is-charged-at-the-shared-call-and-usage-is-written-part-way-on-a-timer-after-every-billed-response-2026-11-04) stand: nothing here enforces anything from the usage numbers.
@@ -4830,6 +4848,8 @@ For reference: run 9's outcome (1–0–2, 8.67 vs 8.67) passes the amended rule
 
 **Linked initiatives / PRs.** E-5.6 (T-5.6.8, T-5.6.12 to T-5.6.16, OQ-36), E-5.2 (T-5.2.14 to T-5.2.16), T-1.7.1.1; PR [#417](https://github.com/khoks/VideoResearchPro/pull/417); [D-063](#d-063--per-user-isolation-shared-cache-private-catalogue-2026-07-31), [D-111](#d-111--operator-only-tier-switching-and-an-honest-pricing-page-2026-10-25), [D-141](#d-141--a-connectors-search-raises-on-failure-a-refusal-is-a-24-hour-hold-on-a-sources-own-endpoint-non-video-sources-search-before-youtube-and-a-recording-counts-once-2026-11-05).
 
+**Status-changed 2026-11-09:** point 2 is extended: the job limit holds a sync, never a subscribe, and a sync the broker refused fails its row ([D-149](#d-149--fetch_text-may-raise-transcriptioncutshort-a-sync-reads-only-what-the-library-lacks-the-job-limit-never-refuses-a-subscribe-and-a-held-source-can-be-tried-anyway-2026-11-09), T-5.2.15, PR [#424](https://github.com/khoks/VideoResearchPro/pull/424)). `whisper_error_text`'s rule is generalised to every log record as `provider_error_text`, and `ProbeResult.error` is scrubbed where it is made ([D-151](#d-151--the-sockets-token-is-a-subprotocol-provider-errors-are-scrubbed-as-each-log-record-is-made-and-json-logs-hold-their-format-from-the-first-line-2026-11-09), T-5.6.16, PR [#425](https://github.com/khoks/VideoResearchPro/pull/425)).
+
 ## D-147 — The rendering parser decides what is a heading in book Markdown, a rewrite parses what it will emit, and the suite's tiktoken file lives at a fixed path (2026-11-05)
 
 **Status:** accepted (2026-11-05). Made while building T-8.8.6.1, T-8.8.6.2, T-8.8.6.4 and T-2.8.6 (PR [#421](https://github.com/khoks/VideoResearchPro/pull/421)) and its review fixes, not ruled by the owner.
@@ -4862,3 +4882,180 @@ For reference: run 9's outcome (1–0–2, 8.67 vs 8.67) passes the amended rule
 - Owner steps, both optional: clear the 177 files at `D:\`, and add "Marketing site build (Astro)" to branch protection if it lists required checks.
 
 **Linked initiatives / PRs.** [S-8.8.6](initiatives.md#s-886--follow-ups-from-the-reader-and-test-infra-pass) (T-8.8.6.1, T-8.8.6.2, T-8.8.6.4, T-8.8.6.5), E-2.8 (T-2.8.6); PR [#421](https://github.com/khoks/VideoResearchPro/pull/421); [D-136](#d-136--a-books-contents-take-their-ids-from-the-rendered-manuscript-the-main-chunk-meets-its-budget-with-lazy-markdown-and-lazy-routes-and-the-device-suites-server-is-dual-stack-2026-11-04).
+
+**Status-changed 2026-11-09:** the app now keeps its encoding in `TIKTOKEN_ENCODINGS_DIR` too, and every load in `app/` goes through one helper that survives a lost first-download race ([D-152](#d-152--cors-reads-the-oauth-origin-list-and-the-app-keeps-tiktokens-encoding-in-a-folder-of-its-own-2026-11-09), T-8.8.6.5, PR [#427](https://github.com/khoks/VideoResearchPro/pull/427)). The suite's fixed path in point 6 is untouched, because a variable already set wins.
+
+## D-148 — A 401 ends a session in React and keeps the page in this tab, a waiting share gets a link, a mutation that answers its own failures says so, and Tabs opens on focus (2026-11-05)
+
+**Status:** accepted (2026-11-05). Made while building T-5.4.22, T-3.7.6.3, T-8.13.4.1, T-8.13.4.2, T-1.5.13.7, T-2.2.5, T-3.4.1.15 and T-1.15.3.10 (PR [#423](https://github.com/khoks/VideoResearchPro/pull/423)) and its review fixes, not ruled by the owner. Point 1 amends [D-140](#d-140--a-sign-in-makes-one-redirect-the-query-cache-ends-with-the-session-the-error-screen-replaces-the-page-and-signed-out-pricing-leads-to-free-2026-11-05)'s consequence about T-5.4.22, and D-140 point 2 stands for other tabs. Point 4 keeps [D-137](#d-137--a-share-target-posts-to-a-worker-scoped-to-one-path-and-waits-for-one-tap-mail-is-unverified-text-that-never-trains-the-voice-shared-links-go-through-the-public-address-guard-2026-11-04) point 9. OQ-41 is the owner's.
+
+**Context.**
+- `api.ts` answered a 401 with `window.location.href = '/login'` and no page, so an old tab, or an email link a day later, ended at `/`. D-140 called this probably the most common real deep link.
+- The hard redirect also wiped memory. A soft one does not.
+- A page has several requests out at once, and one refused after the reader signed in again must not take the new session with it.
+- The streaming ask uses `fetch`, which never reached the interceptor.
+- A clear of site data, or a page back from the back/forward cache after another tab signed out, leaves React signed in with nothing to send, so every request goes out bare and comes back 401.
+- With a deep link while a share was waiting, the share waited up to 24 hours for the next visit to `/`.
+- A failed draft showed two toasts. The global handler alone says "Network Error" for a 500 or no answer, where the panel has a real sentence, and TanStack drops a per-call `onError` once the component has unmounted.
+
+**Decision.**
+1. **A 401 ends a session in React, not with a page load.** One module, `services/sessionExpiry.ts`, removes the token and tells `AuthProvider`. `ProtectedRoute` carries the page to `/login`, and `PublicOnlyRoute` returns through `signInReturn` with its existing checks. A 401 counts only for the token it refused, and never on the sign-in calls or `/auth/logout`. A 401 during a sign-out counts as the sign-out. A 401 that finds no token in storage ends a session this tab still holds, as a sign-out, because this tab cannot tell who took the token.
+2. **With no reload, `AuthProvider`'s session-end effect owns what memory holds:** the query cache, the Echo thread and the toasts.
+3. **A session the server stopped accepting keeps the page in this tab only.** Another tab hears only that the token went, cannot tell that from a sign-out, and gives its page up (D-140 point 2, unchanged).
+4. **A waiting share gets a link, never a second redirect** (D-137 point 9). `WaitingShareNotice` in `AppLayout` shows **Review it** on every page but `/` and the review page, and nothing is posted until the tap there.
+5. **A mutation that answers every failure itself says so with `meta.errorsShownHere`, and answers in the hook's own `onError`.** A per-call `onError` is invisible to the mutation cache, which is where double toasts come from, and TanStack drops it once the component has unmounted, so it cannot be the only answer.
+6. **`Tabs` opens on focus,** with arrows, Home and End wrapping and a roving tabindex, since every panel swaps in place and spends nothing. With a modifier held the key stays the browser's.
+
+**Alternatives considered.**
+- *Dropping the panel's toast.* The global handler alone says "Network Error" for a 500 or no answer.
+- *An `onError` on the panel's `mutate` call.* TanStack drops it once the panel has unmounted, and a draft runs long enough to be left behind.
+- *A storage marker so another tab can tell a sign-out from a 401.* D-140 point 2 stands, and the spec asked to say what happens rather than change it (OQ-41).
+- *A second redirect for a waiting share.* It loses the race D-137 point 9 describes.
+
+**Consequences.**
+- A deliberate sign-out no longer leaves the last account's Echo thread in the tab.
+- The same double toast remains on `VoiceTestPanel` (three sites) and on the Echo page's delete and revoke. A page's own per-call toast can still land on the sign-in page when a 401 arrives after another request ended the session; it takes two requests racing (T-3.4.1.17).
+- A draft stop after the panel has gone says nothing, as on master, because each stop needs the panel to act on it.
+- A page restored from the back/forward cache finds out at its next request, since no `pageshow` listener was added.
+- The submit form already read right for T-1.5.13.7; the job page's **Job parameters** now reads **Number of results** on a run over other sources. `BatchExtract`'s existing depth select starts from the preference, and the server applies nothing ([D-145](#d-145--a-cut-off-flag-is-a-fact-about-one-reply-the-offer-keeps-the-cards-scope-and-the-server-never-applies-the-accounts-default-depth-2026-11-05)).
+- Left out: `role="tabpanel"` and `aria-controls` on the panels, Echo's `ModeTab`, a "your session ended" line on the sign-in page, and a dismiss on the notice.
+- Tested against fixtures only: no real expired JWT, Android share sheet or model. No device baseline changed, and there is no owner step.
+
+**Linked initiatives / PRs.** E-5.4 (T-5.4.22, OQ-41), E-3.7 (T-3.7.6.3), E-8.13 ([S-8.13.4](initiatives.md#s-8134--clarify-follow-ups-from-the-library-fix)), E-2.2 (T-2.2.5), E-3.4 (T-3.4.1.15, T-3.4.1.17), T-1.5.13.7, T-1.15.3.10; PR [#423](https://github.com/khoks/VideoResearchPro/pull/423); [D-137](#d-137--a-share-target-posts-to-a-worker-scoped-to-one-path-and-waits-for-one-tap-mail-is-unverified-text-that-never-trains-the-voice-shared-links-go-through-the-public-address-guard-2026-11-04), [D-140](#d-140--a-sign-in-makes-one-redirect-the-query-cache-ends-with-the-session-the-error-screen-replaces-the-page-and-signed-out-pricing-leads-to-free-2026-11-05), [D-145](#d-145--a-cut-off-flag-is-a-fact-about-one-reply-the-offer-keeps-the-cards-scope-and-the-server-never-applies-the-accounts-default-depth-2026-11-05).
+
+## D-149 — `fetch_text` may raise `TranscriptionCutShort`, a sync reads only what the library lacks, the job limit never refuses a subscribe, and a held source can be tried anyway (2026-11-09)
+
+**Status:** accepted (2026-11-09). Made while building T-1.11.11.6, T-1.11.11.5, T-5.2.15, T-1.5.14.6 and T-1.7.1.5 (PR [#424](https://github.com/khoks/VideoResearchPro/pull/424)) and its review fixes, not ruled by the owner. Point 1 amends the connector contract's "returns None rather than raising" and extends [D-141](#d-141--a-connectors-search-raises-on-failure-a-refusal-is-a-24-hour-hold-on-a-sources-own-endpoint-non-video-sources-search-before-youtube-and-a-recording-counts-once-2026-11-05) point 7. Point 3 extends [D-146](#d-146--a-pool-never-carries-the-session-max_concurrent_jobs-is-per-user-a-key-check-says-good-or-bad-only-when-the-provider-did-and-whispers-key-and-count-hold-on-every-sync-2026-11-05) point 2, and point 4 extends D-141 point 3. OQ-36 is untouched, and OQ-38 is the owner's.
+
+**Context.**
+- `execute_subscription_job` looked videos up with `db.get(Document, vid)`, a YouTube id against the UUID primary key, so every unlinked video counted as missing and each sync re-read its whole channel at 1 unit per 50 videos. PR [#418](https://github.com/khoks/VideoResearchPro/pull/418) found it reading the quota log.
+- The lazy audio-language lookup logged as `videos`, the label `get_video_details` uses, so the log could not name it.
+- `_dispatch_subscription_sync` wrote its row directly, so Sync now and subscribe skipped `MAX_CONCURRENT_JOBS`, though a sync counts toward its owner's total.
+- A hold could end only through a settings change or after 24 hours.
+- A transcription that failed part-way charged nothing to either Whisper limit, though its finished chunks were billed. [D-111](#d-111--operator-only-tier-switching-and-an-honest-pricing-page-2026-10-25) keeps enforcement off the usage meter, so the job has to learn it from the connector.
+
+**Decision.**
+1. **`fetch_text` may raise `TranscriptionCutShort(seconds)`** when a chunk after the first fails. Both extraction loops leave the document unavailable and charge one recording to the count and the recording's reach on its timeline to the minute cap, never the declared length, which was never heard, and never from the meter. A failure on the first chunk billed nothing, so it still returns `None`. The exception carries a number and no provider text, and is raised outside the `except` block, so nothing chains.
+2. **A sync reads details only for what the library lacks,** by `Document.video_id`. A row carries only what the details said, so a document another tenant ingested is never renamed "Unknown" for everyone. A placeholder row titled "Unknown" counts as not yet read, so a video that goes public is corrected by the next sync. A library hit is linked and granted as before ([D-063](#d-063--per-user-isolation-shared-cache-private-catalogue-2026-07-31)).
+3. **The job limit never refuses a subscribe.** It only keeps the first sync from starting, and the response says so in a new `sync_note`. Sync now answers 429 with the sentence `POST /jobs` uses. A sync the broker refused fails its row, so a row nothing will run holds no place. `job_service.refuse_if_at_limit` is the one check.
+4. **A held source chosen on the form is not "unavailable".** **Try X anyway** is the manual way to end a hold, through the source's own answer and with no new route: an answer clears the hold, an empty one included, and a refusal restarts the 24 hours. A template or Duplicate that carries a held source submits with the same note.
+5. **The lookup logs as `videos_audio_language`,** listed in `OPERATION_COSTS` at 1 unit and mapped to `video_metadata` in `YOUTUBE_FEATURES`, so no tenant's figure moves.
+
+**Alternatives considered.**
+- *A new return shape from `fetch_text`.* Its `None` runs through up to four layers, and a falsy result object would fail silently in `extracted is None` callers. An exception needs no change in the layers between, and reaches only callers that allow Whisper.
+- *Charging a part-paid recording at its declared length.* Only part of it was heard.
+- *A route to clear a hold.* `POST /jobs` already took a held source.
+- *Refusing a subscribe at the job limit.* The brief has subscribing always succeed there; only the first sync waits.
+
+**Consequences.**
+- A full library still refuses a subscribe with 429, under T-5.2.10's rule. Whether it should is the owner's call (OQ-38).
+- `POST /jobs` has the same orphan: a failed dispatch returns 500 and leaves a `pending` row counting toward the limit (T-5.2.17).
+- Whisper that answered but left no text is billed and not charged (T-1.7.1.7).
+- A sync no longer refreshes a read document's title or thumbnail, which the bug did by accident, and older documents no longer get the T-1.11.11.4 audio-language key through a sync, so they keep the lazy lookup. A real video titled "Unknown", or a row with a NULL title, is read again on every sync, at most 1 unit per 50.
+- OQ-36 is unchanged. A part-paid recording counts in the sync loop as in the approved one, so such a sync stops one recording sooner.
+- A part-paid recording gets no run note. The document reads unavailable, and the log says how far it got.
+- Existing `api_quota_log` rows keep `videos`. No migration and no new setting.
+
+**Linked initiatives / PRs.** E-1.11 (T-1.11.11.5, T-1.11.11.6), E-5.2 (T-5.2.15, T-5.2.17, OQ-38), E-1.5 (T-1.5.14.6), E-1.7 (T-1.7.1.5, T-1.7.1.7), OQ-36; PR [#424](https://github.com/khoks/VideoResearchPro/pull/424); [D-063](#d-063--per-user-isolation-shared-cache-private-catalogue-2026-07-31), [D-111](#d-111--operator-only-tier-switching-and-an-honest-pricing-page-2026-10-25), [D-141](#d-141--a-connectors-search-raises-on-failure-a-refusal-is-a-24-hour-hold-on-a-sources-own-endpoint-non-video-sources-search-before-youtube-and-a-recording-counts-once-2026-11-05), [D-144](#d-144--a-fifth-voice-label-other-names-no-language-to-write-in-a-job-fills-gaps-and-only-the-backfill-rewrites-and-the-declared-audio-language-is-a-key-on-the-document-2026-11-05), [D-146](#d-146--a-pool-never-carries-the-session-max_concurrent_jobs-is-per-user-a-key-check-says-good-or-bad-only-when-the-provider-did-and-whispers-key-and-count-hold-on-every-sync-2026-11-05).
+
+## D-150 — The cut-off flag is stored as what the check found, a cut answer is never a saved search's baseline, and a cut first answer stands in on the card (2026-11-09)
+
+**Status:** accepted (2026-11-09). Made while building T-1.15.4.8 and T-1.15.4.9 (PR [#426](https://github.com/khoks/VideoResearchPro/pull/426)) and its review fixes, not ruled by the owner. It takes up the alternative [D-145](#d-145--a-cut-off-flag-is-a-fact-about-one-reply-the-offer-keeps-the-cards-scope-and-the-server-never-applies-the-accounts-default-depth-2026-11-05) set aside, storing the flag, and changes how S-8.3.3's change detector treats a cut answer. OQ-29 is untouched. OQ-39 and OQ-40 are the owner's.
+
+**Context.**
+- D-145 left the cut-off note in a client store, so a reload lost it.
+- Q&A-history answers were not checked for a cut, and saved-search runs logged the warning but showed nothing.
+- A run's answer feeds the change detector. A cut answer has lost its end and the `[Source: ...]` citations there, so the cited set shrank. The reader got a false "No longer cites X" alert and email, and the cut answer became the baseline, so the next full answer read as "Now cites N new sources".
+
+**Decision.**
+1. **What the column means.** `answer_cut_off` is a nullable boolean on `qa_exchanges`, `library_qa_exchanges` and `qa_history_exchanges` (migration `7bc07679d355`, no backfill). True and False are what the check found, and False includes a provider that reports no stop reason. NULL is a row from before the column: unknown, never "not cut". Writing False, rather than leaving NULL, keeps a checked denominator, so how often answers are cut can be measured later.
+2. **On the wire a stored row says `true` or nothing,** so uncut and unknown look alike and neither claims "not cut". The fresh replies of `POST /jobs/{id}/qa` and `POST /library/qa` keep sending `false`, as PR [#419](https://github.com/khoks/VideoResearchPro/pull/419) shipped, byte for byte and in key order. `POST /qa-history/chat` is new to the flag and sends it only on a cut.
+3. **A cut answer is never a saved search's baseline, and the gate still moves, with a baseline or without one.** A cut run is not compared, calls no judge, sends no alert, and writes no answer hash, cited ids or embedding. `last_scope_hash` and `last_success_at` advance, because the same question over the same documents gets the same budget, so keeping the gate open would pay every cadence to stop in the same place. The run is stored as `decided_by="cut_off"`, with no new column.
+4. **A cut first answer stands in on the card** while there is no full one, or the card would say "No answer yet" after a run that answered. The card says it was cut (`last_answer_cut_off`, sent only when true), since run history is closed by default. It writes no embedding, so `compare` treats it as no baseline.
+5. **`qaCutOffStore.ts` holds only the depth of the ask,** which a boolean cannot, so D-145 point 2 still keeps Deep from being offered to an answer asked at Deep. After a reload the note stays and the offer goes, which D-145 calls the safe side.
+
+**Alternatives considered.**
+- *Leaving NULL for an uncut answer.* It loses the denominator.
+- *A base class carrying the stored flag.* Pydantic keeps an overridden field at the parent's position, which moved the flag to the front of every fresh reply. Each response declares it last instead.
+- *Keeping the gate open after a cut.* It would re-ask every cadence, against S-8.3.3's "cost follows ingest".
+- *A second column for the ask's depth.* It would bring the offer back after a reload and retire the store (OQ-39).
+
+**Consequences.**
+- A change the cut run could not compare waits for the next ingest, or for **Run now**, which always asks. With no baseline the card holds the cut answer, with its note, until then.
+- A baseline cut before PR [#426](https://github.com/khoks/VideoResearchPro/pull/426) is unknown, so it stays a baseline and may raise one false alert. Nothing can tell those rows apart.
+- A saved-search card with a full answer does not say a later run was cut; only the run history does.
+- The Q&A dataset exports still include cut answers, which can now be filtered (T-1.15.4.10).
+- The cut path has only run on mocked models and on each SDK's own objects offline. No answer has been seen to stop at its budget on a live model (T-1.15.3.6).
+- `requirements.txt` declares `pydantic>=2.12.0`, because `Field(exclude_if=...)` is new in 2.12 and older versions ignore it silently.
+- Owner step: the migration applies on the next API start, before the worker writes the column. On SQLite the downgrade rebuilds the three tables, and their search triggers return at the next API start.
+
+**Linked initiatives / PRs.** E-1.15 (T-1.15.4.8 to T-1.15.4.10, T-1.15.3.6, OQ-39, OQ-40), E-8.3 ([S-8.3.3](initiatives.md#s-833--re-run-change-detection-and-notification)); PR [#426](https://github.com/khoks/VideoResearchPro/pull/426); [D-132](#d-132--qa-brief-keeps-the-whole-thinking-reserve-a-cut-off-report-offers-deep-a-citation-with-no-document-casts-no-vote-and-clarify-is-one-optional-route-2026-11-04), [D-145](#d-145--a-cut-off-flag-is-a-fact-about-one-reply-the-offer-keeps-the-cards-scope-and-the-server-never-applies-the-accounts-default-depth-2026-11-05).
+
+## D-151 — The socket's token is a subprotocol, provider errors are scrubbed as each log record is made, and JSON logs hold their format from the first line (2026-11-09)
+
+**Status:** accepted (2026-11-09). Made while building T-5.4.23, T-1.7.1.6, T-5.6.16 and T-4.11.3.2 (PR [#425](https://github.com/khoks/VideoResearchPro/pull/425)) and its review fixes, not ruled by the owner. **T-5.4.23 was filed as the owner's call.** The main session put it in batch 7 because it is a credential in a log; the owner is free to reverse it. Point 1 closes what [D-085](#d-085--reading-room-reports-stay-html-sanitised-and-parsed-in-the-browser-one-shared-citation-card-fed-by-the-runs-documents-2026-10-19)'s addendum left open, and the context below corrects [D-143](#d-143--the-apis-content-security-policy-is-locked-by-default-oauth-redirects-are-compared-as-origins-a-socket-ends-at-its-tokens-expiry-and-a-shared-link-is-logged-by-host-alone-2026-11-05)'s consequence that no such line had been seen.
+
+**Context.**
+- D-085's addendum left `/ws/jobs` as the one route with a credential in a URL, because a browser cannot set a header on the handshake. It can offer subprotocols.
+- The board said the socket's token had not been seen in a log. The main session found a line of the form `WebSocket /ws/jobs?token=<JWT> [accepted]` in the repo root's gitignored `.uvicorn.log`, dated April, its token long expired. `.uvicorn.out.log` and `.uvicorn.err.log` read clean only because a restart truncates them. So any session that opened a socket wrote its JWT to disk, and a reverse proxy would log the URL too.
+- `sources/podcast/connector.py` logged feed and audio URLs, and a private feed's URL can carry a token.
+- A provider exception can quote a key. It reaches a log line as an argument, in an f-string or as a `logger.exception` traceback, at dozens of call sites in the agents alone, and the app has 191 `logger.exception` calls. A YouTube `HttpError` holds the install's `YOUTUBE_API_KEY` in its URL.
+- Under `LOG_FORMAT=json`, Celery's start banners and the `JWT_SECRET is blank` warning stayed text, so NFR-5.1 did not hold.
+
+**Decision.**
+1. **The socket's token is a subprotocol, offered after `bearer`.** The client opens `new WebSocket(url, ['bearer', token])`. The server authenticates the token exactly as before and answers `bearer` alone, because a browser fails a handshake whose answer names nothing it offered, and the token is never reflected. Every character of a JWT is legal in a subprotocol name. `?token=` is retired, and `test_url_tokens.py` holds every route, the socket included, to no credential in a URL.
+2. **uvicorn's loggers redact credentials** through a filter on `uvicorn.error` and `uvicorn.access` that works on `record.args` and keeps their shape: the values of `token`, `access_token`, `jwt`, `auth`, `authorization` and `code`, and anything shaped like a JWT, which at `--log-level debug` covers the handshake header.
+3. **`code` is in the URL log net but not in `CREDENTIAL_QUERY_NAMES`,** because the OAuth callback must take it from the URL.
+4. **Provider errors are scrubbed in a log-record factory, not at each call site.** `provider_error_text`, the Whisper rule of [D-146](#d-146--a-pool-never-carries-the-session-max_concurrent_jobs-is-per-user-a-key-check-says-good-or-bad-only-when-the-provider-did-and-whispers-key-and-count-hold-on-every-sync-2026-11-05) generalised, names a refusal from `openai`, `anthropic` or `google`, or anything it caused, by its type alone, and takes the shapes of a key out of any other text, tracebacks included. A refusal is told by class name and top-level package, so a log call never imports an SDK. An argument that is not text is judged by the text the line will show for it, and replaced only when that held a key. `ProbeResult.error` is scrubbed where it is made.
+5. **A fetched podcast URL is logged by host and exception type,** as [D-143](#d-143--the-apis-content-security-policy-is-locked-by-default-oauth-redirects-are-compared-as-origins-a-socket-ends-at-its-tokens-expiry-and-a-shared-link-is-logged-by-host-alone-2026-11-05) point 6 does for the article path, and `loggable_id` takes a source id that holds a URL down to its host.
+6. **Under `LOG_FORMAT=json` the start banners are off, and a warning from a settings validator is held until logging has its format,** then said once.
+
+**Alternatives considered.**
+- *First-message auth.* It needs a socket open and unauthenticated, a state the manager does not have.
+- *A single-use ticket.* It needs server state and still puts a credential in a URL.
+- *A filter per logger, or on a handler.* A filter sees only its own logger, and a handler filter is lost whenever uvicorn, Celery or Alembic replaces the handlers. The factory's cost is a regex on each record's strings.
+- *Scrubbing at each call site.* There are too many, and the next one would miss it.
+
+**Consequences.**
+- Provider exception text still reaches stored rows and messages, which are not logs: `jobs.error_message` and the socket's error event, `report_agent`'s map notes and its "Channel narrative generation failed" text, and `outputs.error_message`. A tenant can read some of them, and the key quoted can be the install's (T-5.6.17). Celery's result backend keeps a failed task's traceback in Redis.
+- A key in a shape `scrub_keys` does not know is caught only inside the refusal itself, so a log line should pass the exception, never `e.body` or a response object. Celery swaps an exception that will not pickle for its nearest base class, so its failure line is protected by text alone.
+- NFR-5.1 names two exceptions left: a worker told to stop writes its shutdown notices straight to the stream, and under `uvicorn --reload` or `--workers`, which the launchers do not pass, a parent process writes a few start lines as text.
+- `PodcastConnector.search` keeps the httpx error as its cause, and its traceback quotes a feed URL. Those feeds are public ones iTunes names.
+- Not checked: a real reverse proxy, and a real provider refusing a key.
+- Owner steps: restart the services. A tab still running the old script fails to connect until it is reloaded. Delete the repo root's `.uvicorn.log`.
+
+**Linked initiatives / PRs.** E-5.4 (T-5.4.23), E-1.7 (T-1.7.1.6), E-5.6 (T-5.6.16, T-5.6.17, OQ-21), [S-4.11.3](initiatives.md#s-4113--follow-ups-from-the-operations-pass) (T-4.11.3.2); PR [#425](https://github.com/khoks/VideoResearchPro/pull/425); [D-085](#d-085--reading-room-reports-stay-html-sanitised-and-parsed-in-the-browser-one-shared-citation-card-fed-by-the-runs-documents-2026-10-19), [D-124](#d-124--second-factor-attempts-count-on-the-ticket-one-bearer-check-for-http-and-the-socket-and-a-validation-error-never-quotes-what-was-sent-2026-11-04), [D-143](#d-143--the-apis-content-security-policy-is-locked-by-default-oauth-redirects-are-compared-as-origins-a-socket-ends-at-its-tokens-expiry-and-a-shared-link-is-logged-by-host-alone-2026-11-05), [D-146](#d-146--a-pool-never-carries-the-session-max_concurrent_jobs-is-per-user-a-key-check-says-good-or-bad-only-when-the-provider-did-and-whispers-key-and-count-hold-on-every-sync-2026-11-05).
+
+## D-152 — CORS reads the OAuth origin list, and the app keeps tiktoken's encoding in a folder of its own (2026-11-09)
+
+**Status:** accepted (2026-11-09). Made while building T-4.11.3.3, T-8.8.6.5 and T-4.11.3.1 (PR [#427](https://github.com/khoks/VideoResearchPro/pull/427)) and its review fix, not ruled by the owner. **T-8.8.6.5 was filed as the owner's call.** The main session put it in batch 7 because it has no product trade-off; the owner is free to reverse it. Point 1 extends [D-143](#d-143--the-apis-content-security-policy-is-locked-by-default-oauth-redirects-are-compared-as-origins-a-socket-ends-at-its-tokens-expiry-and-a-shared-link-is-logged-by-host-alone-2026-11-05) point 4 to CORS, and point 5 extends [D-147](#d-147--the-rendering-parser-decides-what-is-a-heading-in-book-markdown-a-rewrite-parses-what-it-will-emit-and-the-suites-tiktoken-file-lives-at-a-fixed-path-2026-11-05) point 6 from the suite to the app.
+
+**Context.**
+- CORS `allow_origins` was hard-coded to `localhost:5173` and `:3000`, so an install at any other address needed a code edit, and a page at `:3000` passed CORS and then got a 400 at OAuth start.
+- Nothing serves the app at `:3000`: its only uses were the CORS line itself and the docs describing it. A worktree's live check goes through the Vite proxy, Playwright serves its own fixtures, and the extension's host permissions bypass CORS.
+- Only the suite kept tiktoken's encoding at a fixed path. A worker fetched into the temp directory, and `chunking._count_tokens` has no fallback, so a cleared temp directory plus a network drop would fail a job at chunking.
+- With the folder named in the environment, tiktoken re-raises an error from writing what it downloaded. On Windows a rename onto an existing file raises `FileExistsError`, and tiktoken's lock covers one process's threads only.
+- `docs/architecture.md` still said Whisper minutes were not recorded.
+
+**Decision.**
+1. **CORS reads the OAuth origin list.** The API answers the origin of `APP_BASE_URL` plus `OAUTH_ALLOWED_REDIRECT_ORIGINS`, compared by scheme, host and port by the same `app_origins.allows()` as OAuth start, read when each runs, with the parse cached by value. Starlette's `allow_origins` stays empty, so its `*` branch, which with credentials echoes any origin, is never taken.
+2. **The setting keeps its name,** though it now covers more than it says, because a rename breaks every `.env` that pins it.
+3. **An entry containing `*` is refused,** logged and skipped, never fatal, because the API allows credentials.
+4. **`localhost:3000` is no longer a default.** An install that used it adds it to the list.
+5. **The app keeps tiktoken's encoding in `TIKTOKEN_ENCODINGS_DIR`** (`./data/tiktoken`), set at import in the API and the worker. A `TIKTOKEN_CACHE_DIR` or `DATA_GYM_CACHE_DIR` already in the environment wins, so the suite keeps its arrangement. Empty means tiktoken's default. A copy in the temp folder is brought over in one atomic step. A folder that cannot be written leaves the default, with a warning. A missing encoding still fails loudly.
+6. **Every load in `app/` goes through `tiktoken_cache.encoding()`,** which tolerates losing the first download to another process: it removes its own spare download and loads once more, reading the winner's copy under tiktoken's hash check. The same error twice is raised.
+
+**Alternatives considered.**
+- *A CORS list of its own.* Two lists can disagree, which is how a page at `:3000` passed CORS and failed at OAuth start.
+- *A cross-process lock around the first download.* It needs a stale-lock timeout for a process that dies holding it, and still misses any process that does not take it.
+- *A word-count fallback in chunking.* It would miscount silently.
+
+**Consequences.**
+- An app opened anywhere other than `http://localhost:5173`, `localhost:3000` included, needs `APP_BASE_URL` set to that address or its origin added, or every API call fails in the browser as a CORS error. The owner's `.env` sets neither, so the default install is unaffected.
+- `backend/scripts/*` still use tiktoken's temp default (T-8.8.6.6), and `report_agent._count_tokens` and `knowledge_agent._count_tokens` still fall back to counting words, as before PR [#421](https://github.com/khoks/VideoResearchPro/pull/421) (T-8.8.6.7).
+- The WebSocket handshake checks no `Origin`: CORS does not cover sockets, and the token travels as a subprotocol only the app's own page holds ([D-151](#d-151--the-sockets-token-is-a-subprotocol-provider-errors-are-scrubbed-as-each-log-record-is-made-and-json-logs-hold-their-format-from-the-first-line-2026-11-09)).
+- An internationalised host in `APP_BASE_URL` is compared as written, not in the punycode a browser sends, as since PR [#420](https://github.com/khoks/VideoResearchPro/pull/420).
+- `docs/architecture.md`'s usage paragraph now says Whisper seconds are recorded, that a scope writes part-way, and that the per-run Whisper limits count inside the task, not from the usage numbers ([D-131](#d-131--whisper-is-charged-at-the-shared-call-and-usage-is-written-part-way-on-a-timer-after-every-billed-response-2026-11-04)).
+- Owner step: restart the API and the worker. On its first count each copies `cl100k_base` from the temp folder, or downloads it once.
+
+**Linked initiatives / PRs.** [S-4.11.3](initiatives.md#s-4113--follow-ups-from-the-operations-pass) (T-4.11.3.1, T-4.11.3.3), [S-8.8.6](initiatives.md#s-886--follow-ups-from-the-reader-and-test-infra-pass) (T-8.8.6.5 to T-8.8.6.7); PR [#427](https://github.com/khoks/VideoResearchPro/pull/427); [D-131](#d-131--whisper-is-charged-at-the-shared-call-and-usage-is-written-part-way-on-a-timer-after-every-billed-response-2026-11-04), [D-143](#d-143--the-apis-content-security-policy-is-locked-by-default-oauth-redirects-are-compared-as-origins-a-socket-ends-at-its-tokens-expiry-and-a-shared-link-is-logged-by-host-alone-2026-11-05), [D-147](#d-147--the-rendering-parser-decides-what-is-a-heading-in-book-markdown-a-rewrite-parses-what-it-will-emit-and-the-suites-tiktoken-file-lives-at-a-fixed-path-2026-11-05), [D-151](#d-151--the-sockets-token-is-a-subprotocol-provider-errors-are-scrubbed-as-each-log-record-is-made-and-json-logs-hold-their-format-from-the-first-line-2026-11-09).

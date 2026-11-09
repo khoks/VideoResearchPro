@@ -194,10 +194,10 @@ function ConnectorRow({ connector }: { connector: ConnectorItem }) {
             <Button
               variant="danger"
               loading={revoke.isPending}
-              onClick={async () => {
-                await revoke.mutateAsync(connector.name);
-                setConfirming(false);
-              }}
+              // `mutate`, not an awaited `mutateAsync`, which rejected unhandled on a
+              // failure. The failure is the global toast's, said once; the dialog
+              // stays open to try again (T-3.4.1.20).
+              onClick={() => revoke.mutate(connector.name, { onSuccess: () => setConfirming(false) })}
             >
               Disconnect and delete
             </Button>

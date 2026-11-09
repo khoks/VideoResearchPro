@@ -1,12 +1,13 @@
 import { useState } from 'react';
+import { useIsMutating } from '@tanstack/react-query';
 import type { Tag } from '../../services/tagsApi';
-import { useDeleteTag, useTags, useUpdateTag } from '../../hooks/useTags';
+import { tagEditsKey, useDeleteTag, useTags, useUpdateTag } from '../../hooks/useTags';
 import { PaletteField } from '../labels/PaletteField';
 import { Button, Input, LabelPill, Modal, Select, Spinner } from '../primitives';
 import { useColors } from '../../hooks/useTheme';
 import { fonts, fontSize, radius, space } from '../../theme';
 import type { PaletteColor } from '../../theme';
-import { apiErrorMessage } from '../../utils/apiError';
+import { inlineErrorMessage } from '../../utils/apiError';
 
 /**
  * Rename, recolour, merge and delete the reader's tags (S-8.1.3). A rename
@@ -18,9 +19,26 @@ export function TagsManagerModal({ open, onClose }: { open: boolean; onClose: ()
   const c = useColors();
   const tagsQuery = useTags();
   const tags = tagsQuery.data ?? [];
+  // Each row says its own failure, and only there (T-3.4.1.18). Closing would
+  // take the row and its line with it, so while a save, merge or delete is in
+  // flight, Close, Escape and the backdrop wait for the answer.
+  const busy = useIsMutating({ mutationKey: tagEditsKey }) > 0;
+  const dismiss = () => {
+    if (!busy) onClose();
+  };
 
   return (
-    <Modal open={open} onClose={onClose} title="Your tags" footer={null} maxWidth={640}>
+    <Modal
+      open={open}
+      onClose={dismiss}
+      title="Your tags"
+      maxWidth={640}
+      footer={
+        <Button variant="secondary" onClick={dismiss} disabled={busy}>
+          Close
+        </Button>
+      }
+    >
       {tagsQuery.isLoading ? (
         <Spinner size={18} />
       ) : tags.length === 0 ? (
@@ -58,13 +76,15 @@ function TagRow({ tag, others }: { tag: Tag; others: Tag[] }) {
     setEditing(true);
   };
 
+  // Each failure is said here, on the tag's row, and nowhere else: the hooks set
+  // `meta` so the global toast stands aside, and a 401 says nothing (T-3.4.1.18).
   const save = () => {
     setError(null);
     update.mutate(
       { id: tag.id, body: { name: name.trim(), color } },
       {
         onSuccess: () => setEditing(false),
-        onError: (err) => setError(apiErrorMessage(err, 'Could not save the tag.')),
+        onError: (err) => setError(inlineErrorMessage(err, 'Could not save the tag.')),
       },
     );
   };
@@ -74,13 +94,13 @@ function TagRow({ tag, others }: { tag: Tag; others: Tag[] }) {
     setError(null);
     del.mutate(
       { id: tag.id, into: mergeInto },
-      { onError: (err) => setError(apiErrorMessage(err, 'Could not merge the tag.')) },
+      { onError: (err) => setError(inlineErrorMessage(err, 'Could not merge the tag.')) },
     );
   };
 
   const remove = () => {
     setError(null);
-    del.mutate({ id: tag.id }, { onError: (err) => setError(apiErrorMessage(err, 'Could not delete the tag.')) });
+    del.mutate({ id: tag.id }, { onError: (err) => setError(inlineErrorMessage(err, 'Could not delete the tag.')) });
   };
 
   return (

@@ -4,6 +4,7 @@ import {
   type JobTemplateCreate,
   type JobTemplateUpdate,
 } from '../services/jobTemplatesApi';
+import { ERRORS_SHOWN_HERE } from '../services/queryClient';
 
 export const templatesKey = ['jobTemplates'] as const;
 
@@ -48,6 +49,8 @@ export function useDeleteTemplate() {
   return useMutation({
     mutationFn: (id: string) => jobTemplatesApi.remove(id),
     onSuccess: () => void qc.invalidateQueries({ queryKey: templatesKey }),
+    // Its one caller, the template's card, says a failure on the card (T-3.4.1.18).
+    meta: ERRORS_SHOWN_HERE,
   });
 }
 

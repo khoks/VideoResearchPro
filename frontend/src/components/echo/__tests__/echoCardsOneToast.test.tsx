@@ -193,6 +193,62 @@ describe('the drop zone', () => {
   });
 });
 
+// T-3.4.1.19: every file of a drop that landed is said, in the drop zone's own
+// words, one toast each. A per-call `onSuccess` runs for an observer's last
+// `mutate` only, so of several files only the last was named. Mutation checks,
+// run on 2026-11-09: putting back the per-call `onSuccess` on `upload.mutate`
+// fails "names each of three dropped files" (the mixed drop still passes, its
+// last file being the one that landed); on `create.mutate`, "says a link and
+// some text dropped one after the other"; taking out the `mounted` check fails
+// "says nothing once the zone has gone".
+describe('the drop zone, when files land', () => {
+  const pdf = (name: string) => new File(['x'], name, { type: 'application/pdf' });
+
+  it('names each of three dropped files, once each', async () => {
+    await mount(<EchoDropZone />);
+    drop({ types: ['Files'], files: [pdf('one.pdf'), pdf('two.pdf'), pdf('three.pdf')] });
+    await flush();
+    expect(api.uploadShare).toHaveBeenCalledTimes(3);
+    expect(toastMessages()).toEqual(['Added one.pdf to Echo.', 'Added two.pdf to Echo.', 'Added three.pdf to Echo.']);
+  });
+
+  it('says the file that landed and the one that failed, one message each', async () => {
+    api.uploadShare.mockReset().mockImplementation(async (file: File) => {
+      if (file.name === 'one.pdf') throw failures.noWords();
+      return {};
+    });
+    await mount(<EchoDropZone />);
+    drop({ types: ['Files'], files: [pdf('one.pdf'), pdf('two.pdf')] });
+    await flush();
+    expect(toastMessages().sort()).toEqual(['Added two.pdf to Echo.', 'Could not add one.pdf.']);
+  });
+
+  it('says a link and some text dropped one after the other', async () => {
+    let landLink: (v: unknown) => void = () => undefined;
+    api.createShare.mockReset().mockReturnValueOnce(new Promise((r) => (landLink = r))).mockResolvedValueOnce({});
+    await mount(<EchoDropZone />);
+    drop({ types: ['text/uri-list'], text: { 'text/uri-list': 'https://example.com/a' } });
+    drop({ types: ['text/plain'], text: { 'text/plain': 'A thought worth keeping, in a few words.' } });
+    await flush();
+    await act(async () => landLink({}));
+    await flush();
+    expect(toastMessages().sort()).toEqual(['Link added to Echo.', 'Text added to Echo.']);
+  });
+
+  it('says nothing once the zone has gone with the session', async () => {
+    let land: (v: unknown) => void = () => undefined;
+    api.uploadShare.mockReset().mockReturnValueOnce(new Promise((r) => (land = r)));
+    await mount(<EchoDropZone />);
+    drop({ types: ['Files'], files: [pdf('private.pdf')] });
+    await flush();
+    act(() => root.unmount());
+    await act(async () => land({}));
+    await flush();
+    expect(toastMessages()).toEqual([]);
+    root = createRoot(host);
+  });
+});
+
 describe('deleting everything', () => {
   // A delete sweeps every store and can take a while: the reader may leave.
   it('is still said once the reader has left the card', async () => {

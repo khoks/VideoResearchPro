@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { ERRORS_SHOWN_HERE } from '../services/queryClient';
 import { rememberCutOff } from '../stores/qaCutOffStore';
 import type { LibraryQARequest } from '../types/qa';
 import {
@@ -87,6 +88,8 @@ export function useDeleteShelf() {
       qc.removeQueries({ queryKey: shelvesKeys.documents(id) });
       void qc.invalidateQueries({ queryKey: shelvesKeys.all });
     },
+    // Its one caller, the delete modal, says a failure in the modal (T-3.4.1.18).
+    meta: ERRORS_SHOWN_HERE,
   });
 }
 

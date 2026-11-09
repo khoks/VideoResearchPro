@@ -49,7 +49,7 @@ import {
   validateContextKey,
   type KindGroup,
 } from '../utils/echoReadiness';
-import { detailFromErrorBody, type HttpErrorLike } from '../utils/ingestResults';
+import type { HttpErrorLike } from '../utils/ingestResults';
 
 function isForbidden(err: unknown): boolean {
   return (err as HttpErrorLike | null)?.response?.status === 403;
@@ -144,11 +144,7 @@ export function EchoPage() {
           pushToast('success', state.mode === 'edit' ? 'Entry updated.' : 'Echo learned something new.');
           setForm(null);
         },
-        onError: (err) =>
-          pushToast(
-            'error',
-            detailFromErrorBody((err as HttpErrorLike).response?.data) ?? 'Could not save this entry.',
-          ),
+        // A failure is said by the hook, once, even after the reader has left (T-3.4.1.17).
       },
     );
   };
@@ -162,7 +158,6 @@ export function EchoPage() {
           pushToast('success', `Forgot “${deleting.key}”.`);
           setDeleting(null);
         },
-        onError: () => pushToast('error', 'Delete failed. The entry may already be gone.'),
       },
     );
   };
@@ -174,7 +169,6 @@ export function EchoPage() {
         pushToast('success', `Removed ${resp.deleted_count} ${resp.deleted_count === 1 ? 'entry' : 'entries'} from ${revoking.source}.`);
         setRevoking(null);
       },
-      onError: () => pushToast('error', 'Revoke failed.'),
     });
   };
 

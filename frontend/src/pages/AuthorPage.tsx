@@ -35,7 +35,6 @@ import { fonts, fontSize, fontWeight, lineHeight, measure, radius, space } from 
 import { formatDate } from '../utils/formatters';
 import { downloadUrl } from '../utils/download';
 import {
-  describeCreateError,
   COHESION_OPTIONS,
   DEFAULT_COHESION,
   deckSourceIds,
@@ -135,10 +134,8 @@ export function AuthorPage() {
   }, [finished, navigate, pushToast]);
 
   const cancel = (output: OutputItem) =>
-    cancelMut.mutate(output.id, {
-      onSuccess: () => pushToast('info', `Cancelled “${output.title}”.`),
-      onError: () => pushToast('error', 'Could not cancel; it may already have finished.'),
-    });
+    // Every failure on this page is said by its hook, once (T-3.4.1.17).
+    cancelMut.mutate(output.id, { onSuccess: () => pushToast('info', `Cancelled “${output.title}”.`) });
 
   const forbidden = isForbidden(kinds.error) || isForbidden(outputs.error);
   const partition = useMemo(() => partitionKinds(kinds.data), [kinds.data]);
@@ -162,7 +159,6 @@ export function AuthorPage() {
         pushToast('success', `Deleted “${deleting.title}”.`);
         setDeleting(null);
       },
-      onError: () => pushToast('error', 'Delete failed. The output may already be gone.'),
     });
   };
 
@@ -722,7 +718,6 @@ function CreateOutputModal({
           }
           onCreated(output);
         },
-        onError: (err) => pushToast('error', describeCreateError(err as HttpErrorLike, kind)),
       },
     );
   };

@@ -8,6 +8,13 @@
  * - Pairs come one at a time, in plain text, and a pick moves to the next.
  * - The result needs every pair, comes from the server, and refreshes the
  *   draft gate.
+ *
+ * T-3.4.1.17: a failed start, pick or score is one toast, said by the hook, under
+ * the app's own query client, and none for a 401. Mutation checks, run on
+ * 2026-11-09: `meta` off the three hooks fails each failure row but
+ * `sessionEnded` with two toasts; the start toast moved back onto the panel's
+ * `mutate` fails "once the reader has left"; `toastMutationError` without its 401
+ * check fails each `sessionEnded` row.
  */
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -15,6 +22,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { VoiceTest, VoiceTestOverview } from '../../../services/echoApi';
 import { useJobStore } from '../../../stores/jobStore';
+import { createQueryClient } from '../../../services/queryClient';
+import { FAILURE_KINDS, expectedToasts, failures, toastMessages } from '../../../services/__tests__/failures';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -69,8 +78,7 @@ async function flush() {
   }
 }
 
-async function mount(shown: string[] = []) {
-  const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+async function mount(shown: string[] = [], qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })) {
   act(() => root.render(<QueryClientProvider client={qc}><VoiceTestPanel shown={shown} /></QueryClientProvider>));
   await flush();
 }
@@ -238,5 +246,55 @@ describe('VoiceTestPanel', () => {
     api.voiceTest.mockResolvedValue({ ...NONE, test: test_() });
     await mount();
     expect(host.innerHTML).not.toContain('own_is');
+  });
+});
+
+describe('one toast (T-3.4.1.17)', () => {
+  const SITES = [
+    {
+      name: 'starting the test',
+      overview: () => NONE,
+      call: () => api.startVoiceTest,
+      press: 'Start the test',
+      fallback: "Couldn't start the test. Try again.",
+    },
+    {
+      name: 'a pick',
+      overview: () => ({ ...NONE, test: test_() }),
+      call: () => api.pickVoiceTest,
+      press: 'I wrote A',
+      fallback: "Couldn't save that pick. Try again.",
+    },
+    {
+      name: 'scoring',
+      overview: () => ({ ...NONE, test: test_({ picks: { p01: 'A', p02: 'B', p03: 'A' } }) }),
+      call: () => api.scoreVoiceTest,
+      press: 'See my result',
+      fallback: "Couldn't score the test. Try again.",
+    },
+  ];
+
+  describe.each(SITES)('for $name', (site) => {
+    it.each(FAILURE_KINDS)('a failure (%s) is said once, under the app’s client', async (kind) => {
+      api.voiceTest.mockResolvedValue(site.overview());
+      site.call().mockRejectedValueOnce(failures[kind]());
+      await mount([], createQueryClient());
+      await click(site.press);
+      expect(toastMessages()).toEqual(expectedToasts(kind, site.fallback));
+    });
+
+    // A test is written by the model for minutes; the reader may well have left.
+    it('is still said once the reader has left the panel', async () => {
+      api.voiceTest.mockResolvedValue(site.overview());
+      let fail: (reason: unknown) => void = () => undefined;
+      site.call().mockReturnValueOnce(new Promise((_, reject) => (fail = reject)) as never);
+      await mount([], createQueryClient());
+      await click(site.press);
+      act(() => root.unmount());
+      await act(async () => fail(failures.noWords()));
+      await flush();
+      expect(toastMessages()).toEqual([site.fallback]);
+      root = createRoot(host);
+    });
   });
 });

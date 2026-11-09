@@ -1,6 +1,10 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { authorApi, type CreateOutputPayload, type ListOutputsParams, type NewsletterSettings } from '../services/authorApi';
-import { KNOWLEDGE_SOURCES_LIMIT } from '../utils/authorOutputs';
+import { ERRORS_SHOWN_HERE, toastMutationError } from '../services/queryClient';
+import { useJobStore } from '../stores/jobStore';
+import { isSessionEnded } from '../utils/apiError';
+import { KNOWLEDGE_SOURCES_LIMIT, describeCreateError } from '../utils/authorOutputs';
+import type { HttpErrorLike } from '../utils/ingestResults';
 
 const OUTPUTS_KEY = ['author', 'outputs'] as const;
 
@@ -87,11 +91,17 @@ export function useNewsletter(enabled = true) {
   return useQuery({ queryKey: NEWSLETTER_KEY, queryFn: () => authorApi.getNewsletter(), enabled });
 }
 
+// A mutation below that names `toastMutationError` answers its own failures in its
+// own `onError`: one failure, one toast, said even once the page has gone (D-148
+// point 5, T-3.4.1.17). Each has one caller, whose own toast moved here.
+
 export function useSaveNewsletter() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (settings: NewsletterSettings) => authorApi.saveNewsletter(settings),
     onSuccess: (sub) => qc.setQueryData(NEWSLETTER_KEY, sub),
+    onError: (err) => toastMutationError(err, 'Could not save the digest settings.'),
+    meta: ERRORS_SHOWN_HERE,
   });
 }
 
@@ -111,6 +121,8 @@ export function useSendNewsletterNow() {
       qc.invalidateQueries({ queryKey: NEWSLETTER_KEY });
       qc.invalidateQueries({ queryKey: OUTPUTS_KEY });
     },
+    onError: (err) => toastMutationError(err, 'Could not start an issue.'),
+    meta: ERRORS_SHOWN_HERE,
   });
 }
 
@@ -121,7 +133,11 @@ export function useCreateOutput() {
     onSuccess: () => qc.invalidateQueries({ queryKey: OUTPUTS_KEY }),
     // S-6.7.1: a 501 no longer writes a row, but a queue failure records a
     // `failed` row, so refresh on error too.
-    onError: () => qc.invalidateQueries({ queryKey: OUTPUTS_KEY }),
+    onError: (err, payload) => {
+      qc.invalidateQueries({ queryKey: OUTPUTS_KEY });
+      if (!isSessionEnded(err)) useJobStore.getState().pushToast('error', describeCreateError(err as HttpErrorLike, payload.kind));
+    },
+    meta: ERRORS_SHOWN_HERE,
   });
 }
 
@@ -133,6 +149,8 @@ export function useDeleteOutput() {
       qc.invalidateQueries({ queryKey: OUTPUTS_KEY });
       qc.removeQueries({ queryKey: ['author', 'content', id] });
     },
+    onError: (err) => toastMutationError(err, 'Delete failed. The output may already be gone.'),
+    meta: ERRORS_SHOWN_HERE,
   });
 }
 
@@ -145,5 +163,7 @@ export function useCancelOutput() {
       qc.invalidateQueries({ queryKey: OUTPUTS_KEY });
       qc.invalidateQueries({ queryKey: ['author', 'output', id] });
     },
+    onError: (err) => toastMutationError(err, 'Could not cancel; it may already have finished.'),
+    meta: ERRORS_SHOWN_HERE,
   });
 }

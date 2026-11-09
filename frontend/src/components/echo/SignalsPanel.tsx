@@ -31,7 +31,6 @@ import {
   type SignalGroup,
   type SignalLayer,
 } from '../../utils/echoSignals';
-import { detailFromErrorBody, type HttpErrorLike } from '../../utils/ingestResults';
 import { formatDate } from '../../utils/formatters';
 
 interface FormState {
@@ -70,13 +69,9 @@ export function SignalsPanel() {
         const t = learnToast(resp.status);
         pushToast(t.tone, t.text);
       },
-      onError: (e) => failed(e, 'Could not start learning. Try again.'),
     });
   const groups = groupSignals(items);
   const text: React.CSSProperties = { margin: 0, fontFamily: fonts.body, fontSize: fontSize.sm, color: c.textSecondary, lineHeight: lineHeight.normal };
-
-  const failed = (err: unknown, fallback: string) =>
-    pushToast('error', detailFromErrorBody((err as HttpErrorLike).response?.data) ?? fallback);
 
   const submit = (state: FormState) => {
     const language = state.language || null;
@@ -84,12 +79,12 @@ export function SignalsPanel() {
     if (state.mode === 'create') {
       create.mutate(
         { signal_type: state.signal_type, value: state.value.trim(), language, register },
-        { onSuccess: () => setForm(null), onError: (e) => failed(e, 'Could not add the signal.') },
+        { onSuccess: () => setForm(null) },
       );
     } else if (state.id) {
       update.mutate(
         { id: state.id, payload: { value: state.value.trim(), language, register } },
-        { onSuccess: () => setForm(null), onError: (e) => failed(e, 'Could not save the signal.') },
+        { onSuccess: () => setForm(null) },
       );
     }
   };
@@ -101,7 +96,6 @@ export function SignalsPanel() {
         setRejecting(null);
         pushToast('success', 'Forgotten. Echo will not learn that again.');
       },
-      onError: (e) => failed(e, 'Could not remove the signal.'),
     });
   };
 
@@ -230,11 +224,7 @@ function RejectedSignals() {
   if (items.length === 0) return null;
 
   const doRestore = (s: RejectedSignal) =>
-    restore.mutate(s.id, {
-      onSuccess: (resp) => pushToast('success', restoreToast(resp.live)),
-      onError: (e) =>
-        pushToast('error', detailFromErrorBody((e as HttpErrorLike).response?.data) ?? 'Could not restore the signal.'),
-    });
+    restore.mutate(s.id, { onSuccess: (resp) => pushToast('success', restoreToast(resp.live)) });
 
   return (
     <details data-rejected style={{ marginTop: space['4'] }}>

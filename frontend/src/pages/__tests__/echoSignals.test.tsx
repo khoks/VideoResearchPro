@@ -4,6 +4,12 @@
  * call the API: add, correct, and "That's not me" (the tombstone). The
  * Echo page mounts it, and the data card counts signals among what a
  * delete removes.
+ *
+ * T-3.4.1.17: each of its five actions says a failure once, from its hook, under
+ * the app's own query client, and nothing of a 401. Mutation checks, run on
+ * 2026-11-09: `meta` off the five hooks fails every failure row but
+ * `sessionEnded` with two toasts; the panel's old `failed(...)` put back on
+ * "That's not me" fails each of that site's rows, a 401 included.
  */
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -12,6 +18,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RejectedSignal, VoiceSignal, VoiceSignalList } from '../../services/echoApi';
 import { SIGNAL_LANGUAGES, SIGNAL_TYPES, evidenceSummary, groupSignals, languageLabel, learningSummary, originLabel, restoreToast, sourceLabel } from '../../utils/echoSignals';
 import { useJobStore } from '../../stores/jobStore';
+import { createQueryClient } from '../../services/queryClient';
+import { FAILURE_KINDS, clearToasts, expectedToasts, failures, toastMessages } from '../../services/__tests__/failures';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -86,8 +94,7 @@ async function flush() {
   }
 }
 
-async function mount() {
-  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+async function mount(qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })) {
   act(() =>
     root.render(
       <QueryClientProvider client={qc}>
@@ -340,6 +347,83 @@ describe('Rejected (T-3.3.1.6)', () => {
     await act(async () => buttons("That's not me").find((b) => !host.contains(b))!.click());
     await flush();
     expect(api.listRejectedSignals.mock.calls.length).toBeGreaterThan(before);
+  });
+});
+
+describe('one toast (T-3.4.1.17)', () => {
+  const CRICKET: RejectedSignal = { ...signal({ id: 'sig-cricket', value: 'Cricket', language: 'en' }), rejected_at: '2026-10-20T10:00:00Z' };
+  const rowButton = (id: string, label: string) =>
+    Array.from(host.querySelectorAll(`[data-signal="${id}"] button`)).find((b) => b.textContent === label) as HTMLButtonElement;
+
+  const SITES = [
+    {
+      name: 'Learn now',
+      call: () => api.learnSignals,
+      before: () =>
+        api.listSignals.mockResolvedValue({
+          items: [INTEREST],
+          consent_version: '2026-10-19',
+          learning: { mode: 'celery', inputs: 5, by_language: { en: 5 }, pending: 3, threshold: 10, last_learned_at: null },
+        }),
+      go: async () => {
+        await act(async () => buttons('Learn now')[0].click());
+      },
+      fallback: 'Could not start learning. Try again.',
+    },
+    {
+      name: 'adding a signal',
+      call: () => api.createSignal,
+      before: () => undefined,
+      go: async () => {
+        act(() => buttons('Add')[0].click());
+        const dialog = document.querySelector('[role="dialog"]')!;
+        act(() => setField(dialog.querySelector('textarea')!, 'Short sentences.'));
+        await act(async () => buttons('Add').find((b) => dialog.contains(b))!.click());
+      },
+      fallback: 'Could not add the signal.',
+    },
+    {
+      name: 'correcting a signal',
+      call: () => api.updateSignal,
+      before: () => undefined,
+      go: async () => {
+        act(() => rowButton('sig-framing', 'Edit').click());
+        await act(async () => buttons('Save')[0].click());
+      },
+      fallback: 'Could not save the signal.',
+    },
+    {
+      name: '“That’s not me”',
+      call: () => api.rejectSignal,
+      before: () => undefined,
+      go: async () => {
+        act(() => rowButton('sig-framing', "That's not me").click());
+        await act(async () => buttons("That's not me").find((b) => !host.contains(b))!.click());
+      },
+      fallback: 'Could not remove the signal.',
+    },
+    {
+      name: 'restoring a rejected signal',
+      call: () => api.restoreSignal,
+      before: () => api.listRejectedSignals.mockResolvedValue({ items: [CRICKET] }),
+      go: async () => {
+        await act(async () => buttons('Restore')[0].click());
+      },
+      fallback: 'Could not restore the signal.',
+    },
+  ];
+
+  describe.each(SITES)('$name', (site) => {
+    it.each(FAILURE_KINDS)('says a failure (%s) once', async (kind) => {
+      site.before();
+      (site.call() as ReturnType<typeof vi.fn>).mockRejectedValueOnce(failures[kind]());
+      await mount(createQueryClient());
+      clearToasts();
+      await site.go();
+      await flush();
+      expect(site.call()).toHaveBeenCalled();
+      expect(toastMessages()).toEqual(expectedToasts(kind, site.fallback));
+    });
   });
 });
 

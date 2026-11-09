@@ -6,7 +6,6 @@ import { useColors } from '../../hooks/useTheme';
 import { fonts, fontSize, fontWeight, lineHeight, space } from '../../theme';
 import { kindLabel } from '../../utils/echoReadiness';
 import { formatDate } from '../../utils/formatters';
-import { detailFromErrorBody, type HttpErrorLike } from '../../utils/ingestResults';
 
 /** Whether a fact with this `source` was worked out by a connector or an
  * import, so deleting it records a tombstone (T-3.2.4.4). */
@@ -84,11 +83,8 @@ export function FactTombstones({ enabled = true }: { enabled?: boolean }) {
   if (items.length === 0) return null;
 
   const allow = (t: FactTombstone) =>
-    clear.mutate(t.id, {
-      onSuccess: () => pushToast('success', clearedToast(t)),
-      onError: (e) =>
-        pushToast('error', detailFromErrorBody((e as HttpErrorLike).response?.data) ?? 'Could not allow it again.'),
-    });
+    // A failure is said by the hook, once (T-3.4.1.17).
+    clear.mutate(t.id, { onSuccess: () => pushToast('success', clearedToast(t)) });
 
   return (
     <details data-fact-tombstones style={{ marginTop: space['4'] }}>

@@ -6,7 +6,6 @@ import { Button, Card, Input, Modal, Skeleton } from '../primitives';
 import { useColors } from '../../hooks/useTheme';
 import { fonts, fontSize, fontWeight, lineHeight, space } from '../../theme';
 import { footprintTotal, isFootprintEmpty } from '../../utils/echoShares';
-import { detailFromErrorBody, type HttpErrorLike } from '../../utils/ingestResults';
 
 const TYPE_TO_CONFIRM = 'DELETE';
 
@@ -48,8 +47,7 @@ export function EchoDataCard() {
             : 'Delete finished, but something was left; see the counts.',
         );
       },
-      onError: (err) =>
-        pushToast('error', detailFromErrorBody((err as HttpErrorLike).response?.data) ?? 'Delete failed. Nothing past the failing store was removed; try again.'),
+      // A failure is said by the hook, once, even after the reader has left (T-3.4.1.17).
     });
 
   const fp = footprint.data;

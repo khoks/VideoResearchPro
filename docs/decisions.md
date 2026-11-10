@@ -3968,6 +3968,8 @@ For reference: run 9's outcome (1–0–2, 8.67 vs 8.67) passes the amended rule
 
 **Status-changed 2026-11-04:** refined by [D-134](#d-134--a-live-manual-fact-holds-its-key-against-every-source-a-401-retries-one-call-a-lease-guards-the-refresh-token-and-a-changed-row-beats-a-refresh-answer-2026-11-04) (PR [#409](https://github.com/khoks/VideoResearchPro/pull/409)). Point 1: a typed fact that has turned a source away now gets a tombstone, through `personal_context.wanted_by`. Point 3: a 401 on a token just issued, or with nothing to renew with, also asks for a reconnect. T-3.2.1.11, T-3.2.1.12 and T-3.3.1.7 are closed.
 
+**Status-changed 2026-11-10:** a derived fact whose key holds `/` is now deleted by its route, its tombstone keeps the whole key, and the next sync skips it ([D-174](#d-174--a-facts-key-is-the-rest-of-its-delete-routes-path-the-access-log-writes-all-of-it-and-the-echo-pages-form-accepts--in-a-label-2026-11-10), T-3.1.1.1, PR [#462](https://github.com/khoks/VideoResearchPro/pull/462)).
+
 ## D-123 — Unused read routes are removed, an output's Sources list groups by source, and a language badge names a language only on evidence (2026-11-04)
 
 **Status:** accepted (2026-11-04). Made while building the reader and route gaps (S-8.8.5, T-8.8.4.1, T-1.16.1.9, PR [#396](https://github.com/khoks/VideoResearchPro/pull/396)) and its review fixes, not ruled by the owner.
@@ -5048,6 +5050,8 @@ For reference: run 9's outcome (1–0–2, 8.67 vs 8.67) passes the amended rule
 
 **Status-changed 2026-11-10 (II):** the same filter now also writes a user's words in a URL path by their length, chosen by route template, today a fact's key in `DELETE /echo/context/{kind}/{key}`; a path no template matches is written whole ([D-171](#d-171--a-users-words-in-a-url-path-are-chosen-by-route-template-in-the-same-filter-a-path-no-template-matches-is-written-whole-and-the-import-script-answers-a-stop-on-one-line-and-names-what-a-part-way-stop-kept-2026-11-10), T-4.11.4.8, PR [#459](https://github.com/khoks/VideoResearchPro/pull/459)).
 
+**Status-changed 2026-11-10 (III):** the fact key's template is now `DELETE /echo/context/{kind}/{key:path}`, and a words `:path` parameter takes the rest of the path, a trailing `/` included, so the key is written by its length however many `/` it holds ([D-174](#d-174--a-facts-key-is-the-rest-of-its-delete-routes-path-the-access-log-writes-all-of-it-and-the-echo-pages-form-accepts--in-a-label-2026-11-10), T-3.1.1.1, PR [#462](https://github.com/khoks/VideoResearchPro/pull/462)).
+
 ## D-152 — CORS reads the OAuth origin list, and the app keeps tiktoken's encoding in a folder of its own (2026-11-09)
 
 **Status:** accepted (2026-11-09). Made while building T-4.11.3.3, T-8.8.6.5 and T-4.11.3.1 (PR [#427](https://github.com/khoks/VideoResearchPro/pull/427)) and its review fix, not ruled by the owner. **T-8.8.6.5 was filed as the owner's call.** The main session put it in batch 7 because it has no product trade-off; the owner is free to reverse it. Point 1 extends [D-143](#d-143--the-apis-content-security-policy-is-locked-by-default-oauth-redirects-are-compared-as-origins-a-socket-ends-at-its-tokens-expiry-and-a-shared-link-is-logged-by-host-alone-2026-11-05) point 4 to CORS, and point 5 extends [D-147](#d-147--the-rendering-parser-decides-what-is-a-heading-in-book-markdown-a-rewrite-parses-what-it-will-emit-and-the-suites-tiktoken-file-lives-at-a-fixed-path-2026-11-05) point 6 from the suite to the app.
@@ -5752,6 +5756,8 @@ For reference: run 9's outcome (1–0–2, 8.67 vs 8.67) passes the amended rule
 
 **Linked initiatives / PRs.** E-4.11 ([S-4.11.4](initiatives.md#s-4114--the-apis-own-log-lines): T-4.11.4.8 to T-4.11.4.10, OQ-45), E-3.1 ([S-3.1.1](initiatives.md#s-311--deleting-a-fact-whose-key-holds-)); PR [#459](https://github.com/khoks/VideoResearchPro/pull/459); [D-151](#d-151--the-sockets-token-is-a-subprotocol-provider-errors-are-scrubbed-as-each-log-record-is-made-and-json-logs-hold-their-format-from-the-first-line-2026-11-09), [D-164](#d-164--the-apis-warnings-and-errors-carry-no-users-words-an-operator-by-place-and-mask-echos-model-failures-by-type-and-status-a-chosen-file-name-by-its-extension-and-length-and-a-failure-logged-by-its-frames-is-never-re-raised-bare-2026-11-09), [D-168](#d-168--the-access-log-writes-a-users-words-by-their-length-chosen-by-parameter-name-in-one-filter-a-fail-soft-handler-rolls-back-before-it-reads-and-an-imports-own-row-fails-as-importstopped-2026-11-10).
 
+**Status-changed 2026-11-10:** two consequences are closed. A fact whose key holds `/` is deleted by its route, `DELETE /echo/context/{kind}/{key:path}`; `WORDS_PATH_PARAMS` names that template, and a words `:path` parameter takes the rest of the path, a trailing `/` included ([D-174](#d-174--a-facts-key-is-the-rest-of-its-delete-routes-path-the-access-log-writes-all-of-it-and-the-echo-pages-form-accepts--in-a-label-2026-11-10), T-3.1.1.1, PR [#462](https://github.com/khoks/VideoResearchPro/pull/462)). Vite's dev proxy writes a failed request as `http proxy error: <METHOD> [path left out]` and its stack ([D-173](#d-173--the-dev-proxys-failed-request-line-names-its-method-and-leaves-the-path-out-through-a-customlogger-that-rewrites-that-line-alone-and-a-stack-loses-only-the-url-vite-was-given-2026-11-10), T-4.11.4.10, PR [#461](https://github.com/khoks/VideoResearchPro/pull/461)).
+
 ## D-172 — Only the cancel whose own write took announces it, an Author output stops at the write and keeps nothing when it ends unfinished, a failure refetches the run, and a refetch in flight at an end is cancelled rather than out-ranked (2026-11-10)
 
 **Status:** accepted (2026-11-10). Made while building T-5.2.32 to T-5.2.35 (PR [#457](https://github.com/khoks/VideoResearchPro/pull/457)) and its review fixes, not ruled by the owner. It closes the four consequences [D-169](#d-169--a-cancel-that-takes-is-announced-after-its-commit-a-page-takes-no-more-events-for-a-run-it-holds-as-ended-the-runs-videos-follow-its-cached-status-and-every-cached-jobs-list-takes-a-runs-events-2026-11-10) left, takes [D-163](#d-163--a-progress-line-is-written-before-it-is-published-a-cancel-that-loses-the-race-answers-with-the-runs-end-and-revokes-nothing-and-completed-is-a-stopped-status-2026-11-09)'s conditional writes to Author outputs, and adds to D-169 point 4. T-5.2.29 stays the owner's call.
@@ -5787,3 +5793,64 @@ For reference: run 9's outcome (1–0–2, 8.67 vs 8.67) passes the amended rule
 - No migration, no new setting and no route change. Owner step: restart the API and the worker, and reload the frontend.
 
 **Linked initiatives / PRs.** E-5.2 (T-5.2.29, T-5.2.32 to T-5.2.36), I-6; PR [#457](https://github.com/khoks/VideoResearchPro/pull/457); [D-163](#d-163--a-progress-line-is-written-before-it-is-published-a-cancel-that-loses-the-race-answers-with-the-runs-end-and-revokes-nothing-and-completed-is-a-stopped-status-2026-11-09), [D-169](#d-169--a-cancel-that-takes-is-announced-after-its-commit-a-page-takes-no-more-events-for-a-run-it-holds-as-ended-the-runs-videos-follow-its-cached-status-and-every-cached-jobs-list-takes-a-runs-events-2026-11-10).
+
+## D-173 — The dev proxy's failed-request line names its method and leaves the path out, through a `customLogger` that rewrites that line alone, and a stack loses only the URL Vite was given (2026-11-10)
+
+**Status:** accepted (2026-11-10). Made while building T-4.11.4.10 (PR [#461](https://github.com/khoks/VideoResearchPro/pull/461)), not ruled by the owner. It carries the rule of [D-168](#d-168--the-access-log-writes-a-users-words-by-their-length-chosen-by-parameter-name-in-one-filter-a-fail-soft-handler-rolls-back-before-it-reads-and-an-imports-own-row-fails-as-importstopped-2026-11-10) and [D-171](#d-171--a-users-words-in-a-url-path-are-chosen-by-route-template-in-the-same-filter-a-path-no-template-matches-is-written-whole-and-the-import-script-answers-a-stop-on-one-line-and-names-what-a-part-way-stop-kept-2026-11-10), no user's words in a log, from the API's access log to the log of Vite's dev proxy, and closes one of D-171's consequences.
+
+**Context.**
+- Under `scripts/start.ps1` the browser reaches the API through Vite's dev proxy. While the backend is down or restarting, Vite 8.0.3 logged every failed request as `http proxy error: ${res.req.url}` plus the error's stack, to `.frontend.err.log`, so a search's `?q=` words or a fact's key landed there, percent-encoded, on every restart under the launchers.
+- Of the lines Vite 8.0.3's proxy writes, only that one holds a URL. The three `ws proxy` lines and the Origin-header warning name none. The `DEBUG=vite:proxy`, `vite:time` and `http-proxy-3` debug lines print the URL, but through the `debug` package straight to stderr, out of any logger's reach, and they are off unless `DEBUG` names them.
+- The stacks hold no path. A real check got `AggregateError [ECONNREFUSED]`, `write ECONNRESET`, and `socket hang up` both for a backend that closes the socket and for a `proxyTimeout`; Node names the target's address at most. Only Vite's fetch-based proxy path, used with `FORCE_FETCH_PATH` or a custom `fetch`, neither set here, can raise an error that quotes the target URL.
+- A `configure(proxy)` listener of its own cannot stop the line: Vite adds its own `error` listener after `configure`, and both fire. The listener does receive the same error object that Vite's then logs.
+
+**Decision.**
+1. **The line names its method and leaves the path out.** `frontend/vite.config.ts` sets `customLogger: withoutProxyPaths(createLogger())`, and `frontend/viteProxyLog.ts` rewrites `http proxy error: <url>` to `http proxy error: <METHOD> [path left out]`. The colour codes, the timestamp and the stack stay, and the stack says that the API was not answering and how.
+2. **The method comes from a `configure` hook keyed by the error.** `noteFailedRequestMethod` on the `/api` proxy records `req.method` in a `WeakMap` keyed by the error object, and the logger looks it up from `options.error`. With none recorded the line reads `http proxy error: [path left out]`.
+3. **A stack loses only the URL Vite was given,** as given and percent-decoded, never a guessed pattern, and never a bare `/`, which would match every slash in a frame.
+4. **Every other line passes through unchanged** with its options object, from any method. Nothing is dropped, a non-string message goes on as it came, and `hasWarned`, `hasErrorLogged` and `clearScreen` are forwarded to Vite's logger.
+
+**Alternatives considered.**
+- *A `configure` listener alone.* Vite's own listener still fires and writes the line.
+- *Writing the path's length,* as D-168 and D-171 do for the access log. The proxy line's only use is to say that the API was not answering.
+- *Dropping the line.* The operator would lose the sign that the API was down.
+- *A plugin `config` hook that builds the logger from the merged config,* which would keep `--logLevel` and `--clearScreen` working. The flags have no user here, and the item asked for a `customLogger` in the config.
+
+**Consequences.**
+- No run of the real check printed a user's word or `/api/v1`; with only the `customLogger` line removed, both URLs were printed whole.
+- Vite skips its own `logLevel` and `clearScreen` handling for a custom logger, so `--logLevel` and `--clearScreen` on the command line no longer reach it. Nothing in the repo passes either; a level would go in `createLogger(...)`, as the config's comment says.
+- The debug-only lines still print the URL when `DEBUG` names them.
+- Found on the way: when Vite 8 detects an agent in its environment, it relays the browser's `console.error` and `console.warn` calls and its unhandled errors to the dev server's log (`server.forwardConsole`). Turning that off is T-4.11.4.11, the owner's call.
+- `vitest.config.ts` and `tsconfig.node.json` include the module and its test, and CLAUDE.md's access-log convention gains a sentence. Frontend dev server only, with no owner step: Vite restarts its dev server when the config changes. `.frontend.err.log` keeps the lines written before.
+
+**Linked initiatives / PRs.** E-4.11 ([S-4.11.4](initiatives.md#s-4114--the-apis-own-log-lines): T-4.11.4.10, T-4.11.4.11); PR [#461](https://github.com/khoks/VideoResearchPro/pull/461); [D-168](#d-168--the-access-log-writes-a-users-words-by-their-length-chosen-by-parameter-name-in-one-filter-a-fail-soft-handler-rolls-back-before-it-reads-and-an-imports-own-row-fails-as-importstopped-2026-11-10), [D-171](#d-171--a-users-words-in-a-url-path-are-chosen-by-route-template-in-the-same-filter-a-path-no-template-matches-is-written-whole-and-the-import-script-answers-a-stop-on-one-line-and-names-what-a-part-way-stop-kept-2026-11-10).
+
+## D-174 — A fact's key is the rest of its delete route's path, the access log writes all of it, and the Echo page's form accepts `/` in a label (2026-11-10)
+
+**Status:** accepted (2026-11-10). Made while building T-3.1.1.1 (PR [#462](https://github.com/khoks/VideoResearchPro/pull/462)), not ruled by the owner. It closes the consequence of [D-171](#d-171--a-users-words-in-a-url-path-are-chosen-by-route-template-in-the-same-filter-a-path-no-template-matches-is-written-whole-and-the-import-script-answers-a-stop-on-one-line-and-names-what-a-part-way-stop-kept-2026-11-10) that named this bug, takes D-171's path filter to a `:path` template, and keeps the tombstones of [D-122](#d-122--a-deleted-derived-fact-stays-deleted-per-connector-only-a-refused-refresh-asks-for-a-reconnect-restore-re-checks-the-evidence-2026-11-04) (T-3.2.4.4, ruled in [D-110](#d-110--echo-only-sees-what-the-user-hands-it-no-background-capture-and-the-echo-scope-rulings-2026-10-25)) on the whole key.
+
+**Context.**
+- `DELETE /api/v1/echo/context/{kind}/{key}` answered 404 for a key holding `/`: the server decodes `%2F` before it routes, so the key reached the router as one segment too many.
+- Every write goes through `echo_service.record_context`. `POST /echo/context` accepts any key of 1 to 128 characters, `/` included; only the Echo page's form refused it, and its comment gave this bug as its only reason. The GitHub connector derives `"{language} (GitHub)"` from GitHub's language names; none known holds `/`, but nothing stops one. Apple Health's keys are fixed (`sleep`, `steps`, `workouts`), no other importer derives facts, and signal extraction writes its own table.
+- The live database, opened read-only, held 0 `personal_context` rows, so 0 keys with `/`, and 0 tombstone keys with one.
+- D-171's path filter matched a words value lazily, so a key ending in `/` was written `[1 character]/`.
+- Starlette's `TestClient` decodes a path twice, since httpx's `URL.path` is already decoded and the transport unquotes it again; `httpx.ASGITransport` decodes it once, as uvicorn does.
+
+**Decision.**
+1. **The key is the rest of the path.** The route is `DELETE /api/v1/echo/context/{kind}/{key:path}`, so every `/` in the key is part of it. A key with no `/` is matched and answered as before, and rows already stored with a `/` can be deleted. This is safe only while no other route sits under `/echo/context/`, which a test pins; the tombstone routes were already kept out of it for that reason.
+2. **The access log writes all of it.** `log_redaction.WORDS_PATH_PARAMS` names the new template, and a words parameter with the `:path` convertor takes the rest of the path as Starlette's `.*` reads it, a trailing `/` included, so the whole key is written by its length however many `/` it holds. A words parameter without the convertor still stops before a trailing `/`.
+3. **The Echo page's form accepts `/` in a label.** `echoApi.deleteContext` already encoded the key whole with `encodeURIComponent`.
+4. **A tombstone keeps the whole key.** A derived fact holding `/` is deleted by the route, its tombstone lists the whole key, the next sync skips it, and "Allow again", which clears by the tombstone's id, brings it back.
+
+**Alternatives considered.**
+- *Refusing `/` at write time.* The API already accepts such keys, any API client can write one, and a connector can derive one; a refusal would strand stored rows and could break a connector.
+- *Moving the key into a body.* An API change nobody asked for, as D-171 found.
+- *Keeping the words match lazy.* A trailing `/`, which the route reads as part of the key, would stay outside the count.
+
+**Consequences.**
+- A fact whose key holds `/` is deleted by its route. The real `app.main:app` under the real uvicorn CLI answered 200 for each of 15 keys, and its access log held only their lengths.
+- A fact labelled exactly `.` or `..` still cannot be deleted from a page: a browser resolves such a path segment before it sends the request, written or percent-encoded, so the request goes out as `.../context/`. Unrelated to `/`, and true before. Refusing those two labels at write, or a delete that carries the key in a body, is [S-3.1.2](initiatives.md#s-312--deleting-a-fact-labelled--or-) (T-3.1.2.1), the owner's call; `docs/api-reference.md` notes the limit.
+- CLAUDE.md's API line says the key may hold `/`. Its access-log convention still names the route as `{key}`, which stays true.
+- No migration and no new setting. Owner step: restart the API.
+
+**Linked initiatives / PRs.** E-3.1 ([S-3.1.1](initiatives.md#s-311--deleting-a-fact-whose-key-holds-): T-3.1.1.1; [S-3.1.2](initiatives.md#s-312--deleting-a-fact-labelled--or-): T-3.1.2.1), E-3.2 (T-3.2.4.4), E-4.11 ([S-4.11.4](initiatives.md#s-4114--the-apis-own-log-lines)); PR [#462](https://github.com/khoks/VideoResearchPro/pull/462); [D-110](#d-110--echo-only-sees-what-the-user-hands-it-no-background-capture-and-the-echo-scope-rulings-2026-10-25), [D-122](#d-122--a-deleted-derived-fact-stays-deleted-per-connector-only-a-refused-refresh-asks-for-a-reconnect-restore-re-checks-the-evidence-2026-11-04), [D-171](#d-171--a-users-words-in-a-url-path-are-chosen-by-route-template-in-the-same-filter-a-path-no-template-matches-is-written-whole-and-the-import-script-answers-a-stop-on-one-line-and-names-what-a-part-way-stop-kept-2026-11-10).

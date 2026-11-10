@@ -21,6 +21,7 @@ export default defineConfig({
   },
   test: {
     environment: 'jsdom',
-    include: ['src/**/*.test.{ts,tsx}'],
+    // viteProxyLog.test.ts is the dev server's own logger, beside vite.config.ts.
+    include: ['src/**/*.test.{ts,tsx}', 'viteProxyLog.test.ts'],
   },
 });

@@ -284,8 +284,8 @@ def activity(
 
 
 # T-3.2.4.4: derived facts the user deleted, which syncs and re-imports skip.
-# A separate path, not under /echo/context/{kind}/{key}, which would swallow
-# a DELETE /echo/context/tombstones/{id}.
+# A separate path, not under /echo/context/{kind}/{key:path}, which would
+# swallow a DELETE /echo/context/tombstones/{id}.
 
 
 @router.get("/fact-tombstones", response_model=FactTombstoneList)

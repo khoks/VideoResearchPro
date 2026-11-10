@@ -6,9 +6,10 @@ typed (``GET /api/v1/search?q=...``), so the filter D-151 put on
 ``uvicorn.access`` writes the value of every parameter in
 ``WORDS_QUERY_NAMES`` by its length and leaves the rest of the line alone.
 One route puts the user's words in its path, ``DELETE
-/api/v1/echo/context/{kind}/{key}``, a fact's key, so the same filter matches
-each path against the templates in ``WORDS_PATH_PARAMS`` and writes that
-segment by its length.
+/api/v1/echo/context/{kind}/{key:path}``, a fact's key, which is the rest of
+the path, every ``/`` in it included (S-3.1.1), so the same filter matches
+each path against the templates in ``WORDS_PATH_PARAMS`` and writes that key
+by its length.
 
 - Every query parameter of every route is either a words parameter, by name,
   or kept, by route and name, with the reason it is not words. A new
@@ -24,9 +25,22 @@ segment by its length.
   the app's JSON one, shows the method, the path, the other parameters, the
   status and the value's length, and not the words.
 - The real server: ``app.main:app`` under the real uvicorn CLI, asked each of
-  those routes, writes none of the words to its log.
+  those routes, writes none of the words to its log. Signed in as a Studio
+  user, it records each fact key and deletes it by its route, which answers
+  200 for every key, one holding ``/`` or typed ``%2F`` included (S-3.1.1).
 
 Mutation checks (each failed the named tests when this shipped):
+
+- the route as ``{key}`` again (``test_the_real_server_writes_no_users_words``,
+  on the keys holding ``/``; ``test_every_path_parameter_is_words_or_kept``);
+- ``WORDS_PATH_PARAMS`` naming ``{key}`` without its convertor
+  (``test_every_path_parameter_is_words_or_kept``,
+  ``test_every_words_path_parameter_is_checked_on_its_route``, and the
+  trailing-``/`` cases below);
+- a words ``:path`` value that leaves a trailing ``/`` out, as before S-3.1.1
+  (``test_the_context_delete_line_writes_the_key_by_length[trailing]`` and
+  ``[two-only]``, ``test_a_path_is_matched_against_its_template``,
+  ``test_the_real_server_writes_no_users_words``);
 
 - the filter calling ``redact_url_credentials`` alone
   (``test_each_words_route_is_written_by_length``,
@@ -215,7 +229,7 @@ _KEPT_PATH_BY_NAME: dict[str, tuple[str, tuple[str, ...]]] = {
         "/api/v1/echo/connectors/{name}/callback",
         "/api/v1/echo/connectors/{name}/sync",
     )),
-    "kind": ("a context kind, from echo_service.SUPPORTED_KINDS", ("/api/v1/echo/context/{kind}/{key}",)),
+    "kind": ("a context kind, from echo_service.SUPPORTED_KINDS", ("/api/v1/echo/context/{kind}/{key:path}",)),
     "source": ("manual, a connector's name or import:<id>, never typed", ("/api/v1/echo/sources/{source}",)),
     "digest": ("a PDF's SHA-256", ("/api/v1/library/pdf/{digest}.pdf",)),
     "channel_id": ("a YouTube channel's id", (
@@ -296,7 +310,7 @@ for _name, (_reason, _templates) in _KEPT_PATH_BY_NAME.items():
         KEPT_PATH.setdefault(_template, {})[_name] = _reason
 
 # Each route a words path parameter reaches, with the kind its page sends.
-WORDS_PATH_ROUTES = {"/api/v1/echo/context/{kind}/{key}": "interest"}
+WORDS_PATH_ROUTES = {"/api/v1/echo/context/{kind}/{key:path}": "interest"}
 
 _PATH_PARAM = re.compile(r"\{(\w+)(?::\w+)?\}")
 
@@ -451,7 +465,7 @@ FORMATTERS = {
 
 
 def _length(value: str) -> str:
-    return f"[{len(value)} characters]"
+    return f"[{len(value)} character{'' if len(value) == 1 else 's'}]"
 
 
 def assert_no_words(text: str) -> None:
@@ -531,29 +545,42 @@ def encode_uri_component(value: str) -> str:
 
 
 # Fact keys as a user may write them. A `/` decodes before the route matches,
-# so that key's path has a segment too many and answers 404; it is the user's
-# words all the same.
+# so that key's path has more segments than the template names; the route
+# reads the rest of the path as the key (S-3.1.1), and the filter writes all of
+# it by its length. `%2F` or `%25` typed as text is decoded once, as the route
+# reads it.
 KEYS = {
     "words": "Favourite Zanzibar quokka",
     "hindi": HINDI,
     "slash": "quokka/fermentation",
+    "slashes": "zanzibar/quokka/fermentation/tariffs",
+    "leading": "/quokka notes",
+    "trailing": "quokka list/",
+    "only": "/",
+    "two-only": "//",
+    "dot-segments": "quokka/../tariffs",
     "query-marks": "tariffs? quokka #2",
+    "query-marks-slash": "tariffs?/quokka#2",
     "percent": "100% quokka",
+    "typed-%2F": "quokka%2Ffermentation",
+    "typed-%25": "quokka%25tariffs",
     "plus": "quokka+tariffs",
 }
+
+
+def _context_path(template: str, kind: str, key: str) -> str:
+    return template.replace("{kind}", kind).replace("{key:path}", encode_uri_component(key))
 
 
 @pytest.mark.parametrize("formatter", sorted(FORMATTERS))
 @pytest.mark.parametrize("key", sorted(KEYS))
 def test_the_context_delete_line_writes_the_key_by_length(key, formatter):
     [(template, kind)] = WORDS_PATH_ROUTES.items()
-    path = template.replace("{kind}", kind).replace("{key}", encode_uri_component(KEYS[key]))
-    status = 404 if key == "slash" else 200
-    line = _access_line(path, "", FORMATTERS[formatter](), status=status, method="DELETE")
+    line = _access_line(_context_path(template, kind, KEYS[key]), "", FORMATTERS[formatter](), method="DELETE")
 
     assert_no_words(line)
     message = json.loads(line)["message"] if formatter == "json" else line
-    expected = f'"DELETE /api/v1/echo/context/{kind}/{_length(KEYS[key])} HTTP/1.1" {status}'
+    expected = f'"DELETE /api/v1/echo/context/{kind}/{_length(KEYS[key])} HTTP/1.1" 200'
     assert expected in message, message
 
 
@@ -586,22 +613,31 @@ def test_the_check_sees_a_path_leak(monkeypatch):
         ("/api/v1/echo/context/interest/two%20words", "/api/v1/echo/context/interest/[9 characters]"),
         ("/api/v1/echo/context/interest/a+b", "/api/v1/echo/context/interest/[3 characters]"),
         ("/api/v1/echo/context/interest/100%25", "/api/v1/echo/context/interest/[4 characters]"),
+        ("/api/v1/echo/context/interest/a%252Fb", "/api/v1/echo/context/interest/[5 characters]"),
         ("/api/v1/echo/context/interest/%E0%A4%85", "/api/v1/echo/context/interest/[1 character]"),
         # A decoded `/` makes another segment, which the key still owns; a
         # decoded `?` or `#` is written encoded, inside it.
         ("/api/v1/echo/context/interest/a/b/c", "/api/v1/echo/context/interest/[5 characters]"),
         ("/api/v1/echo/context/interest/a%3Fb%23c", "/api/v1/echo/context/interest/[5 characters]"),
-        # The query starts at the first raw `?`; a trailing `/` stands.
+        # The key is the rest of the path, as the route reads it: a leading,
+        # a trailing or a lone `/` is the key's (S-3.1.1). The query starts at
+        # the first raw `?`.
+        ("/api/v1/echo/context/interest/k/", "/api/v1/echo/context/interest/[2 characters]"),
+        ("/api/v1/echo/context/interest//k", "/api/v1/echo/context/interest/[2 characters]"),
+        ("/api/v1/echo/context/interest//", "/api/v1/echo/context/interest/[1 character]"),
+        ("/api/v1/echo/context/interest///", "/api/v1/echo/context/interest/[2 characters]"),
+        ("/api/v1/echo/context/interest//a/b/", "/api/v1/echo/context/interest/[5 characters]"),
         ("/api/v1/echo/context/interest/k?limit=5", "/api/v1/echo/context/interest/[1 character]?limit=5"),
-        ("/api/v1/echo/context/interest/k/", "/api/v1/echo/context/interest/[1 character]/"),
+        ("/api/v1/echo/context/interest/a/b/?limit=5", "/api/v1/echo/context/interest/[4 characters]?limit=5"),
         # In any case, percent-encoded, behind a host or a root path, or in a
         # sentence: a crafted URL hides more, never less.
         ("/API/V1/Echo/Context/interest/secret", "/API/V1/Echo/Context/interest/[6 characters]"),
         ("/api%2Fv1%2fecho/context/interest/secret", "/api%2Fv1%2fecho/context/interest/[6 characters]"),
         ("http://h:8000/api/v1/echo/context/interest/secret", "http://h:8000/api/v1/echo/context/interest/[6 characters]"),
         ("/root/api/v1/echo/context/interest/secret", "/root/api/v1/echo/context/interest/[6 characters]"),
-        ('"DELETE /api/v1/echo/context/interest/secret HTTP/1.1" 401',
-         '"DELETE /api/v1/echo/context/interest/[6 characters] HTTP/1.1" 401'),
+        ('"DELETE /api/v1/echo/context/interest/secret/words HTTP/1.1" 200',
+         '"DELETE /api/v1/echo/context/interest/[12 characters] HTTP/1.1" 200'),
+        ("asked for /api/v1/echo/context/interest/a/b then", "asked for /api/v1/echo/context/interest/[3 characters] then"),
         # Nothing to hide: no key, or another route's parameters.
         ("/api/v1/echo/context/interest/", "/api/v1/echo/context/interest/"),
         ("/api/v1/echo/context/interest", "/api/v1/echo/context/interest"),
@@ -617,24 +653,63 @@ def test_a_path_is_matched_against_its_template(path, expected):
     assert redact_path_words(path) == expected
 
 
-def test_the_real_server_writes_no_users_words(tmp_path):
+def _signed_in_studio(tmp_path, secret: str, monkeypatch) -> dict[str, str]:
+    """A Studio user in the real server's database and a header it accepts.
+    The server runs with no lifespan, so the schema is made here as the suite
+    makes it; the session row is written as sign-in writes it, and the token
+    is signed with the server's secret."""
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    from app.config import settings
+    from app.database import Base
+    from app.services import auth_service
+
+    engine = create_engine(f"sqlite:///{(tmp_path / 'app.db').as_posix()}")
+    try:
+        Base.metadata.create_all(engine)
+        with sessionmaker(bind=engine)() as session:
+            user = auth_service.create_user(session, email="slash-keys@example.com", password="pw" * 6)
+            user.tier = "studio"
+            session.commit()
+            monkeypatch.setattr(settings, "JWT_SECRET", secret)
+            token, _ = auth_service.create_access_token(user.id, db=session)
+    finally:
+        engine.dispose()
+    return {"Authorization": f"Bearer {token}"}
+
+
+def test_the_real_server_writes_no_users_words(tmp_path, monkeypatch):
     """``app.main:app`` under the real uvicorn CLI, its own logging config and
-    access format, asked each words route as the frontend asks it. No token,
-    so each answers 401 or 403, the key holding a `/` 404; the access line is
-    written whatever the status."""
-    asked, deleted = {}, {}
+    access format. Asked each words query route as the frontend asks it, with
+    no token, each answers 401 or 403. Signed in as a Studio user, it records
+    each fact key (in the body, which is not logged) and deletes it by its
+    route as the Echo page writes the path: 200 for every key, one holding
+    ``/`` or typed ``%2F`` included (S-3.1.1), and nothing is left. The access
+    line is written whatever the status."""
+    asked, recorded, deleted = {}, {}, {}
     [(template, kind)] = WORDS_PATH_ROUTES.items()
-    with _uvicorn(tmp_path, _env(tmp_path), "app.main:app") as port:
+    env = _env(tmp_path, ECHO_PERSONAL_INDEX_ENABLED="false", RATE_LIMIT_ENABLED="false")
+    headers = _signed_in_studio(tmp_path, env["JWT_SECRET"], monkeypatch)
+    with _uvicorn(tmp_path, env, "app.main:app") as port:
+        base = f"http://127.0.0.1:{port}"
         for route, (_, path, params) in WORDS_ROUTES.items():
-            url = f"http://127.0.0.1:{port}{path}?{axios_query(params)}"
-            asked[route] = httpx.get(url, trust_env=False, timeout=60).status_code
+            asked[route] = httpx.get(f"{base}{path}?{axios_query(params)}", trust_env=False, timeout=60).status_code
         for key, value in KEYS.items():
-            path = template.replace("{kind}", kind).replace("{key}", encode_uri_component(value))
-            deleted[key] = httpx.delete(f"http://127.0.0.1:{port}{path}", trust_env=False, timeout=60).status_code
+            recorded[key] = httpx.post(
+                f"{base}/api/v1/echo/context", json={"kind": kind, "key": value, "value": "v"},
+                headers=headers, trust_env=False, timeout=60,
+            ).status_code
+            deleted[key] = httpx.delete(
+                f"{base}{_context_path(template, kind, value)}", headers=headers, trust_env=False, timeout=60,
+            ).status_code
+        left = httpx.get(f"{base}/api/v1/echo/context", headers=headers, trust_env=False, timeout=60)
     log = _log_of(tmp_path)
 
     assert all(status in (401, 403) for status in asked.values()), asked
-    assert deleted == {key: 404 if key == "slash" else 401 for key in KEYS}, deleted
+    assert recorded == dict.fromkeys(KEYS, 200), recorded
+    assert deleted == dict.fromkeys(KEYS, 200), deleted
+    assert left.status_code == 200 and left.json() == []
     assert_no_words(log)
     for route, (_, path, params) in WORDS_ROUTES.items():
         words = next(name for name in params if name in WORDS_QUERY_NAMES)

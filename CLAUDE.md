@@ -380,7 +380,7 @@ POST   /api/v1/author/newsletter/send-now
 # Echo
 GET    /api/v1/echo/status
 GET/POST /api/v1/echo/context
-DELETE /api/v1/echo/context/{kind}/{key}
+DELETE /api/v1/echo/context/{kind}/{key}  # The key is the rest of the path ({key:path}): one holding `/` is deleted too
 DELETE /api/v1/echo/sources/{source}
 GET/POST /api/v1/echo/shares
 POST   /api/v1/echo/shares/upload

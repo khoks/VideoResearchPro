@@ -200,12 +200,13 @@ export function formatConfidence(confidence: number): string {
   return `${Math.round(clamp01(confidence) * 100)}%`;
 }
 
-/** Keys travel in the URL path on delete; a slash would never route. */
+/** The API's own limits on a key: one to 128 characters. A slash is allowed:
+ * the delete route reads the key as the rest of its path (S-3.1.1), so a
+ * label holding one is deleted like any other. */
 export function validateContextKey(key: string): string | null {
   const k = key.trim();
   if (!k) return 'Give this entry a short label.';
   if (k.length > 128) return 'Keep the label under 128 characters.';
-  if (k.includes('/')) return 'Labels cannot contain a slash.';
   return null;
 }
 

@@ -643,6 +643,58 @@ def test_a_deleted_derived_fact_stays_deleted_until_the_user_clears_it(unauthent
     assert unauthenticated_client.get(TOMBSTONES, headers=two["ha"]).json()["items"] == []
 
 
+# A derived key holding `/`: nothing stops a connector deriving one (a language
+# or a tool named with a slash), and the delete route takes the rest of the
+# path as the key (S-3.1.1).
+SLASH_FACT = "Shell/Batch (Fake)"
+
+
+def _slash_fact_every_sync(fake):
+    for name in ("initial_backfill", "incremental_sync"):
+        original = getattr(fake, name)
+
+        def derive(ctx, *args, _original=original):
+            ctx.facts.append(DerivedFact(kind="skill", key=SLASH_FACT, value={"repos": 2}, confidence=0.6))
+            yield from _original(ctx, *args)
+
+        setattr(fake, name, derive)
+
+
+def _slash_fact(db, tenant_id):
+    db.expire_all()
+    return db.query(PersonalContext).filter_by(user_id=tenant_id, kind="skill", key=SLASH_FACT).first()
+
+
+def test_a_derived_fact_holding_a_slash_stays_deleted_until_allowed_again(
+    unauthenticated_client, db, inline_db, fake, two,
+):
+    """S-3.1.1 with T-3.2.4.4: the route deletes a derived fact whose key holds
+    ``/``, the tombstone it writes keeps the whole key, so the next sync skips
+    it, and "Allow again" (by the tombstone's id) lets the sync write it back."""
+    _slash_fact_every_sync(fake)
+    _connect(unauthenticated_client, two["ha"])
+    a = two["a"].id
+    assert _slash_fact(db, a).source == "connector:fake"
+
+    path = "/api/v1/echo/context/skill/" + urllib.parse.quote(SLASH_FACT, safe="-_.!~*'()")
+    r = unauthenticated_client.delete(path, headers=two["ha"])
+    assert r.status_code == 200, r.text
+    assert _slash_fact(db, a) is None
+    assert _python(db, a) is not None, "only the named key went"
+
+    listed = unauthenticated_client.get(TOMBSTONES, headers=two["ha"]).json()["items"]
+    assert [(t["connector"], t["kind"], t["key"]) for t in listed] == [("fake", "skill", SLASH_FACT)]
+    r = unauthenticated_client.post(f"{BASE}/fake/sync", headers=two["ha"])
+    assert r.json()["connector"]["grant"]["last_counts"]["facts"] == 0
+    assert _slash_fact(db, a) is None, "the sync did not bring it back"
+
+    assert unauthenticated_client.delete(f"{TOMBSTONES}/{listed[0]['id']}", headers=two["ha"]).json() == {"cleared": True}
+    r = unauthenticated_client.post(f"{BASE}/fake/sync", headers=two["ha"])
+    assert r.json()["connector"]["grant"]["last_counts"]["facts"] == 1
+    assert _slash_fact(db, a).source == "connector:fake"
+    assert unauthenticated_client.get(TOMBSTONES, headers=two["ha"]).json()["items"] == []
+
+
 # ------------------------------------------------------------------ T-3.2.1.11: a fact the user edited stays theirs
 
 MINE = "Only for scripts; I would not call it a skill."

@@ -11,7 +11,8 @@ Endpoints under ``/api/v1/echo/*``:
 - ``POST /echo/context`` — manual entry. Body
   ``{kind, key, value, expires_at?, confidence?}``. Source is hard-coded
   to ``manual`` for this surface.
-- ``DELETE /echo/context/{kind}/{key}`` — delete a single row.
+- ``DELETE /echo/context/{kind}/{key}`` — delete a single row. The key is
+  the rest of the path (``{key:path}``), so one holding ``/`` is deleted too.
 - ``DELETE /echo/sources/{source}`` — revoke a connector. Deletes
   every row attributed to that source.
 - ``GET /echo/connectors`` — list registered connectors. v1 ships
@@ -260,13 +261,19 @@ def record_context_endpoint(
     return _context_item(db, row)
 
 
-@router.delete("/context/{kind}/{key}", response_model=DeleteResponse)
+@router.delete("/context/{kind}/{key:path}", response_model=DeleteResponse)
 def delete_context_endpoint(
     kind: str,
     key: str,
     current_user: User = Depends(require_feature("echo_personal_brain")),
     db: Session = Depends(get_db),
 ) -> DeleteResponse:
+    """Delete one fact. The key is the rest of the path, every ``/`` in it
+    included (S-3.1.1): the server decodes ``%2F`` before it routes, so a key
+    holding one arrives as more than one segment, and a ``{key}`` segment
+    answered 404 for it. ``POST /echo/context`` accepts any key up to 128
+    characters, so this route takes back every key it accepts. It is the only
+    route under ``/echo/context/``, which a ``:path`` would swallow."""
     deleted = echo_service.delete_context(db, current_user.id, kind, key)
     if not deleted:
         raise HTTPException(

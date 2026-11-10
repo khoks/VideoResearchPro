@@ -16,6 +16,15 @@ leaves the path, the other parameters and the status as they were. So one
 filter decides what the access log may write of a URL, by what each
 parameter is named.
 
+**A user's words in a URL's path (T-4.11.4.8).** One route takes them there:
+``DELETE /api/v1/echo/context/{kind}/{key}``, whose key is a fact's, which the
+user types. The same filter matches each path against the templates in
+``WORDS_PATH_PARAMS`` and writes each words segment by its length
+(``/api/v1/echo/context/interest/[12 characters]``), the method, the other
+segments, the query and the status as they were. A path no such template
+matches is written whole: no page builds one, and an operator reading a 404
+needs it as it came.
+
 **A key in a provider's error (T-5.6.16).** OpenAI quotes part of a key it
 refuses, and ``googleapiclient`` puts the YouTube key in every ``HttpError``'s
 URL. Such an exception can reach a log line at dozens of call sites in the
@@ -51,7 +60,8 @@ import logging
 import re
 import traceback
 from collections.abc import Callable, Iterator, Mapping
-from urllib.parse import unquote_plus
+from types import MappingProxyType
+from urllib.parse import unquote, unquote_plus
 
 REDACTED = "[redacted]"
 
@@ -119,6 +129,71 @@ def redact_query_words(text: str) -> str:
     ``%71`` is ``q``. An empty value has nothing to hide and stands, as does
     everything else."""
     return _QUERY_WORDS.sub(lambda found: f"{found['name']}={_characters(len(unquote_plus(found['value'])))}", text)
+
+
+# The path parameters whose value is a user's own words (T-4.11.4.8), by the
+# template of the route that reads each, as the app serves it: a fact's key,
+# which the user types on the Echo page. Every other path parameter is an id,
+# a digest, a session's jti or a name from a fixed set (a provider, a use case,
+# a connector, a context kind), and stands.
+# `tests/test_utils/test_access_log_words.py` holds every route's path
+# parameters to this or to its own list of kept ones.
+WORDS_PATH_PARAMS: Mapping[str, frozenset[str]] = MappingProxyType({
+    "/api/v1/echo/context/{kind}/{key}": frozenset({"key"}),
+})
+
+_PATH_PARAM = re.compile(r"\{(?P<name>\w+)(?::(?P<convertor>\w+))?\}")
+
+
+def _template_pattern(template: str, words: frozenset[str]) -> re.Pattern[str]:
+    """The paths ``template`` matches, each words parameter a named group.
+
+    uvicorn writes the path it routed, decoded and percent-encoded again, so a
+    segment is matched as Starlette matches it, ``[^/]+``. A words value alone
+    may run over a ``/``: the route decodes ``%2F`` before it matches, so a key
+    holding one comes out as more segments than its template has (and answers
+    404), and it is still the user's. A raw ``?`` starts the query, so neither
+    runs past one, and a decoded ``?`` or ``#`` in a key is written ``%3F`` or
+    ``%23``, inside the segment. The literal parts match in any case and
+    percent-encoded, a trailing ``/`` stands, and the path may sit anywhere in
+    the text: after a host, a root path or a space."""
+    parts, end = [], 0
+    for found in _PATH_PARAM.finditer(template):
+        parts.append(_spelled(template[end:found.start()]))
+        if found["name"] in words:
+            parts.append(rf"""(?P<{found['name']}>[^?\s"']+?)""")
+        elif found["convertor"] == "path":
+            parts.append(r"""[^?\s"']*?""")
+        else:
+            parts.append(r"""[^/?\s"']+""")
+        end = found.end()
+    parts.append(_spelled(template[end:]))
+    return re.compile("(?i)" + "".join(parts) + r"""/?(?=[?\s"']|$)""")
+
+
+_PATH_WORDS = tuple(_template_pattern(template, words) for template, words in WORDS_PATH_PARAMS.items())
+
+
+def _segments_by_length(found: re.Match[str]) -> str:
+    """The matched path with each words group written as its length, counted
+    as the route reads it: percent-decoded, a ``+`` being a ``+`` in a path."""
+    text, origin, pieces, last = found[0], found.start(), [], 0
+    for name, value in found.groupdict().items():
+        if value is None:
+            continue
+        start, stop = found.span(name)
+        pieces += [text[last:start - origin], _characters(len(unquote(value)))]
+        last = stop - origin
+    return "".join(pieces) + text[last:]
+
+
+def redact_path_words(text: str) -> str:
+    """``text`` with the value of every words path parameter written as its
+    length, where a path matches its route's template. Everything else
+    stands, a path no template matches included."""
+    for pattern in _PATH_WORDS:
+        text = pattern.sub(_segments_by_length, text)
+    return text
 
 
 # OpenAI's sentence goes first: a key that is not `sk-` shaped is quoted in it
@@ -250,12 +325,15 @@ def _scrubbed_record(*args: object, **kwargs: object) -> logging.LogRecord:
 
 class _UrlCredentialFilter(logging.Filter):
     """What uvicorn may write of a URL it was asked for: no credential
-    (T-5.4.23) and no user's words (T-4.11.4.5). The access line's path is
-    one of its arguments, so each argument is redacted where it stands."""
+    (T-5.4.23) and no user's words, in the query (T-4.11.4.5) or the path
+    (T-4.11.4.8). The access line's path is one of its arguments, so each
+    argument is redacted where it stands."""
 
     def filter(self, record: logging.LogRecord) -> bool:
         def redact(value: object) -> object:
-            return redact_query_words(redact_url_credentials(value)) if isinstance(value, str) else value
+            if not isinstance(value, str):
+                return value
+            return redact_query_words(redact_url_credentials(redact_path_words(value)))
 
         record.msg = redact(record.msg)
         record.args = _map_args(record.args, redact)

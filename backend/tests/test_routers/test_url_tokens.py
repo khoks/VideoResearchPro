@@ -57,8 +57,9 @@ def _query_param_names(dependant) -> set[str]:
     return names
 
 
-def _served_routes() -> list[tuple[str, object, object]]:
+def _served_routes(application=None) -> list[tuple[str, object, object]]:
     """Every route the app serves, as (full path, route, effective dependant).
+    ``application`` is the app, unless a test hands it one of its own.
 
     A list, not a dict by path: a GET and a POST on one path are two routes
     with two dependency trees, and both are checked.
@@ -71,16 +72,17 @@ def _served_routes() -> list[tuple[str, object, object]]:
     Walking ``app.routes`` alone there finds no APIRoute at all, and a check
     over it passes having looked at nothing.
     """
+    routes = (application or app).routes
     try:
         from fastapi.routing import iter_route_contexts
     except ImportError:  # the flat route table
         return [
             (route.path, route, route.dependant)
-            for route in app.routes
+            for route in routes
             if isinstance(route, (APIRoute, APIWebSocketRoute))
         ]
     served = []
-    for ctx in iter_route_contexts(app.routes):
+    for ctx in iter_route_contexts(routes):
         route = ctx.original_route
         if isinstance(route, (APIRoute, APIWebSocketRoute)):
             served.append((ctx.path, route, ctx.dependant))

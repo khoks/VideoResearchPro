@@ -36,7 +36,6 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.models.newsletter_subscription import NewsletterSend, NewsletterSubscription
-from app.models.output import Output
 from app.models.user import User
 from app.services import (
     email_service,

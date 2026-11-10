@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { useCreateDraft, useDeleteDraft, useDraftStatus, useRecentDrafts } from '../../hooks/useEcho';
+import { useIsMutating } from '@tanstack/react-query';
+import { draftFeedbackKey, useCreateDraft, useDeleteDraft, useDraftStatus, useRecentDrafts } from '../../hooks/useEcho';
 import { DraftEditor } from './DraftEditor';
 import { VoiceTestPanel } from './VoiceTestPanel';
 import { useJobStore } from '../../stores/jobStore';
@@ -43,11 +44,21 @@ export function SpeakAsMePanel() {
   const [goAhead, setGoAhead] = useState<string | null>(null);
   const [refusal, setRefusal] = useState<string | null>(null);
   const [result, setResult] = useState<EchoDraft | null>(null);
+  // A save of the open draft in flight holds everything here that would put
+  // another draft in its place, or none: its line is where a failed save is
+  // said, and the only place (T-3.4.1.24, D-159 point 2).
+  const saving = useIsMutating({ mutationKey: draftFeedbackKey('page') }) > 0;
+  // And the other way round: a new draft in flight, or a delete of the open
+  // one, will take the view away when it answers, so the view's Save waits
+  // for it. Only the latest delete's `onSuccess` runs, and it is the one
+  // `del.variables` names.
+  const replacing = create.isPending || (del.isPending && del.variables === result?.id);
 
   const text: React.CSSProperties = { margin: 0, fontFamily: fonts.body, fontSize: fontSize.sm, color: c.textSecondary, lineHeight: lineHeight.normal };
   const st = status.data;
 
   const submit = (acknowledge: string[] = [], approved: string | null = goAhead) => {
+    if (saving) return;
     const payload: CreateDraftPayload = { message: message.trim() };
     if (audience.trim()) payload.audience = audience.trim();
     if (register) payload.register = register as CreateDraftPayload['register'];
@@ -171,7 +182,7 @@ export function SpeakAsMePanel() {
               them beyond what the message says.
               <div style={{ marginTop: space['2'], display: 'flex', gap: space['2'] }}>
                 {/* type="button": inside the form, a submit button would also post the unacknowledged request. */}
-                <Button type="button" size="sm" onClick={() => submit(names)} loading={create.isPending}>
+                <Button type="button" size="sm" onClick={() => submit(names)} loading={create.isPending} disabled={saving}>
                   Draft anyway
                 </Button>
                 <Button
@@ -195,6 +206,7 @@ export function SpeakAsMePanel() {
                 <Button
                   type="button"
                   size="sm"
+                  disabled={saving}
                   onClick={() => {
                     setGoAhead(register);
                     submit(names ?? [], register);
@@ -214,14 +226,16 @@ export function SpeakAsMePanel() {
             </div>
           )}
           <div>
-            <Button type="submit" disabled={!message.trim()} loading={create.isPending && !names && !registerStop}>
+            <Button type="submit" disabled={!message.trim() || saving} loading={create.isPending && !names && !registerStop}>
               Draft a reply
             </Button>
           </div>
         </form>
       ) : null}
 
-      {result && <DraftView key={result.id} draft={result} onCopy={() => pushToast('success', 'Copied. Read it once more before you send it.')} />}
+      {result && (
+        <DraftView key={result.id} draft={result} saveHeld={replacing} onCopy={() => pushToast('success', 'Copied. Read it once more before you send it.')} />
+      )}
 
       {st?.enabled && (recent.data?.items.length ?? 0) > 0 && (
         <details style={{ marginTop: space['4'] }}>
@@ -230,10 +244,13 @@ export function SpeakAsMePanel() {
             {recent.data!.items.map((d) => (
               <li key={d.id} data-draft={d.id} style={{ display: 'flex', gap: space['3'], alignItems: 'baseline' }}>
                 <span style={{ ...text, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.draft}</span>
-                <Button size="sm" variant="tertiary" onClick={() => setResult(d)}>
+                <Button size="sm" variant="tertiary" onClick={() => setResult(d)} disabled={saving}>
                   Open
                 </Button>
-                <Button size="sm" variant="tertiary" style={{ color: c.error }} onClick={() => del.mutate(d.id, { onSuccess: () => result?.id === d.id && setResult(null) })}>
+                <Button size="sm" variant="tertiary" style={{ color: c.error }} disabled={saving}
+                  // The draft open when the delete lands, not the one open when it was pressed.
+                  onClick={() => del.mutate(d.id, { onSuccess: () => setResult((r) => (r?.id === d.id ? null : r)) })}
+                >
                   Delete
                 </Button>
               </li>
@@ -247,13 +264,14 @@ export function SpeakAsMePanel() {
   );
 }
 
-function DraftView({ draft, onCopy }: { draft: EchoDraft; onCopy: () => void }) {
+function DraftView({ draft, saveHeld, onCopy }: { draft: EchoDraft; saveHeld: boolean; onCopy: () => void }) {
   const c = useColors();
   const small: React.CSSProperties = { fontFamily: fonts.ui, fontSize: fontSize.xs, color: c.textMuted };
   return (
     <section data-result aria-label="Draft" style={{ marginTop: space['4'], display: 'flex', flexDirection: 'column', gap: space['2'] }}>
       <DraftEditor
         draft={draft}
+        saveHeld={saveHeld}
         onCopy={onCopy}
         meta={
           <span style={small}>

@@ -9,6 +9,7 @@ import {
   type NoteTargetType,
   type NoteUpdatePayload,
 } from '../services/notesApi';
+import { ERRORS_SHOWN_HERE } from '../services/queryClient';
 
 const NOTES_KEY = ['notes'] as const;
 
@@ -78,11 +79,17 @@ function useInvalidateNotes() {
   return () => qc.invalidateQueries({ queryKey: NOTES_KEY });
 }
 
+// A note being written or edited says a failed save in its editor, the one
+// place it is said: every caller of the next two (the notes panel, and the
+// notes page for an edit) shows that line, so the global toast stands aside
+// (T-3.4.1.24). A delete has no line of its own and keeps the toast.
+
 export function useCreateNote() {
   const invalidate = useInvalidateNotes();
   return useMutation({
     mutationFn: (payload: NoteCreatePayload) => notesApi.create(payload),
     onSuccess: invalidate,
+    meta: ERRORS_SHOWN_HERE,
   });
 }
 
@@ -92,6 +99,7 @@ export function useUpdateNote() {
     mutationFn: ({ id, payload }: { id: string; payload: NoteUpdatePayload }) =>
       notesApi.update(id, payload),
     onSuccess: invalidate,
+    meta: ERRORS_SHOWN_HERE,
   });
 }
 

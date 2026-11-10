@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import axios from 'axios';
 import { useAuth } from '../contexts/AuthContext';
 import { useJobStore } from '../stores/jobStore';
 import { useDeleteNote, useNotesList, useUpdateNote } from '../hooks/useNotes';
@@ -12,6 +11,7 @@ import {
 } from '../services/notesApi';
 import { exportsApi } from '../services/exportsApi';
 import { formatDate } from '../utils/formatters';
+import { inlineErrorMessage } from '../utils/apiError';
 import { NoteCard, NoteEditor } from '../components/notes';
 import { Button, Card, EmptyState, Input, Spinner } from '../components/primitives';
 import { useColors } from '../hooks/useTheme';
@@ -53,12 +53,11 @@ export function groupNotes(notes: Note[], filter: TypeFilter): Group[] {
     .filter((g) => g.notes.length > 0);
 }
 
-function errorMessage(err: unknown): string {
-  if (axios.isAxiosError(err)) {
-    const detail = err.response?.data?.detail;
-    if (typeof detail === 'string') return detail;
-  }
-  return 'Could not save the note. Try again.';
+/** What an edited note's editor says for a failed save, and the only place it
+ * is said: the hook sets `meta`, so the global toast stands aside. The
+ * server's words, else the page's sentence, and nothing for a 401 (T-3.4.1.24). */
+function errorMessage(err: unknown): string | null {
+  return inlineErrorMessage(err, 'Could not save the note. Try again.');
 }
 
 export function NotesPage() {
@@ -279,7 +278,19 @@ export function NotesPage() {
                   key={n.id}
                   note={n}
                   meta={<TargetLine note={n} />}
-                  onEdit={n.deleted_at ? undefined : () => setEditingId(n.id)}
+                  onEdit={
+                    n.deleted_at
+                      ? undefined
+                      : () => {
+                          // A new editor starts clean: an earlier failure
+                          // belongs to the editor it was said in.
+                          updateNote.reset();
+                          setEditingId(n.id);
+                        }
+                  }
+                  // Editing this note would close the one being saved, and
+                  // its line with it, so Edit waits for the answer (T-3.4.1.24).
+                  editHeld={updateNote.isPending}
                   onDelete={n.deleted_at ? undefined : () => deleteNote.mutate(n.id)}
                   deleting={deleteNote.isPending && deleteNote.variables === n.id}
                 />

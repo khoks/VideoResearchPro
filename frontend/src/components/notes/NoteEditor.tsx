@@ -50,7 +50,9 @@ export function NoteEditor({
       if (canSave) onSave(body);
     } else if (e.key === 'Escape') {
       e.preventDefault();
-      onCancel();
+      // While a save is out, Escape waits as Cancel does: the editor is where
+      // its failure is said, and the only place (T-3.4.1.24).
+      if (!saving) onCancel();
     }
   };
 

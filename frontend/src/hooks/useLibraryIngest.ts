@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { libraryApi, type UploadPdfResponse } from '../services/libraryApi';
+import { ERRORS_SHOWN_HERE } from '../services/queryClient';
 import { describeUploadError, isPdfFile } from '../utils/ingestResults';
 
 export type UploadItemStatus = 'queued' | 'uploading' | 'done' | 'error';
@@ -78,10 +79,13 @@ export function usePdfUploadQueue() {
   return { items, enqueue, remove, clearFinished, isBusy };
 }
 
+/** The paste form, the one caller, says a rejected batch on its own line, so
+ * the global toast stands aside (T-3.4.1.24). */
 export function usePasteUrls() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (urls: string[]) => libraryApi.pasteUrls(urls),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['libraryVideos'] }),
+    meta: ERRORS_SHOWN_HERE,
   });
 }

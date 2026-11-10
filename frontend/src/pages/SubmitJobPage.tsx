@@ -35,7 +35,7 @@ import {
   type JobFormState,
 } from '../utils/jobForm';
 import { useJobStore } from '../stores/jobStore';
-import { apiErrorMessage, isDocumentCapRefusal } from '../utils/apiError';
+import { FormValidationError, apiErrorMessage, isDocumentCapRefusal } from '../utils/apiError';
 import {
   Button,
   Card,
@@ -221,7 +221,9 @@ export function SubmitJobPage() {
 
   const saveFormAsTemplate = async (values: { name: string; description: string | null }) => {
     const result = formToTemplateParameters(form);
-    if (!result.ok) throw new Error(result.error);
+    // The dialog shows these words as they are: a plain `Error`'s text never
+    // reaches the page, so it said its own fallback instead (T-3.4.1.25).
+    if (!result.ok) throw new FormValidationError(result.error);
     const t = await createTemplate.mutateAsync({ ...values, parameters: result.params });
     setFromTemplate({
       id: t.id,

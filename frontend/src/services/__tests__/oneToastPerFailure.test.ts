@@ -584,16 +584,13 @@ const NOT_YET: Record<string, string> = {
   // dialog mid-request unmounts it, and its line with it, so the toast is the
   // only word then. What it should say then is the owner's call (T-3.4.1.18).
   'src/components/echo/QuickShare.tsx': 'waits on the owner’s ruling',
-  // Each builds a line from a mutation's `isError` / `error` beside the global
-  // toast. Found once the guard read lines from a mutation's state (T-3.4.1.22),
-  // after that task was filed, and left for one of their own.
-  'src/components/echo/DraftEditor.tsx': 'found by the state reading, not yet in a task',
-  'src/components/frames/VideoFramesPanel.tsx': 'found by the state reading, not yet in a task',
-  'src/components/library/PasteUrlsForm.tsx': 'found by the state reading, not yet in a task',
-  'src/components/notes/NotesPanel.tsx': 'found by the state reading, not yet in a task',
-  'src/components/savedSearches/PinQuestionButton.tsx': 'found by the state reading, not yet in a task',
-  'src/pages/NotesPage.tsx': 'found by the state reading, not yet in a task',
-  'src/pages/SavedSearchesPage.tsx': 'found by the state reading, not yet in a task',
+  // T-3.4.1.24 took off the seven files the state reading found (T-3.4.1.22):
+  // DraftEditor, VideoFramesPanel, PasteUrlsForm, NotesPanel,
+  // PinQuestionButton, NotesPage and SavedSearchesPage. Mutation check, run on
+  // 2026-11-09: taking `meta` off `useDraftFeedback` fails "knows how each hook
+  // sets `meta`" and this guard's "finds no line", naming DraftEditor; `meta`
+  // on `useDeleteNote` fails the third guard's "finds no mutation whose
+  // failure is said nowhere", since neither caller of a note's delete has a line.
 };
 
 /** Stand-ins for the hooks the guards read: one with no `meta`, one that sets
@@ -631,6 +628,21 @@ describe('the second guard', () => {
     // T-3.4.1.22: a hook every caller answers on the page, and one whose callers differ.
     expect(hooks.get('useApproveJob')).toEqual({ when: 'always', toasts: false });
     expect(hooks.get('useCreateJob')).toEqual({ when: 'option', option: 'inlineErrors', toasts: false });
+    // T-3.4.1.24: every caller of these shows a line; a note's delete shows none.
+    for (const name of [
+      'useDraftFeedback',
+      'useExtractFrames',
+      'usePasteUrls',
+      'useCreateNote',
+      'useUpdateNote',
+      'useCreateSavedSearch',
+      'useUpdateSavedSearch',
+      'useRunSavedSearchNow',
+      'useDeleteSavedSearch',
+    ]) {
+      expect(hooks.get(name), name).toEqual({ when: 'always', toasts: false });
+    }
+    expect(hooks.get('useDeleteNote')).toEqual({ when: 'never', toasts: false });
   });
 
   it('finds no line on a page that the global toast repeats, but those known and not yet changed', () => {

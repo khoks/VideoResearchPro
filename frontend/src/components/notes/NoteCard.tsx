@@ -9,6 +9,9 @@ import { fonts, fontSize, fontWeight, lineHeight, radius, space } from '../../th
 interface Props {
   note: Note;
   onEdit?: () => void;
+  /** Edit waits: another note's save is in flight, and editing this one would
+   * take that editor and its line away (T-3.4.1.24). */
+  editHeld?: boolean;
   onDelete?: () => void;
   deleting?: boolean;
   /** Optional line under the date, e.g. the target on the notes page. */
@@ -30,7 +33,7 @@ function selectorAnchor(note: Note): string | null {
 
 /** One note, rendered. The phrasing "You wrote this on …" is the citation
  * form S-8.5.2 will use, so the user meets it here first. */
-export function NoteCard({ note, onEdit, onDelete, deleting, meta }: Props) {
+export function NoteCard({ note, onEdit, editHeld = false, onDelete, deleting, meta }: Props) {
   const c = useColors();
   const [confirming, setConfirming] = useState(false);
   const anchor = selectorAnchor(note);
@@ -90,7 +93,7 @@ export function NoteCard({ note, onEdit, onDelete, deleting, meta }: Props) {
             ) : (
               <>
                 {onEdit && (
-                  <Button size="sm" variant="tertiary" onClick={onEdit}>
+                  <Button size="sm" variant="tertiary" onClick={onEdit} disabled={editHeld}>
                     Edit
                   </Button>
                 )}

@@ -10,6 +10,56 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Changed: one message per failure in the last seven files, and the template dialog's own words (T-3.4.1.24, T-3.4.1.25, 2026-11-10)
+
+PR [#446](https://github.com/khoks/VideoResearchPro/pull/446). [D-165](docs/decisions.md#d-165--a-forms-own-words-travel-in-a-typed-error-a-surface-waits-only-for-its-own-save-a-control-that-would-replace-a-line-is-part-of-its-surface-and-a-lines-request-waits-for-whatever-would-take-the-line-away-2026-11-10).
+
+- The draft editor on the Echo page and in the bubble, the frame capture, the paste form, the notes panel and page, the pin dialog and the saved searches page show a failure once, on their own line, with the server's words and nothing on a 401. A note's delete keeps its toast.
+- While a save is in flight, the controls that would take its line away wait: the bubble's ×, Escape, Clear, openers and Mod-Shift-E shortcut, the Echo page's recent drafts and draft buttons, another note's Edit and Add a note, the paste form's "See them on the shelf", the pin dialog's Cancel, Escape and backdrop, and a saved search's other actions. A save on the Echo page does not hold the bubble, nor the reverse. The app's own navigation does not wait.
+- "Save my version" waits while a new draft, or a delete of the open draft, is in flight, and a delete that lands after another draft was opened leaves that draft open.
+- A saved search's card has a line for each action: change, run now and delete.
+- The template dialog shows the form's own validation words instead of "Could not save the template."
+- **Changed, please check:** the frames panel says "this month's frame captures" only for the quota's own refusal; the rate limiter's 429 shows its own words.
+- A failed note edit's line no longer shows in the next note's editor.
+- Frontend only. Nothing to restart.
+
+### Changed: the API's warnings and errors carry no user's words (T-4.11.4.4, 2026-11-09)
+
+PR [#447](https://github.com/khoks/VideoResearchPro/pull/447). [D-164](docs/decisions.md#d-164--the-apis-warnings-and-errors-carry-no-users-words-an-operator-by-place-and-mask-echos-model-failures-by-type-and-status-a-chosen-file-name-by-its-extension-and-length-and-a-failure-logged-by-its-frames-is-never-re-raised-bare-2026-11-09).
+
+- The startup warning about an `ADMIN_EMAILS` address with no account names it by its place in the list and a masked form, such as `entry 2 of 3 (b***@e***.com)`, never the whole address.
+- An Echo import's failure names the file by its extension and length. A failed import answers 500 with "Import stopped: <type>" and a failed preview "Preview stopped: <type>", on both import routes, instead of reaching uvicorn's unhandled-exception line, and an import whose preview fails writes no row. An unreadable export keeps its 422.
+- Echo's draft classify and critique, a signals batch and the voice test's retry log a model failure by its type and HTTP status.
+- Failures around a password check, a registration, the audit log, an Echo share, a connector sync, an Author Studio output and the Q&A stream are logged by their frames and types, without the text that can quote a stored value.
+- A fabricated citation's title and channel, and a knowledge reply that is not JSON, are logged by their lengths.
+- No migration and no new setting. Restart the API and the worker. Still open: uvicorn's access log writes a search's query string (T-4.11.4.5), and an exception no route handles still reaches uvicorn's line whole (T-4.11.4.6, with OQ-45).
+
+### Changed: a stopped run publishes nothing more, a cancel never writes over a run that ended, and a finished run is not run again (T-5.2.21, T-5.2.22, T-5.2.23, 2026-11-09)
+
+PR [#449](https://github.com/khoks/VideoResearchPro/pull/449). [D-163](docs/decisions.md#d-163--a-progress-line-is-written-before-it-is-published-a-cancel-that-loses-the-race-answers-with-the-runs-end-and-revokes-nothing-and-completed-is-a-stopped-status-2026-11-09).
+
+- Every progress line a run publishes on its own is written to the run first and published only once written, so a cancelled sync or channel job sends no more lines and the open page no longer flips back from Cancelled. A reload shows the last line the socket said.
+- **Changed, please check:** cancelling a run that has already completed or failed answers 400 with what it ended as, such as "This run has already completed, so there is nothing to cancel.", and leaves the run as it ended. Before, a cancel that raced the run's end wrote `cancelled` over it. The task is revoked only once the run says cancelled.
+- A failed cancel brings the run's real status onto the page, with one toast in the server's words.
+- A task delivered again after its run completed, as when a worker died before acknowledging it, does nothing: no quota, model call, Whisper or report. A topic or channel run's first phase delivered again after approval leaves the review, or the resume already running, alone.
+- No migration and no new setting. Restart the API and the worker.
+
+### Added: a dry-run check for documents flagged embedded with no chunks (T-5.2.24, 2026-11-09)
+
+PR [#448](https://github.com/khoks/VideoResearchPro/pull/448). [D-162](docs/decisions.md#d-162--a-document-counts-as-embedded-when-any-chunk-names-it-every-doubt-keeps-the-flag-a-document-with-no-words-keeps-it-and-the-check-embeds-nothing-2026-11-09).
+
+- `backend/scripts/check_embedded_flags.py` finds documents flagged `embedded_in_chroma` that have no chunk in the library, by source type and by where their text lives. It reads metadata only, loads no model, makes no network call and prints ids and counts, never titles or text.
+- The dry run is the default. `--write` clears the flag on the documents it finds, so the next job that selects one embeds it; it re-checks each against Chroma first and changes nothing in Chroma. It writes nothing on a partial scan, a missing or empty collection, or a store that matches no document in this database, and `--empty-store-ok` clears against a store that really was emptied.
+- The read-only run on the live store found 254 flagged documents, all videos with chunks, and nothing to clear.
+- No migration, no setting and nothing to restart. `--write` is the owner's step, only if a later dry run finds documents.
+
+### Fixed: the docs' stated test count reads 5,800+ (T-8.8.6.13, 2026-11-09)
+
+PR [#445](https://github.com/khoks/VideoResearchPro/pull/445). No decision needed.
+
+- The suite collected 5,893 tests and the docs said "5,400+", whose window allows fewer than 5,900, so the next PR adding seven tests would have failed backend pytest. CLAUDE.md, the README, `docs/architecture.md`, `docs/contributing.md` and `docs/testing.md` now say "5,800+", a window of 5,800 to 6,300.
+- Docs only.
+
 ### Fixed: the logging tests hold against an install's `backend/.env`, and a master test #440 broke (T-4.11.4.3, 2026-11-09)
 
 PR [#443](https://github.com/khoks/VideoResearchPro/pull/443). No decision needed.

@@ -8,6 +8,14 @@ uvicorn puts the path. On the logger itself, so it holds under either
 ``LOG_FORMAT`` and whichever handlers are attached. uvicorn configures logging
 before it imports the app and never clears a logger's filters.
 
+**A user's words in a URL (T-4.11.4.5).** The access log writes each request's
+query string as it was sent, and a search box sends what the user typed:
+``GET /api/v1/search?q=...``. The same filter writes the value of each
+parameter in ``WORDS_QUERY_NAMES`` by its length (``q=[12 characters]``) and
+leaves the path, the other parameters and the status as they were. So one
+filter decides what the access log may write of a URL, by what each
+parameter is named.
+
 **A key in a provider's error (T-5.6.16).** OpenAI quotes part of a key it
 refuses, and ``googleapiclient`` puts the YouTube key in every ``HttpError``'s
 URL. Such an exception can reach a log line at dozens of call sites in the
@@ -43,6 +51,7 @@ import logging
 import re
 import traceback
 from collections.abc import Callable, Iterator, Mapping
+from urllib.parse import unquote_plus
 
 REDACTED = "[redacted]"
 
@@ -75,6 +84,41 @@ def redact_url_credentials(text: str) -> str:
     """``text`` with the value of every credential query parameter, and any
     JWT at all, replaced. Everything else stands, so a path stays readable."""
     return _JWT.sub(REDACTED, _URL_CREDENTIAL.sub(lambda m: f"{m[1]}={REDACTED}", text))
+
+
+# The query parameters whose value is a user's own words (T-4.11.4.5): a
+# search box's (`q` on /search, /notes, /echo/shares and
+# /author/knowledge-sources), a filter's (`search` on /library/videos and on a
+# shelf's documents), and the library map's `focus`, a node id, which for a
+# topic is the topic's label. Every other parameter a route reads is an id,
+# an enum, a number, a date or a flag, and stands.
+# `tests/test_utils/test_access_log_words.py` holds every route's parameters
+# to this list or to its own list of kept ones.
+WORDS_QUERY_NAMES = frozenset({"q", "search", "focus"})
+
+# Such a parameter wherever a name can start, as the credential pattern finds
+# one, a `;` included. Its value runs to the next `&`, as the server reads it:
+# Starlette splits a query string on `&` alone, so a `;`, a `#` or a `?`
+# inside a value is still that value's. Whitespace ends one too, for a URL
+# quoted in a sentence. Only these names match, so no other parameter's value
+# is read past, and one hidden inside another's value is caught as well.
+_QUERY_WORDS = re.compile(
+    r"(?i)(?<=[?&;])(?P<name>" + "|".join(_spelled(name) for name in sorted(WORDS_QUERY_NAMES)) + r")"
+    r"=(?P<value>[^&\s]+)"
+)
+
+
+def _characters(count: int) -> str:
+    return f"[{count} character{'' if count == 1 else 's'}]"
+
+
+def redact_query_words(text: str) -> str:
+    """``text`` with the value of every parameter in ``WORDS_QUERY_NAMES``
+    written as its length, counted as the route reads it: percent-decoded,
+    with ``+`` a space. A name matches in any case and percent-encoded, since
+    ``%71`` is ``q``. An empty value has nothing to hide and stands, as does
+    everything else."""
+    return _QUERY_WORDS.sub(lambda found: f"{found['name']}={_characters(len(unquote_plus(found['value'])))}", text)
 
 
 # OpenAI's sentence goes first: a key that is not `sk-` shaped is quoted in it
@@ -205,9 +249,13 @@ def _scrubbed_record(*args: object, **kwargs: object) -> logging.LogRecord:
 
 
 class _UrlCredentialFilter(logging.Filter):
+    """What uvicorn may write of a URL it was asked for: no credential
+    (T-5.4.23) and no user's words (T-4.11.4.5). The access line's path is
+    one of its arguments, so each argument is redacted where it stands."""
+
     def filter(self, record: logging.LogRecord) -> bool:
         def redact(value: object) -> object:
-            return redact_url_credentials(value) if isinstance(value, str) else value
+            return redact_query_words(redact_url_credentials(value)) if isinstance(value, str) else value
 
         record.msg = redact(record.msg)
         record.args = _map_args(record.args, redact)

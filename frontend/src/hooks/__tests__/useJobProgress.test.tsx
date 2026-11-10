@@ -17,11 +17,12 @@
  * id exactly as in the app; `jobsApi` is faked.
  *
  * Mutation checks, run by hand on 2026-11-10: taking the ended-status guard out
- * of `applyRunEvent` fails the late-progress, late-status, after-cancel and
- * list-after-cancel cases (the run reads `extracting` or `generating_report`
- * again); writing the list back to `['jobs', undefined]` fails both list cases
- * (the row stays active); and reading the ended state after the event is
- * applied, rather than before, refetches on a late `completed`.
+ * of `applyRunEvent` fails five cases, the two late-event ones, the cancel then
+ * progress one, the refetch to an end and the list's (the run reads a running
+ * status again, and a late `completed` refetches); writing the list back to
+ * `['jobs', undefined]` fails the three cases that read a list (the row stays as
+ * it was); and reading the ended state after the event is applied, rather than
+ * before, fails the cancel case (the event that ends the run refetches nothing).
  */
 import { act, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';

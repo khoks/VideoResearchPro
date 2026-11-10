@@ -5,6 +5,7 @@
 
 import type { DraftGate } from '../services/echoApi';
 import type { Readiness } from './echoReadiness';
+import { inlineErrorMessage } from './apiError';
 
 /** The chord the panel opens with: Mod-Shift-E (not Cmd-E, which is macOS's
  * "Use Selection for Find"; see the L3 plan, Domain 4). */
@@ -83,7 +84,10 @@ const TEST_EXPLAINED =
 
 /**
  * The "speak as me" gate (D-100) in words. `gate` is the status read, `error`
- * its failure: a 404 means the feature has not shipped on this install.
+ * its failure: a 404 means the feature has not shipped on this install. Any
+ * other failure says the server's words, else the bubble's sentence, and is
+ * the one place it is said (T-3.4.1.26). A 401 shows nothing: no title and no
+ * lines, since the session-expiry path owns it.
  */
 export function draftGateView(gate: DraftGate | undefined, error: unknown, readiness: Readiness | null): GateView {
   const status = httpStatus(error);
@@ -95,7 +99,8 @@ export function draftGateView(gate: DraftGate | undefined, error: unknown, readi
     };
   }
   if (error) {
-    return { available: false, title: 'Could not check', lines: ['Echo could not say whether drafting is on for you. Try again in a moment.'] };
+    const words = inlineErrorMessage(error, 'Echo could not say whether drafting is on for you. Try again in a moment.');
+    return words ? { available: false, title: 'Could not check', lines: [words] } : { available: false, title: '', lines: [] };
   }
   if (!gate) return { available: false, title: 'Checking…', lines: [] };
   if (gate.enabled) return { available: true, title: 'Draft as me', lines: [] };

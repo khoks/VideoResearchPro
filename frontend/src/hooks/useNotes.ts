@@ -55,7 +55,8 @@ export function useNotesForTarget(targetType: NoteTargetType, ids: Array<string 
   });
 }
 
-/** The notes page: filtered, paged, newest first. */
+/** The notes page: filtered, paged, newest first. Its one caller says a
+ * failure on the page, so the toast stands aside (T-3.4.1.26). */
 export function useNotesList(params: ListNotesParams, enabled = true) {
   return useQuery({
     queryKey: [
@@ -71,6 +72,7 @@ export function useNotesList(params: ListNotesParams, enabled = true) {
     queryFn: () => notesApi.list(params),
     staleTime: 15_000,
     enabled,
+    meta: ERRORS_SHOWN_HERE,
   });
 }
 

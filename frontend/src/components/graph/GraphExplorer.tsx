@@ -16,7 +16,7 @@ import { useShelves } from '../../hooks/useShelves';
 import { useChannel } from '../../hooks/useChannels';
 import { useColors, useGroupColors } from '../../hooks/useTheme';
 import { fonts, fontSize, lineHeight, space } from '../../theme';
-import { apiErrorMessage, isNotFound } from '../../utils/apiError';
+import { inlineErrorMessage, isNotFound } from '../../utils/apiError';
 import { jobDisplayTitle } from '../../utils/jobTitle';
 import { jobsApi } from '../../services/jobsApi';
 import { buildModel, type GraphModel } from '../../utils/graphModel';
@@ -131,23 +131,29 @@ export function GraphExplorer({
   const focusLabel = (model && state.focus && model.byId.get(state.focus)?.displayLabel) || null;
   const lostFocus = !!state.focus && !!data && data.focus === null;
 
+  // A failed load is said here alone: the hook sets `meta`. The server's
+  // words, else this sentence, and nothing for a 401 (T-3.4.1.26).
+  const loadError = !query.isError
+    ? null
+    : isNotFound(query.error)
+      ? 'That shelf or run is not yours, or it no longer exists.'
+      : inlineErrorMessage(query.error, 'Try again in a moment.');
+
   let body;
   if (query.isLoading || !model || !data || (state.view === null && width === 0)) {
     body = query.isError ? (
-      <EmptyState
-        size="sm"
-        title={isNotFound(query.error) ? 'Not found' : 'The map did not load'}
-        description={
-          isNotFound(query.error)
-            ? 'That shelf or run is not yours, or it no longer exists.'
-            : apiErrorMessage(query.error, 'Try again in a moment.')
-        }
-        action={
-          <Button size="sm" variant="secondary" onClick={() => query.refetch()}>
-            Try again
-          </Button>
-        }
-      />
+      loadError && (
+        <EmptyState
+          size="sm"
+          title={isNotFound(query.error) ? 'Not found' : 'The map did not load'}
+          description={loadError}
+          action={
+            <Button size="sm" variant="secondary" onClick={() => query.refetch()}>
+              Try again
+            </Button>
+          }
+        />
+      )
     ) : (
       // Also while the width is unknown: the view (map or table) depends on it,
       // and mounting the map only to swap it for the table wastes a WebGL context.

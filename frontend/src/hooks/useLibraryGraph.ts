@@ -1,5 +1,6 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { graphApi, type GraphParams } from '../services/graphApi';
+import { LOAD_ERRORS_SHOWN_HERE } from '../services/queryClient';
 
 export const libraryGraphKey = (p: GraphParams) =>
   [
@@ -14,7 +15,10 @@ export const libraryGraphKey = (p: GraphParams) =>
   ] as const;
 
 /** The reader's library as nodes and edges (S-8.9.1). Keeps the previous
- * graph on screen while a filter change loads, so the map does not blank. */
+ * graph on screen while a filter change loads, so the map does not blank. Its
+ * one caller, the explorer, says a failed load in place of the map, and keeps
+ * a map already drawn when a refresh fails, so that failure keeps its toast
+ * (T-3.4.1.26). */
 export function useLibraryGraph(params: GraphParams, enabled = true) {
   return useQuery({
     queryKey: libraryGraphKey(params),
@@ -22,5 +26,6 @@ export function useLibraryGraph(params: GraphParams, enabled = true) {
     staleTime: 60_000,
     placeholderData: keepPreviousData,
     enabled,
+    meta: LOAD_ERRORS_SHOWN_HERE,
   });
 }

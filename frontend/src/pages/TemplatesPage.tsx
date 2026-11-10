@@ -24,7 +24,9 @@ import type { JobTemplate, TemplateParameters } from '../services/jobTemplatesAp
 export function TemplatesPage() {
   const c = useColors();
   const navigate = useNavigate();
-  const templatesQuery = useJobTemplates();
+  // A failed read is said on this page alone (T-3.4.1.26).
+  const templatesQuery = useJobTemplates({ inlineErrors: true });
+  const loadError = templatesQuery.isError ? inlineErrorMessage(templatesQuery.error, 'Something blocked the fetch.') : null;
   const [renaming, setRenaming] = useState<JobTemplate | null>(null);
   // A failed rename is said in its dialog alone (T-3.4.1.22).
   const update = useUpdateTemplate({ inlineErrors: true });
@@ -69,15 +71,17 @@ export function TemplatesPage() {
           <Skeleton variant="row" height={88} />
         </div>
       ) : templatesQuery.isError ? (
-        <EmptyState
-          title="Couldn't load your templates."
-          description="Something blocked the fetch."
-          action={
-            <Button variant="secondary" onClick={() => void templatesQuery.refetch()}>
-              Retry
-            </Button>
-          }
-        />
+        loadError && (
+          <EmptyState
+            title="Couldn't load your templates."
+            description={loadError}
+            action={
+              <Button variant="secondary" onClick={() => void templatesQuery.refetch()}>
+                Retry
+              </Button>
+            }
+          />
+        )
       ) : (
         <>
           <Section title="Your templates">

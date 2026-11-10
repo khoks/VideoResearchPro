@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ERRORS_SHOWN_HERE } from '../services/queryClient';
+import { ERRORS_SHOWN_HERE, queryErrorsMeta, type QueryLineOptions } from '../services/queryClient';
 import { rememberCutOff } from '../stores/qaCutOffStore';
 import type { LibraryQARequest } from '../types/qa';
 import {
@@ -22,12 +22,17 @@ export const shelvesKeys = {
  * The caller's shelves with their `job_ids`. The sidebar, every "Add to
  * shelf" picker and every chip row read this one cached list, so a page of
  * twenty job cards costs one request, not twenty.
+ *
+ * Only the shelves page says a failed read, so only it passes `inlineErrors`;
+ * the sidebar and the pickers say nothing, and the toast speaks for them
+ * (T-3.4.1.26).
  */
-export function useShelves() {
+export function useShelves({ inlineErrors }: QueryLineOptions = {}) {
   return useQuery({
     queryKey: shelvesKeys.all,
     queryFn: () => shelvesApi.list(),
     staleTime: 30_000,
+    meta: queryErrorsMeta(inlineErrors),
   });
 }
 
@@ -48,6 +53,8 @@ export function useShelf(id: string | null) {
     enabled: !!id,
     // A 404 is the answer (not yours, or gone), not a transient failure.
     retry: false,
+    // Its one caller, the shelf page, says a failed read (T-3.4.1.26).
+    meta: ERRORS_SHOWN_HERE,
   });
 }
 

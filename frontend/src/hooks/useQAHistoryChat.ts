@@ -5,10 +5,12 @@ import type { QAHistoryChatRequest } from '../types/qa';
 
 const QA_HISTORY_CHAT_KEY = ['qaHistoryChat'] as const;
 
+/** Its one caller, the history chat page, says a failed read (T-3.4.1.26). */
 export function useQAHistoryChatHistory() {
   return useQuery({
     queryKey: QA_HISTORY_CHAT_KEY,
     queryFn: () => qaHistoryApi.getExchanges(),
+    meta: ERRORS_SHOWN_HERE,
   });
 }
 

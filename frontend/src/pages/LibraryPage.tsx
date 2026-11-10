@@ -127,7 +127,9 @@ export function LibraryPage() {
   // Why a subscribe or sync started no job (T-5.2.15).
   const [syncNote, setSyncNote] = useState<string | null>(null);
 
-  const channelsQuery = useChannels();
+  // Each list says its failed load on its own tab, and only while that tab is
+  // on screen; on another tab the toast says it (T-3.4.1.26).
+  const channelsQuery = useChannels({ inlineErrors: tab === 'channels' });
   const subscribeMut = useSubscribeChannel();
   const unsubscribeMut = useUnsubscribeChannel();
   const syncMut = useSyncChannel();
@@ -142,7 +144,9 @@ export function LibraryPage() {
     sort,
     limit: PAGE_SIZE,
     offset: page * PAGE_SIZE,
-  });
+  }, { inlineErrors: tab === 'videos' });
+  const videosError = videosQuery.isError ? inlineErrorMessage(videosQuery.error, 'Something blocked the library fetch.') : null;
+  const channelsError = channelsQuery.isError ? inlineErrorMessage(channelsQuery.error, 'Something blocked the channels fetch.') : null;
 
   const resetPage = () => setPage(0);
 
@@ -316,6 +320,7 @@ export function LibraryPage() {
           videos={videosQuery.data ?? []}
           isLoading={videosQuery.isLoading}
           isError={videosQuery.isError}
+          loadError={videosError}
           anyFilter={anyFilter}
           onClearFilters={clearAllFilters}
           onAddSources={() => setTab('ingest')}
@@ -353,6 +358,7 @@ export function LibraryPage() {
           channels={channelsQuery.data ?? []}
           isLoading={channelsQuery.isLoading}
           isError={channelsQuery.isError}
+          loadError={channelsError}
           onRetry={() => void channelsQuery.refetch()}
           onStartChannelRun={() => navigate('/submit')}
           onOpen={handleOpenChannel}
@@ -457,6 +463,8 @@ interface VideosTabProps {
   videos: LibraryVideoResponse[];
   isLoading: boolean;
   isError: boolean;
+  /** What the failed load says: the server's words, else the page's; null for a 401. */
+  loadError: string | null;
   /** Any filter narrows the list (including the tag and one-source filters). */
   anyFilter: boolean;
   onClearFilters: () => void;
@@ -482,6 +490,7 @@ function VideosTab({
   videos,
   isLoading,
   isError,
+  loadError,
   anyFilter,
   onClearFilters,
   onAddSources,
@@ -601,16 +610,18 @@ function VideosTab({
           <Skeleton variant="card" height={104} />
         </div>
       ) : isError ? (
-        <EmptyState
-          size="sm"
-          title="Couldn't load your sources."
-          description="Something blocked the library fetch."
-          action={
-            <Button size="sm" variant="secondary" onClick={onRetry}>
-              Retry
-            </Button>
-          }
-        />
+        loadError && (
+          <EmptyState
+            size="sm"
+            title="Couldn't load your sources."
+            description={loadError}
+            action={
+              <Button size="sm" variant="secondary" onClick={onRetry}>
+                Retry
+              </Button>
+            }
+          />
+        )
       ) : videos.length === 0 && !anyFilter && page === 0 ? (
         <EmptyState
           title="Your library is empty."
@@ -688,6 +699,8 @@ interface ChannelsTabProps {
   channels: Channel[];
   isLoading: boolean;
   isError: boolean;
+  /** What the failed load says: the server's words, else the page's; null for a 401. */
+  loadError: string | null;
   onRetry: () => void;
   onStartChannelRun: () => void;
   onOpen: (channelId: string) => void;
@@ -704,6 +717,7 @@ function ChannelsTab({
   channels,
   isLoading,
   isError,
+  loadError,
   onRetry,
   onStartChannelRun,
   onOpen,
@@ -724,11 +738,12 @@ function ChannelsTab({
     );
   }
   if (isError) {
+    if (!loadError) return null;
     return (
       <EmptyState
         size="sm"
         title="Couldn't load channels."
-        description="Something blocked the channels fetch."
+        description={loadError}
         action={
           <Button size="sm" variant="secondary" onClick={onRetry}>
             Retry

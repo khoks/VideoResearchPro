@@ -26,7 +26,7 @@ import {
 import { useColors } from '../hooks/useTheme';
 import { fonts, fontSize, fontWeight, lineHeight, measure, space } from '../theme';
 import { formatDate } from '../utils/formatters';
-import { isNotFound } from '../utils/apiError';
+import { inlineErrorMessage, isNotFound } from '../utils/apiError';
 import { jobDisplayTitle, jobTypeLabel } from '../utils/jobTitle';
 import type { ShelfDetail } from '../services/shelvesApi';
 import type { Job } from '../types/job';
@@ -88,6 +88,9 @@ export function ShelfPage() {
 
   if (shelfQuery.isError || !shelf) {
     const missing = isNotFound(shelfQuery.error);
+    // Said here alone: the hook sets `meta`. Nothing for a 401 (T-3.4.1.26).
+    const failure = inlineErrorMessage(shelfQuery.error, 'Something blocked the fetch. Try again in a moment.');
+    if (!failure) return null;
     return (
       <div style={{ maxWidth: measure.grid, margin: '0 auto' }}>
         {back}
@@ -96,7 +99,7 @@ export function ShelfPage() {
           description={
             missing
               ? 'It may have been deleted, or the link is stale.'
-              : 'Something blocked the fetch. Try again in a moment.'
+              : failure
           }
           action={
             missing ? (

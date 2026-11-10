@@ -11,7 +11,8 @@ import {
   type YouTubeQuotaStatus,
 } from '../services/systemApi';
 import { featureLabel } from '../components/common/SystemStatusBanner';
-import { apiErrorMessage } from '../utils/apiError';
+import { apiErrorMessage, inlineErrorMessage } from '../utils/apiError';
+import { ERRORS_SHOWN_HERE } from '../services/queryClient';
 import { formatDate } from '../utils/formatters';
 import { waitForApi } from '../utils/waitForApi';
 import { Badge, Button, Card, Modal, Skeleton, type BadgeTone } from '../components/primitives';
@@ -42,13 +43,16 @@ const POLL_MS = 60_000;
 export function SystemStatusPage() {
   const c = useColors();
   const me = useMe();
-  const llm = useQuery({ queryKey: SYSTEM_QUERY_KEYS.llm, queryFn: systemApi.llm, refetchInterval: POLL_MS });
+  // Each section says its read's failure in its own place, a failed poll
+  // included, so the toast stands aside (T-3.4.1.26).
+  const llm = useQuery({ queryKey: SYSTEM_QUERY_KEYS.llm, queryFn: systemApi.llm, refetchInterval: POLL_MS, meta: ERRORS_SHOWN_HERE });
   const scheduler = useQuery({
     queryKey: SYSTEM_QUERY_KEYS.scheduler,
     queryFn: systemApi.scheduler,
     refetchInterval: POLL_MS,
+    meta: ERRORS_SHOWN_HERE,
   });
-  const quota = useQuery({ queryKey: SYSTEM_QUERY_KEYS.quota, queryFn: systemApi.quota, refetchInterval: POLL_MS });
+  const quota = useQuery({ queryKey: SYSTEM_QUERY_KEYS.quota, queryFn: systemApi.quota, refetchInterval: POLL_MS, meta: ERRORS_SHOWN_HERE });
   const refreshing = llm.isFetching || scheduler.isFetching || quota.isFetching;
 
   const refreshAll = () => {
@@ -176,9 +180,12 @@ function Note({ children }: { children: ReactNode }) {
 function LoadState<T>({ query, what, children }: { query: QueryLike<T>; what: string; children: (data: T) => ReactNode }) {
   if (query.isLoading) return <Skeleton variant="card" height={96} />;
   if (query.isError || query.data === undefined) {
+    // The server's words, else the section's, and nothing for a 401.
+    const failure = inlineErrorMessage(query.error, `The server did not answer for ${what}.`);
+    if (!failure) return null;
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: space['2'], alignItems: 'flex-start' }}>
-        <Note>{apiErrorMessage(query.error, `The server did not answer for ${what}.`)}</Note>
+      <div role="alert" style={{ display: 'flex', flexDirection: 'column', gap: space['2'], alignItems: 'flex-start' }}>
+        <Note>{failure}</Note>
         <Button variant="secondary" size="sm" onClick={() => void query.refetch()}>
           Try again
         </Button>

@@ -11,6 +11,7 @@ import { fonts, fontSize, fontWeight, lineHeight, measure, radius, space } from 
 import { formatDate, statusTone } from '../utils/formatters';
 import type { JobStatus } from '../types/job';
 import { jobDisplayTitle, jobTypeLabel } from '../utils/jobTitle';
+import { inlineErrorMessage } from '../utils/apiError';
 
 const PAGE_SIZE = 20;
 
@@ -39,11 +40,16 @@ export function JobsListPage() {
   const [sortOrder, setSortOrder] = useState<SortOrder>('newest');
   const [page, setPage] = useState(0);
 
-  const { data: jobs, isLoading, isError, refetch } = useJobs({
-    status: statusFilter || undefined,
-    limit: PAGE_SIZE,
-    offset: page * PAGE_SIZE,
-  });
+  // A failed read is said on this page alone (T-3.4.1.26).
+  const { data: jobs, isLoading, isError, error, refetch } = useJobs(
+    {
+      status: statusFilter || undefined,
+      limit: PAGE_SIZE,
+      offset: page * PAGE_SIZE,
+    },
+    { inlineErrors: true },
+  );
+  const loadError = isError ? inlineErrorMessage(error, 'Something blocked the request. Your runs are still there.') : null;
   const cancelJob = useCancelJob();
   const deleteJob = useDeleteJob();
 
@@ -157,16 +163,18 @@ export function JobsListPage() {
       </Card>
 
       {isError ? (
-        <EmptyState
-          size="sm"
-          title="Couldn't load your runs."
-          description="Something blocked the request. Your runs are still there."
-          action={
-            <Button variant="secondary" onClick={() => void refetch()}>
-              Retry
-            </Button>
-          }
-        />
+        loadError && (
+          <EmptyState
+            size="sm"
+            title="Couldn't load your runs."
+            description={loadError}
+            action={
+              <Button variant="secondary" onClick={() => void refetch()}>
+                Retry
+              </Button>
+            }
+          />
+        )
       ) : showingEmpty ? (
         <EmptyState
           title="Nothing researched yet."

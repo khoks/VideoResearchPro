@@ -12,6 +12,7 @@ import { Button, Card, EmptyState, Skeleton } from '../components/primitives';
 import { useColors } from '../hooks/useTheme';
 import { fonts, fontSize, fontWeight, lineHeight, measure, space } from '../theme';
 import { formatDate } from '../utils/formatters';
+import { inlineErrorMessage } from '../utils/apiError';
 import type { Shelf } from '../services/shelvesApi';
 
 /**
@@ -24,7 +25,10 @@ export function ShelvesPage() {
   const navigate = useNavigate();
   const { has } = useTierCapabilities();
   const canWrite = has('shelves');
-  const shelvesQuery = useShelves();
+  // A failed read is said on this page alone; the sidebar reads the same list
+  // and says nothing, so the toast speaks for it elsewhere (T-3.4.1.26).
+  const shelvesQuery = useShelves({ inlineErrors: true });
+  const loadError = shelvesQuery.isError ? inlineErrorMessage(shelvesQuery.error, 'Something blocked the fetch.') : null;
   const create = useCreateShelf();
   const update = useUpdateShelf();
 
@@ -106,15 +110,17 @@ export function ShelvesPage() {
           <Skeleton variant="row" height={72} />
         </div>
       ) : shelvesQuery.isError ? (
-        <EmptyState
-          title="Couldn't load your shelves."
-          description="Something blocked the fetch."
-          action={
-            <Button variant="secondary" onClick={() => void shelvesQuery.refetch()}>
-              Retry
-            </Button>
-          }
-        />
+        loadError && (
+          <EmptyState
+            title="Couldn't load your shelves."
+            description={loadError}
+            action={
+              <Button variant="secondary" onClick={() => void shelvesQuery.refetch()}>
+                Retry
+              </Button>
+            }
+          />
+        )
       ) : shelves.length === 0 ? (
         canWrite ? (
           <EmptyState

@@ -24,6 +24,10 @@
  * its caller's line gets no caller without one, or the failure is said nowhere.
  * Since T-3.4.1.22 both also follow a line through a dialog's or picker's
  * callback prop and through a mutation's `isError`.
+ *
+ * A fourth guard, at the end, holds the same two sides for queries
+ * (T-3.4.1.26): a reader that says a load's failure on the page stands aside
+ * from the query toast, and a reader that stands aside says it.
  */
 import { AxiosError, AxiosHeaders } from 'axios';
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -803,5 +807,380 @@ describe('the third guard', () => {
     ["const m = useMutation({ mutationFn: f, onError: (e) => toastMutationError(e, 'No.'), meta: ERRORS_SHOWN_HERE });\nm.mutate(p);"],
   ])('leaves alone %s', (src) => {
     expect(failuresSaidNowhere(src, HOOKS)).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The fourth guard: a query's failure line stands alone (T-3.4.1.26)
+// ---------------------------------------------------------------------------
+//
+// A failed query goes through the `QueryCache`, which toasts it once its retry
+// has failed too, unless a reader of the query mounted now sets `meta`:
+// `ERRORS_SHOWN_HERE`, or `LOAD_ERRORS_SHOWN_HERE` for a line shown only in
+// place of a first load (`queryFailureShownOnPage`). Each reader (a `useQuery`
+// call, or a call of a hook that wraps one) carries its own `meta`, so the rule
+// is checked per reader, with the same two sides as for mutations:
+// - a reader that builds a line from the query's failure (`q.isError`,
+//   `q.error` or `q.status === 'error'`, destructured or not, or the query
+//   handed to a component prop that reads them) stands aside, or the toast says
+//   the failure again;
+// - a reader that stands aside builds such a line, or the failure is said
+//   nowhere wherever it is mounted alone. A read that only hides the component
+//   or leaves the page (`if (q.isError) return null`, `return <Navigate …/>`)
+//   is no line, and neither is a call that keeps no result (`useX().data`).
+// A hook whose readers differ takes `inlineErrors` (`queryErrorsMeta`); a
+// caller stands aside when it passes that option as anything but `false`. A
+// condition there (`tab === 'videos'`) is the caller's to get right: the page
+// tests check it, not this guard.
+//
+// Mutation checks, run on 2026-11-10: taking `meta` off `useNotesList`,
+// `useSavedSearches`, `useDraftStatus` or the system page's polls, or
+// `{ inlineErrors: true }` off the shelves page's `useShelves`, fails "finds no
+// query line the toast repeats", naming that file; setting `meta` for every
+// caller of `useShelves`, `useOnboarding` or `useEchoStatus` fails it too,
+// naming the sidebar, the gate or the Echo panel, where nothing says the
+// failure; dropping the prop reading fails "reads the query a section is
+// handed" and names the system page.
+
+interface QueryHookMeta {
+  when: 'always' | 'option' | 'never';
+  option?: string;
+}
+
+/** `src` with its comments blanked out, newlines kept, so a hook named in a
+ * comment is not read as a call and line numbers still match. */
+function withoutComments(src: string): string {
+  let out = '';
+  let i = 0;
+  while (i < src.length) {
+    const ch = src[i];
+    const next = src[i + 1];
+    if (ch === '/' && (next === '/' || next === '*')) {
+      const end = next === '/' ? (src.indexOf('\n', i) + 1 || src.length) : src.indexOf('*/', i + 2) + 2;
+      out += src.slice(i, end).replace(/[^\n]/g, ' ');
+      i = end;
+    } else if (ch === "'" || ch === '"' || ch === '`') {
+      let j = i + 1;
+      while (j < src.length && src[j] !== ch) {
+        if (src[j] === '\\') j += 2;
+        else if (ch === '`' && src[j] === '$' && src[j + 1] === '{') j = closing(src, j + 1);
+        else j += 1;
+      }
+      out += src.slice(i, j + 1);
+      i = j + 1;
+    } else {
+      out += ch;
+      i += 1;
+    }
+  }
+  return out;
+}
+
+/** The options object of the first `useQuery(…)` call in `src` at or after
+ * `from` (a type argument allowed), with where the call starts. */
+function findQueryCall(src: string, from = 0): { at: number; end: number; options: string } | null {
+  const re = /\buseQuery\b/g;
+  re.lastIndex = from;
+  for (let m = re.exec(src); m; m = re.exec(src)) {
+    let i = m.index + m[0].length;
+    // A type argument: `useQuery<ReportBody, AxiosError<{ detail?: string }>>(`.
+    if (src[i] === '<') {
+      for (let depth = 0; i < src.length; i += 1) {
+        if (src[i] === '<') depth += 1;
+        else if (src[i] === '>' && --depth === 0) {
+          i += 1;
+          break;
+        }
+      }
+    }
+    const open = /^\s*\(\s*\{/.exec(src.slice(i));
+    if (!open) continue;
+    const paren = src.indexOf('(', i);
+    const brace = i + open[0].length - 1;
+    return { at: m.index, end: closing(src, paren), options: src.slice(brace, closing(src, brace)) };
+  }
+  return null;
+}
+
+/** How a `useQuery` options object sets `meta`: from a name passed to
+ * `queryErrorsMeta` (in a hook, its option; in a component, what it works out),
+ * always, or never. */
+function queryMetaOf(options: string): { when: 'always' | 'option' | 'never'; option?: string } {
+  const meta = /\bmeta\s*:\s*([^,\n}]+)/.exec(options);
+  if (!meta) return { when: 'never' };
+  const option = /^queryErrorsMeta\(\s*([A-Za-z_$][\w$]*)\s*\)$/.exec(meta[1].trim());
+  return option ? { when: 'option', option: option[1] } : { when: 'always' };
+}
+
+/** Every exported hook that wraps a `useQuery`, and how it sets `meta`. */
+function queryHooks(sources: Record<string, string>): Map<string, QueryHookMeta> {
+  const hooks = new Map<string, QueryHookMeta>();
+  for (const src of Object.values(sources).map(withoutComments)) {
+    const starts = [...src.matchAll(/export function (use\w+)\s*[<(]/g)];
+    starts.forEach((m, k) => {
+      const body = src.slice(m.index!, starts[k + 1]?.index ?? src.length);
+      const call = findQueryCall(body);
+      if (call) hooks.set(m[1], queryMetaOf(call.options));
+    });
+  }
+  return hooks;
+}
+
+/** Whether `index` sits in the condition of an `if` whose branch only hides
+ * the component or leaves the page: `return null`, `return <Navigate …/>`. */
+function inSilentGuard(src: string, index: number): boolean {
+  for (const m of src.matchAll(/\bif\s*\(/g)) {
+    const open = m.index! + m[0].length - 1;
+    if (open > index) break;
+    const close = closing(src, open);
+    if (index > open && index < close) return /^\s*(?:\{\s*)?return\s+(?:null\b|<Navigate\b)/.test(src.slice(close));
+  }
+  return false;
+}
+
+/** Each function declared in `src` (components and hooks): name, parameter
+ * text and body. */
+function functionsIn(src: string): Array<{ name: string; params: string; body: [number, number] }> {
+  const found: Array<{ name: string; params: string; body: [number, number] }> = [];
+  for (const m of src.matchAll(/\bfunction\s+([A-Za-z_$][\w$]*)\s*(?:<[^>(]*>)?\s*\(/g)) {
+    const open = m.index! + m[0].length - 1;
+    const paramsEnd = closing(src, open);
+    const bodyOpen = src.indexOf('{', paramsEnd);
+    if (bodyOpen === -1) continue;
+    found.push({ name: m[1], params: src.slice(open, paramsEnd), body: [bodyOpen, closing(src, bodyOpen)] });
+  }
+  return found;
+}
+
+/** The innermost function body around `index`, else the whole module. */
+function scopeOf(src: string, index: number): [number, number] {
+  let best: [number, number] = [0, src.length];
+  for (const f of functionsIn(src)) {
+    const [a, b] = f.body;
+    if (index > a && index < b && b - a < best[1] - best[0]) best = [a, b];
+  }
+  return best;
+}
+
+const FAILURE_FIELD = String.raw`(?:isError|error|isLoadingError|isRefetchError)\b|status\s*[!=]==?\s*['"]error['"]`;
+
+/** Where `src` reads `name`'s failure off its state between `from` and `to`,
+ * other than to hide the component or leave the page. */
+function failureReads(src: string, name: string, [from, to]: [number, number]): number[] {
+  const re = new RegExp(String.raw`(?<![.\w$])${name.replace('$', '\\$')}\s*(?:\?\.|\.)\s*(?:${FAILURE_FIELD})`, 'g');
+  return [...src.slice(from, to).matchAll(re)].map((m) => from + m.index!).filter((i) => !inSilentGuard(src, i));
+}
+
+/** For each JSX element `<Comp …>` in `src` between `from` and `to`, its
+ * attributes written as `attr={name}`. */
+function handedOn(src: string, [from, to]: [number, number]): Array<{ comp: string; attr: string; value: string }> {
+  const found: Array<{ comp: string; attr: string; value: string }> = [];
+  for (const m of src.slice(from, to).matchAll(/<([A-Z][\w$]*)\b/g)) {
+    let end = from + m.index! + m[0].length;
+    const start = end;
+    while (end < to && src[end] !== '>') end = src[end] === '{' ? closing(src, end) : end + 1;
+    for (const a of src.slice(start, end).matchAll(/\b([A-Za-z_$][\w$]*)\s*=\s*\{\s*([A-Za-z_$][\w$]*)\s*\}/g)) {
+      found.push({ comp: m[1], attr: a[1], value: a[2] });
+    }
+  }
+  return found;
+}
+
+/** For each component, the props it builds a line from when handed a query
+ * (`LoadState`'s `query`), followed through components that pass the prop on
+ * (`LLMSection` hands its `query` to `LoadState`). */
+function queryFailureProps(sources: Record<string, string>): Map<string, Set<string>> {
+  const props = new Map<string, Set<string>>();
+  const add = (comp: string, prop: string) => {
+    const set = props.get(comp) ?? new Set<string>();
+    if (set.has(prop)) return false;
+    props.set(comp, set.add(prop));
+    return true;
+  };
+  const comps = Object.values(sources).map(withoutComments).flatMap((src) =>
+    functionsIn(src)
+      .filter((f) => /^[A-Z]/.test(f.name))
+      .map((f) => ({ src, ...f })),
+  );
+  const isParam = (params: string, name: string) => new RegExp(`\\b${name.replace('$', '\\$')}\\b`).test(params);
+  for (const { src, name, params, body } of comps) {
+    for (const m of src.slice(...body).matchAll(new RegExp(String.raw`(?<![.\w$])([A-Za-z_$][\w$]*)\s*(?:\?\.|\.)\s*(?:${FAILURE_FIELD})`, 'g'))) {
+      if (isParam(params, m[1]) && !inSilentGuard(src, body[0] + m.index!)) add(name, m[1]);
+    }
+  }
+  for (let changed = true; changed; ) {
+    changed = false;
+    for (const { src, name, params, body } of comps) {
+      for (const h of handedOn(src, body)) {
+        if (props.get(h.comp)?.has(h.attr) && isParam(params, h.value) && add(name, h.value)) changed = true;
+      }
+    }
+  }
+  return props;
+}
+
+interface QueryReader {
+  /** Where the call is. */
+  index: number;
+  /** Whether the toast stands aside for this reader (its `meta` is set, always
+   * or at times). */
+  standsAside: boolean;
+  /** Whether this reader builds a line from the query's failure. */
+  showsLine: boolean;
+}
+
+/** Every reader of a query in `code` (comments already blanked): each call of
+ * a query hook, and each `useQuery` whose result a component keeps. */
+function queryReaders(code: string, hooks: Map<string, QueryHookMeta>, props: Map<string, Set<string>>): QueryReader[] {
+  const readers: QueryReader[] = [];
+  // What a call's result is kept in: a name, or a destructuring pattern. Null
+  // when the result is not kept whole (`useX().data`, `return useQuery(…)`).
+  const holder = (at: number, end: number) => {
+    if (!/^[ \t]*(?:;|\r?\n|$)/.test(code.slice(end))) return null;
+    return /(?:const|let)\s+([A-Za-z_$][\w$]*|\{[^{}]*\})\s*=\s*$/.exec(code.slice(Math.max(0, at - 400), at))?.[1] ?? null;
+  };
+  const showsLine = (held: string | null, at: number) => {
+    if (!held) return false;
+    const scope = scopeOf(code, at);
+    if (!held.startsWith('{')) {
+      if (failureReads(code, held, scope).length) return true;
+      return handedOn(code, scope).some((h) => h.value === held && !!props.get(h.comp)?.has(h.attr));
+    }
+    // Destructured: the names the failure fields are kept under, read after
+    // the call, other than as an object's key.
+    const names = [...held.matchAll(/\b(isError|error|isLoadingError|isRefetchError)\b(?:\s*:\s*([A-Za-z_$][\w$]*))?/g)].map((m) => m[2] ?? m[1]);
+    return names.some((n) =>
+      [...code.slice(at, scope[1]).matchAll(new RegExp(String.raw`(?<![.\w$])${n.replace('$', '\\$')}\b`, 'g'))].some((m) => {
+        const i = at + m.index!;
+        const key = /[{,]\s*$/.test(code.slice(0, i)) && /^\s*:/.test(code.slice(i + n.length));
+        return !key && !inSilentGuard(code, i);
+      }),
+    );
+  };
+  for (const [hook, meta] of hooks) {
+    for (const m of code.matchAll(new RegExp(String.raw`(?<!function\s)\b${hook}\s*\(`, 'g'))) {
+      const open = m.index! + m[0].length - 1;
+      const end = closing(code, open);
+      const args = code.slice(open + 1, end - 1);
+      const optionOn = !!meta.option && new RegExp(String.raw`\b${meta.option}\s*:\s*(?!false\b)\S`).test(args);
+      readers.push({
+        index: m.index!,
+        standsAside: meta.when === 'always' || (meta.when === 'option' && optionOn),
+        showsLine: showsLine(holder(m.index!, end), m.index!),
+      });
+    }
+  }
+  for (let call = findQueryCall(code); call; call = findQueryCall(code, call.at + 1)) {
+    const held = holder(call.at, call.end);
+    if (!held) continue; // a hook's own `return useQuery(…)`
+    readers.push({ index: call.at, standsAside: queryMetaOf(call.options).when !== 'never', showsLine: showsLine(held, call.at) });
+  }
+  return readers;
+}
+
+/** Each reader in `src` whose line the toast repeats, or whose failure is said
+ * nowhere: `repeats` and `nowhere`, as line numbers. */
+function queryLineProblems(src: string, hooks: Map<string, QueryHookMeta>, props = new Map<string, Set<string>>()) {
+  const code = withoutComments(src);
+  const readers = queryReaders(code, hooks, props);
+  return {
+    repeats: readers.filter((r) => r.showsLine && !r.standsAside).map((r) => lineOf(code, r.index)),
+    nowhere: readers.filter((r) => r.standsAside && !r.showsLine).map((r) => lineOf(code, r.index)),
+  };
+}
+
+/** Query lines the toast still repeats, or queries said nowhere, known and not
+ * yet changed. The guard fails when one of these is fixed. */
+const QUERY_NOT_YET: Record<string, string> = {};
+
+/** Stand-ins for query hooks: one with no `meta`, one that always sets it, and
+ * one that takes `inlineErrors`. */
+const QUERY_HOOKS = new Map<string, QueryHookMeta>([
+  ['useLoaded', { when: 'never' }],
+  ['useShown', { when: 'always' }],
+  ['useMaybe', { when: 'option', option: 'inlineErrors' }],
+]);
+
+describe('the fourth guard: a query’s failure line stands alone', () => {
+  const sources = import.meta.glob(['../../**/*.{ts,tsx}', '!**/__tests__/**', '!**/*.test.{ts,tsx}'], {
+    query: '?raw',
+    import: 'default',
+    eager: true,
+  }) as Record<string, string>;
+  const hooks = queryHooks(sources);
+  const props = queryFailureProps(sources);
+
+  it('knows how each query hook sets `meta`', () => {
+    for (const name of ['useNotesList', 'useSavedSearches', 'useSavedSearchRuns', 'useDraftStatus', 'useVoiceSignals', 'useVoiceTest', 'useShares', 'useEchoFootprint', 'useLibraryGraph', 'useReportBody', 'useReportDocument', 'useLLMSettings', 'useShelf', 'useQAHistoryChatHistory', 'useUsageSummary', 'useSessions', 'useAccountActivity', 'useChannelIntelligence', 'useKnowledgeSources', 'useAuthorOutputs', 'useAuthorOutput', 'useAuthorOutputContent', 'useAuthorOutputCitations']) {
+      expect(hooks.get(name), name).toEqual({ when: 'always' });
+    }
+    for (const name of ['useEchoStatus', 'useEchoContext', 'useEchoConnectors', 'useShelves', 'useJobs', 'useJob', 'useJobTemplates', 'useOnboarding', 'useChannel', 'useChannels', 'useLibraryVideos', 'useKnowledge', 'useMfaStatus', 'useAuthorKinds', 'useOutputEstimate', 'useLLMEstimate']) {
+      expect(hooks.get(name), name).toEqual({ when: 'option', option: 'inlineErrors' });
+    }
+    for (const name of ['useMe', 'useTags', 'useNotifications', 'useQuota', 'useVoiceTestPoll', 'useNotesForTarget']) {
+      expect(hooks.get(name), name).toEqual({ when: 'never' });
+    }
+  });
+
+  it('reads the query a section is handed', () => {
+    expect(props.get('LoadState')).toEqual(new Set(['query']));
+    expect(props.get('LLMSection')).toEqual(new Set(['query']));
+  });
+
+  it('finds no query line the toast repeats, and no query that stands aside where nothing says it', () => {
+    const offenders = Object.entries(sources)
+      .map(([file, src]) => [file.replace('../../', 'src/'), queryLineProblems(src, hooks, props)] as const)
+      .filter(([, p]) => p.repeats.length > 0 || p.nowhere.length > 0)
+      .map(([file, p]) => [file, `${p.repeats.length ? `repeats:${p.repeats.join(',')} ` : ''}${p.nowhere.length ? `nowhere:${p.nowhere.join(',')}` : ''}`.trim()] as const);
+    expect(offenders.filter(([file]) => !(file in QUERY_NOT_YET))).toEqual([]);
+    expect(offenders.map(([file]) => file).sort()).toEqual(Object.keys(QUERY_NOT_YET).sort());
+  });
+
+  it.each([
+    ['const q = useLoaded();\nreturn <>{q.isError && <p role="alert">No.</p>}</>;'],
+    ["const { data, isError } = useLoaded();\nif (isError) return <p>No.</p>;"],
+    ["const { data, error: failure } = useLoaded();\nreturn failure ? <p>No.</p> : null;"],
+    ["const q = useMaybe({ inlineErrors: false });\nconst line = q.isError ? inlineErrorMessage(q.error, 'No.') : null;"],
+    ['const q = useMaybe();\nreturn q.status === \'error\' ? <p>No.</p> : null;'],
+    ["const q = useQuery({ queryKey: k, queryFn: f });\nconst line = q.error ? 'No.' : null;"],
+    ['const q = useQuery<Thing, AxiosError<{ detail?: string }>>({ queryKey: k, queryFn: f });\nreturn q.isError ? <p>No.</p> : null;'],
+    ['const q = useLoaded();\nreturn <List isError={q.isError} />;'],
+  ])('catches a line the toast repeats: %s', (src) => {
+    expect(queryLineProblems(src, QUERY_HOOKS)).toEqual({ repeats: [1], nowhere: [] });
+  });
+
+  it('catches a line reached through a prop', () => {
+    const src = 'function Box({ query }: P) {\n  return query.isError ? <p>No.</p> : null;\n}\nfunction Page() {\n  const q = useLoaded();\n  return <Box query={q} />;\n}';
+    expect(queryLineProblems(src, QUERY_HOOKS, queryFailureProps({ src }))).toEqual({ repeats: [5], nowhere: [] });
+  });
+
+  it.each([
+    ['const q = useShown();\nreturn <p>{q.data?.name}</p>;'],
+    ['const name = useShown().data?.name;'],
+    ['const q = useMaybe({ inlineErrors: true });\nif (q.isError) return null;'],
+    ['const { isError } = useShown();\nif (isError || !data) return <Navigate to="/" replace />;'],
+    ['const q = useQuery({ queryKey: k, queryFn: f, meta: ERRORS_SHOWN_HERE });\nreturn q.data ?? null;'],
+  ])('catches a failure said nowhere: %s', (src) => {
+    expect(queryLineProblems(src, QUERY_HOOKS)).toEqual({ repeats: [], nowhere: [1] });
+  });
+
+  it.each([
+    ["const q = useShown();\nconst line = q.isError ? inlineErrorMessage(q.error, 'No.') : null;"],
+    ["const q = useMaybe({ inlineErrors: tab === 'a' });\nconst line = q.isError ? 'No.' : null;"],
+    ["const q = useMaybe({ inlineErrors: 'load' });\nreturn q.data ? <List /> : q.isError ? <p>No.</p> : null;"],
+    ['const q = useMaybe();\nif (!enabled || q.isError) return null;'],
+    ['const q = useLoaded();\nreturn <p>{q.data?.name}</p>;'],
+    ['const { data, isLoading } = useLoaded();'],
+    ["const { data, isError } = useShown();\nconst line = isError ? 'No.' : null;"],
+    ['const q = useQuery({ queryKey: k, queryFn: f, meta: queryErrorsMeta(open) });\nreturn q.isError ? <p>No.</p> : null;'],
+    ['export function useThing() {\n  return useQuery({ queryKey: k, queryFn: f, meta: ERRORS_SHOWN_HERE });\n}'],
+    ['function A() {\n  const q = useShown();\n  return q.isError ? <p>No.</p> : null;\n}\nfunction B() {\n  const q = useLoaded();\n  return <p>{q.data}</p>;\n}'],
+  ])('leaves alone %s', (src) => {
+    expect(queryLineProblems(src, QUERY_HOOKS)).toEqual({ repeats: [], nowhere: [] });
+  });
+
+  it('leaves alone a line reached through a prop, when the reader stands aside', () => {
+    const src = 'function Box({ query }: P) {\n  return query.isError ? <p>No.</p> : null;\n}\nfunction Page() {\n  const q = useShown();\n  return <Box query={q} />;\n}';
+    expect(queryLineProblems(src, QUERY_HOOKS, queryFailureProps({ src }))).toEqual({ repeats: [], nowhere: [] });
   });
 });

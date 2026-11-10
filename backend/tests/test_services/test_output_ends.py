@@ -27,13 +27,23 @@ with its condition, or its order, changed (``tests.mutation.mutant``).
 from __future__ import annotations
 
 import json
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from sqlalchemy import event
 
+from app.models.job import Job
 from app.models.output import Output
-from app.services import auth_service, output_artifacts, output_service, progress_service
+from app.models.output_citation import OutputCitation
+from app.services import (
+    auth_service,
+    output_artifacts,
+    output_citation_service,
+    output_service,
+    progress_service,
+    task_routing_service,
+)
+from app.services.output_citation_service import CitationSpec
 from app.services.output_service import OutputError, OutputStatus
 from app.tasks.celery_app import celery_app
 from tests.conftest import TestingSessionLocal
@@ -184,6 +194,57 @@ def _fails(message: str):
     return step
 
 
+def _cites(*labels: str):
+    """The outputter records its citations, uncommitted: they go in with the
+    next write, as ``record_citations`` says."""
+    def step(db, output):
+        output_citation_service.record_citations(
+            db, output, [CitationSpec(label=label, href=None, url=None, seconds=None) for label in labels]
+        )
+    return step
+
+
+def _file(fmt: str):
+    """The outputter writes a file into the output's folder, as
+    ``write_artifact`` does: the row points at it from its next write."""
+    def step(db, output):
+        output.content_path = f"{output.user_id}/{output.id}/artifact.{fmt}"
+    return step
+
+
+def _book_up_to_its_pdf() -> tuple:
+    """The book outputter's order: the manuscript and its citations are set,
+    then the EPUB and PDF progress reports commit them with the EPUB's path
+    (``BookMarkdownOutputter._write_files``)."""
+    return (
+        _progress(40, "Chapter 1 of 1"),
+        _content("# B"),
+        _cites("one", "two"),
+        _progress(92, "Building the EPUB"),
+        _file("epub"),
+        _progress(95, "Printing the PDF"),
+    )
+
+
+def _another_delivery_fails(timeline: list):
+    return lambda db, output: _elsewhere(
+        timeline, output.id, "FAILED ELSEWHERE", status=OutputStatus.FAILED.value,
+        error_message="Their PDF failed.", progress_message="Failed",
+    )
+
+
+def _citations(db, output_id: str) -> int:
+    db.expire_all()
+    return db.query(OutputCitation).filter(OutputCitation.output_id == output_id).count()
+
+
+def _leftovers(db, output_id: str) -> tuple:
+    """What an output that did not complete must not keep: its text, its file
+    and its citations."""
+    row = _fresh(db, output_id)
+    return row.content_text, row.content_path, _citations(db, output_id)
+
+
 def _generate(db, monkeypatch, timeline, user, row, *steps) -> Output:
     monkeypatch.setitem(output_service._OUTPUTTERS, "book", _Scripted(*steps))
     timeline.append(("START",))
@@ -285,6 +346,126 @@ def _check_another_delivery_that_completed_it_is_left_alone(db, monkeypatch, tim
     assert discarded == []
 
 
+def _check_a_refused_report_commits_none_of_this_runs_content(db, monkeypatch, timeline, discarded):
+    """Another delivery completed the output; this run set its own text and
+    citations and then reported progress. The refused report rolls them back:
+    the row keeps the other delivery's text, and no citation of this run's."""
+    user = _user(db)
+    row = _row(db, user)
+    _generate(
+        db, monkeypatch, timeline, user, row, _another_delivery_completes(timeline), _content("# mine"),
+        _cites("mine"), _progress(40, "Chapter 1 of 1"),
+    )
+
+    done = _fresh(db, row.id)
+    assert (done.status, done.content_text) == ("completed", "theirs")
+    assert _citations(db, row.id) == 0
+    assert discarded == []
+
+
+def _check_a_cancel_after_the_book_commits_its_manuscript(db, monkeypatch, timeline, discarded):
+    """A cancel lands while the book's PDF prints, after its last progress
+    report, which committed the manuscript, its citations and the EPUB's path.
+    The cancel here is a bare write of the status, so the run's own clear is
+    what is tested: the output ends cancelled with no text, file or citation,
+    and its files removed, though ``completed`` found nothing to roll back."""
+    user = _user(db)
+    row = _row(db, user)
+    result = _generate(
+        db, monkeypatch, timeline, user, row, *_book_up_to_its_pdf(), _cancel_lands(timeline), _file("pdf"),
+    )
+
+    assert result.status == OutputStatus.CANCELLED.value
+    assert _published_after(timeline, "CANCEL") == []
+    assert _fresh(db, row.id).progress_message == CANCELLED_WORDS
+    assert _leftovers(db, row.id) == (None, None, 0)
+    assert discarded == [row.id]
+
+
+def _check_the_cancel_clears_what_the_run_committed(db, monkeypatch, timeline, discarded):
+    """The API's real cancel lands at the same point. Its own write clears the
+    manuscript, the EPUB's path and the citations, so the cancelled output
+    serves none of them while the PDF still prints (up to
+    ``AUTHOR_PDF_TIMEOUT_SEC``), not only once the run notices."""
+    user = _user(db)
+    row = _row(db, user)
+    seen_right_after_the_cancel: list = []
+
+    def the_api_cancels(db_, output):
+        other = TestingSessionLocal()
+        try:
+            with patch.object(celery_app.control, "revoke"):
+                assert output_service.cancel_output(other, user.id, output.id).status == "cancelled"
+        finally:
+            other.close()
+        timeline.append(("CANCEL",))
+        look = TestingSessionLocal()
+        try:
+            seen = look.get(Output, output.id)
+            cited = look.query(OutputCitation).filter(OutputCitation.output_id == output.id).count()
+            seen_right_after_the_cancel.append((seen.status, seen.content_text, seen.content_path, cited))
+        finally:
+            look.close()
+
+    result = _generate(db, monkeypatch, timeline, user, row, *_book_up_to_its_pdf(), the_api_cancels, _file("pdf"))
+
+    assert seen_right_after_the_cancel == [("cancelled", None, None, 0)]
+    assert result.status == OutputStatus.CANCELLED.value
+    assert _leftovers(db, row.id) == (None, None, 0)
+    assert discarded == [row.id]
+
+
+def _raises(kind: str):
+    def step(db, output):
+        if kind == "failed":
+            raise OutputError("The PDF could not be printed.")
+        if kind == "skipped":
+            raise output_service.OutputSkipped("Nothing new since the last issue.")
+        raise RuntimeError("the renderer crashed")
+    return step
+
+
+def _check_an_end_after_the_book_commits_its_manuscript(db, monkeypatch, timeline, discarded, kind: str):
+    """The PDF fails after the book's last report committed its manuscript,
+    citations and EPUB path (or the run skips, or crashes, there). The end's
+    own write clears them, so the row never reads ended with them, and the
+    end goes out after that commit."""
+    user = _user(db)
+    row = _row(db, user)
+    result = _generate(db, monkeypatch, timeline, user, row, *_book_up_to_its_pdf(), _raises(kind))
+
+    end = "skipped" if kind == "skipped" else "failed"
+    assert result.status == end
+    assert _statuses_published(timeline) == ["generating", end]
+    assert _each_publish_follows_its_commit(timeline)
+    assert _leftovers(db, row.id) == (None, None, 0)
+    assert discarded == [row.id]
+
+
+def _check_another_delivery_that_failed_it_keeps_nothing(db, monkeypatch, timeline, discarded, when: str):
+    """Another delivery of the task failed the output after this run's reports
+    committed the manuscript. This run then writes a file into the shared
+    folder, either before its next report (which stops it) or after its last
+    one (its ``completed`` is refused). The failed row keeps the other
+    delivery's end and words, and no text, citation or file: the folder is
+    removed, this run's file included, not left on a failed row."""
+    user = _user(db)
+    row = _row(db, user)
+    if when == "before-a-report":
+        steps = (*_book_up_to_its_pdf()[:4], _file("epub"), _another_delivery_fails(timeline),
+                 _progress(95, "Printing the PDF"))
+    else:
+        steps = (*_book_up_to_its_pdf(), _another_delivery_fails(timeline), _file("pdf"))
+    result = _generate(db, monkeypatch, timeline, user, row, *steps)
+
+    assert result.status == OutputStatus.FAILED.value
+    assert _published_after(timeline, "FAILED ELSEWHERE") == []
+    done = _fresh(db, row.id)
+    assert (done.error_message, done.progress_message) == ("Their PDF failed.", "Failed")
+    assert _leftovers(db, row.id) == (None, None, 0)
+    assert discarded == [row.id]
+
+
 # ================================================================ the checks: the cancel route
 
 
@@ -312,9 +493,9 @@ def _the_output_ends_first(monkeypatch, timeline, end: str, **values) -> None:
     """The output ends between the cancel's read and its write."""
     real = output_service._write_unless_ended
 
-    def ended_then_written(db_, output, values_):
+    def ended_then_written(db_, output, values_, **kwargs):
         _elsewhere(timeline, output.id, "ENDED", status=end, **values)
-        return real(db_, output, values_)
+        return real(db_, output, values_, **kwargs)
 
     monkeypatch.setattr(output_service, "_write_unless_ended", ended_then_written)
 
@@ -347,6 +528,40 @@ def _check_a_cancel_that_finds_it_cancelled(client, db, timeline, monkeypatch):
     assert response.status_code == 200, response.text
     assert response.json()["status"] == "cancelled"
     assert _publishes(timeline) == []
+
+
+# ================================================================ the checks: the create route
+
+
+def _check_queued_never_lands_on_an_output_that_ended(client, db, timeline, monkeypatch):
+    """The worker takes the task and fails the output before the route records
+    the dispatch: the route keeps the task's id and writes no ``Queued`` over
+    the failed row's words."""
+    user = _user(db)
+    job = Job(id="job-for-the-book", job_type="topic", status="completed", topic="T", tenant_id=user.id)
+    db.add(job)
+    db.commit()
+
+    def the_worker_is_faster(task, user_, output_id, **kwargs):
+        _elsewhere(
+            timeline, output_id, "FAILED BY THE WORKER", status=OutputStatus.FAILED.value,
+            error_message="No chapters.", progress_message="Failed",
+        )
+        return MagicMock(id="gen-task-id")
+
+    monkeypatch.setattr(task_routing_service, "dispatch_for_user", the_worker_is_faster)
+    token, _ = auth_service.create_access_token(user.id)
+    response = client.post(
+        "/api/v1/author/outputs",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"kind": "book", "title": "B", "source_ids": [job.id], "parameters": {"include_qa": False}},
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert (body["status"], body["progress_message"], body["celery_task_id"]) == ("failed", "Failed", "gen-task-id")
+    done = _fresh(db, body["id"])
+    assert (done.status, done.progress_message, done.celery_task_id) == ("failed", "Failed", "gen-task-id")
 
 
 # ================================================================ the worker
@@ -414,6 +629,46 @@ def test_a_failed_run_publishes_its_end_after_its_commit(db, monkeypatch, timeli
     assert discarded == [row.id]
 
 
+def test_a_refused_report_commits_none_of_this_runs_content(db, monkeypatch, timeline, discarded):
+    _check_a_refused_report_commits_none_of_this_runs_content(db, monkeypatch, timeline, discarded)
+
+
+def test_a_cancel_after_the_book_commits_its_manuscript_leaves_nothing(db, monkeypatch, timeline, discarded):
+    _check_a_cancel_after_the_book_commits_its_manuscript(db, monkeypatch, timeline, discarded)
+
+
+def test_the_cancel_clears_what_the_run_committed_at_once(db, monkeypatch, timeline, discarded):
+    _check_the_cancel_clears_what_the_run_committed(db, monkeypatch, timeline, discarded)
+
+
+@pytest.mark.parametrize("kind", ["failed", "skipped", "crashed"])
+def test_an_end_after_the_book_commits_its_manuscript_leaves_nothing(db, monkeypatch, timeline, discarded, kind):
+    _check_an_end_after_the_book_commits_its_manuscript(db, monkeypatch, timeline, discarded, kind)
+
+
+@pytest.mark.parametrize("when", ["before-a-report", "after-the-last-report"])
+def test_another_delivery_that_failed_the_output_leaves_it_nothing(db, monkeypatch, timeline, discarded, when):
+    _check_another_delivery_that_failed_it_keeps_nothing(db, monkeypatch, timeline, discarded, when)
+
+
+def test_a_completed_output_keeps_its_citations_and_files(db, monkeypatch, timeline, discarded):
+    """The book's order, run to the end: nothing is cleared or removed."""
+    user = _user(db)
+    row = _row(db, user)
+    result = _generate(db, monkeypatch, timeline, user, row, *_book_up_to_its_pdf(), _file("pdf"))
+
+    assert result.status == OutputStatus.COMPLETED.value
+    assert _leftovers(db, row.id) == ("# B", f"{user.id}/{row.id}/artifact.pdf", 2)
+    assert discarded == []
+
+
+# ================================================================ the create route
+
+
+def test_queued_never_lands_on_an_output_that_ended(client, db, timeline, monkeypatch):
+    _check_queued_never_lands_on_an_output_that_ended(client, db, timeline, monkeypatch)
+
+
 # ================================================================ the cancel route
 
 
@@ -461,7 +716,7 @@ _COMMIT_ON_REFUSAL = "    if written != 1:\n        db.commit()\n"
 _PUBLISH_LAST = (
     "    _publish_status(output.id, old, output.status, output.progress_message or output.status)\n    return True\n"
 )
-_STATUS_WRITE = "    if not _write_unless_ended(db, output, values):\n        logger.info(\n"
+_STATUS_WRITE = "    if not _write_unless_ended(db, output, values, drop_content=drop_content):\n        logger.info(\n"
 _PUBLISH_FIRST = (
     "    _publish_status(output.id, old, values['status'], values.get('progress_message') or values['status'])\n"
 )
@@ -470,7 +725,25 @@ _PROGRESS_PUBLISHED_FIRST = (
     "    from app.services import progress_service as _ps\n"
     "    _ps.publish_progress(output.id, output.status, values['progress_pct'], values['progress_message'])\n"
 )
-_CANCEL_WRITE = '    transition_to(db, row, OutputStatus.CANCELLED, progress_message="Cancelled by user")\n'
+_CANCEL_WRITE = (
+    '    transition_to(db, row, OutputStatus.CANCELLED, progress_message="Cancelled by user", drop_content=True)\n'
+)
+_CANCEL_KEEPS_CONTENT = '    transition_to(db, row, OutputStatus.CANCELLED, progress_message="Cancelled by user")\n'
+_END_DROPS_CONTENT = "    if transition_to(db, output, status, drop_content=True, **fields):\n"
+_END_KEEPS_CONTENT = "    if transition_to(db, output, status, **fields):\n"
+_REFUSED_COMPLETE_CLEARS = (
+    '    if not transition_to(db, output, OutputStatus.COMPLETED, progress_message="Done"):\n'
+    "        _clear_unfinished(db, output)\n"
+)
+_REFUSED_COMPLETE_DISCARDS_ON_CANCEL = (
+    '    if not transition_to(db, output, OutputStatus.COMPLETED, progress_message="Done"):\n'
+    "        if output.status == OutputStatus.CANCELLED.value:\n"
+    "            _discard_artifacts(output)\n"
+)
+_QUEUED_ONLY_WHILE_PENDING = (
+    "    db.query(Output).filter(Output.id == output.id, Output.status == OutputStatus.PENDING.value).update(\n"
+)
+_QUEUED_WHATEVER_THE_STATUS = "    db.query(Output).filter(Output.id == output.id).update(\n"
 _REVOKE_FIRST = (
     "    from app.tasks.celery_app import celery_app\n"
     "    celery_app.control.revoke(row.celery_task_id, terminate=True)\n"
@@ -510,16 +783,14 @@ def test_mutation_unconditional_writes_fail_the_found_cancelled_check(client, db
         _check_a_cancel_that_finds_it_cancelled(client, db, timeline, monkeypatch)
 
 
-def test_mutation_a_refused_write_that_commits_fails_the_cancel_after_the_last_report_check(
-    db, monkeypatch, timeline, discarded
-):
-    """Committing the run's pending changes when its status write is refused
-    puts this run's content on a cancelled output."""
+def test_mutation_a_refused_write_that_commits_fails_the_refused_report_check(db, monkeypatch, timeline, discarded):
+    """Committing the run's pending changes when its write is refused puts this
+    run's text over the output another delivery completed. (On a cancelled
+    output the clear that follows the refusal now removes them, so the
+    cancel-after-the-last-report check no longer sees this.)"""
     mutant(monkeypatch, output_service._write_unless_ended, (_ROLLBACK_ON_REFUSAL, _COMMIT_ON_REFUSAL))
     with pytest.raises(AssertionError):
-        _check_a_cancel_after_the_last_report_wins(db, monkeypatch, timeline, discarded)
-
-
+        _check_a_refused_report_commits_none_of_this_runs_content(db, monkeypatch, timeline, discarded)
 
 
 def _status_published_before_its_write(monkeypatch):
@@ -563,3 +834,62 @@ def test_mutation_a_cancel_that_revokes_first_fails_the_lose_check(client, db, t
     mutant(monkeypatch, output_service.cancel_output, (_CANCEL_WRITE, _REVOKE_FIRST + _CANCEL_WRITE))
     with pytest.raises(AssertionError):
         _check_a_cancel_that_loses(client, db, timeline, monkeypatch, "completed")
+
+
+# ---------------------------------------------------------------- what an output that did not complete keeps
+
+_STOPPED_CLEARS = "        _clear_unfinished(db, output)\n        return output\n    except OutputSkipped"
+_STOPPED_LEAVES = "        return output\n    except OutputSkipped"
+
+
+def test_mutation_a_cancel_that_keeps_the_content_fails_the_cancel_clears_check(db, monkeypatch, timeline, discarded):
+    """The cancel's write leaving the content, as it did: the cancelled output
+    serves the manuscript until the run notices, which can be minutes."""
+    mutant(monkeypatch, output_service.cancel_output, (_CANCEL_WRITE, _CANCEL_KEEPS_CONTENT))
+    with pytest.raises(AssertionError):
+        _check_the_cancel_clears_what_the_run_committed(db, monkeypatch, timeline, discarded)
+
+
+@pytest.mark.parametrize("kind", ["failed", "skipped", "crashed"])
+def test_mutation_an_end_that_keeps_the_content_fails_the_end_check(db, monkeypatch, timeline, discarded, kind):
+    """The run's own failed or skipped write leaving what its reports committed."""
+    mutant(monkeypatch, output_service._end_unfinished, (_END_DROPS_CONTENT, _END_KEEPS_CONTENT))
+    with pytest.raises(AssertionError):
+        _check_an_end_after_the_book_commits_its_manuscript(db, monkeypatch, timeline, discarded, kind)
+
+
+def test_mutation_a_refused_completed_that_only_discards_on_a_cancel_fails_the_book_cancel_check(
+    db, monkeypatch, timeline, discarded
+):
+    """The refused ``completed`` as the PR first had it: files removed on a
+    cancel, the committed manuscript and citations left on the cancelled row."""
+    mutant(monkeypatch, output_service._run_generation, (_REFUSED_COMPLETE_CLEARS, _REFUSED_COMPLETE_DISCARDS_ON_CANCEL))
+    with pytest.raises(AssertionError):
+        _check_a_cancel_after_the_book_commits_its_manuscript(db, monkeypatch, timeline, discarded)
+
+
+def test_mutation_a_refused_completed_that_only_discards_on_a_cancel_fails_the_failed_elsewhere_check(
+    db, monkeypatch, timeline, discarded
+):
+    """The same, after another delivery failed the output: this run's PDF and
+    the manuscript stay on the failed row."""
+    mutant(monkeypatch, output_service._run_generation, (_REFUSED_COMPLETE_CLEARS, _REFUSED_COMPLETE_DISCARDS_ON_CANCEL))
+    with pytest.raises(AssertionError):
+        _check_another_delivery_that_failed_it_keeps_nothing(db, monkeypatch, timeline, discarded, "after-the-last-report")
+
+
+def test_mutation_a_stopped_run_that_clears_nothing_fails_the_failed_elsewhere_check(
+    db, monkeypatch, timeline, discarded
+):
+    """A run stopped by a refused report leaving the failed row as it found
+    it: the manuscript its reports committed, and the EPUB it wrote."""
+    mutant(monkeypatch, output_service._run_generation, (_STOPPED_CLEARS, _STOPPED_LEAVES))
+    with pytest.raises(AssertionError):
+        _check_another_delivery_that_failed_it_keeps_nothing(db, monkeypatch, timeline, discarded, "before-a-report")
+
+
+def test_mutation_queued_written_whatever_the_status_fails_the_create_check(client, db, timeline, monkeypatch):
+    """``Queued`` written as it was, over whatever the worker had written."""
+    mutant(monkeypatch, output_service.record_queued, (_QUEUED_ONLY_WHILE_PENDING, _QUEUED_WHATEVER_THE_STATUS))
+    with pytest.raises(AssertionError):
+        _check_queued_never_lands_on_an_output_that_ended(client, db, timeline, monkeypatch)

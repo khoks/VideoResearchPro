@@ -51,10 +51,19 @@ import {
 } from '../utils/echoReadiness';
 import type { HttpErrorLike } from '../utils/ingestResults';
 import { inlineErrorMessage } from '../utils/apiError';
+import type { ShownOnPage } from '../services/queryClient';
 
 function isForbidden(err: unknown): boolean {
   return (err as HttpErrorLike | null)?.response?.status === 403;
 }
+
+/**
+ * Where the page says a failed status read: its line, in place of a first read,
+ * and the upgrade card for a 403, whatever readiness it still shows. So the
+ * toast stands aside for those and says a refresh that fails otherwise behind
+ * readiness on screen (T-3.4.1.26, T-3.4.1.27).
+ */
+const statusShownOnPage: ShownOnPage = (error, hasData) => !hasData || isForbidden(error);
 
 interface FormState {
   mode: 'create' | 'edit';
@@ -89,8 +98,9 @@ export function EchoPage() {
 
   // Each read's failure is said on this page alone (T-3.4.1.26). Readiness keeps
   // what it last read on screen and shows its line only in place of a first
-  // read, so a failed refresh behind it keeps the toast ('load').
-  const status = useEchoStatus(allowed, { inlineErrors: 'load' });
+  // read, so a failed refresh behind it keeps the toast, but a 403 is the
+  // upgrade card's (`statusShownOnPage`).
+  const status = useEchoStatus(allowed, { inlineErrors: statusShownOnPage });
   const connectors = useEchoConnectors(allowed, { inlineErrors: true });
   const [searchParams] = useSearchParams();
   // Back from a provider through /echo/connectors/:name/callback.

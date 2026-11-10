@@ -25,9 +25,13 @@
  * Since T-3.4.1.22 both also follow a line through a dialog's or picker's
  * callback prop and through a mutation's `isError`.
  *
- * A fourth guard, at the end, holds the same two sides for queries
- * (T-3.4.1.26): a reader that says a load's failure on the page stands aside
- * from the query toast, and a reader that stands aside says it.
+ * A fourth guard holds the same two sides for queries (T-3.4.1.26): a reader
+ * that says a load's failure on the page stands aside from the query toast, and
+ * a reader that stands aside says it.
+ *
+ * A fifth, at the end, holds polls (T-3.4.1.27): the query client says a run of
+ * a poll's failures once, so every `refetchInterval` is listed beside the test
+ * that checks it, and nothing polls by a timer the client cannot see.
  */
 import { AxiosError, AxiosHeaders } from 'axios';
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -1285,5 +1289,115 @@ describe('the fourth guard: a query’s failure line stands alone', () => {
   it('leaves alone a line reached through a prop, when the reader stands aside', () => {
     const src = 'function Box({ query }: P) {\n  return query.isError ? <p>No.</p> : null;\n}\nfunction Page() {\n  const q = useShown();\n  return <Box query={q} />;\n}';
     expect(queryLineProblems(src, QUERY_HOOKS, queryFailureProps({ src }))).toEqual({ repeats: [], nowhere: [] });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The fifth guard: a poll says a run of failures once (T-3.4.1.27)
+// ---------------------------------------------------------------------------
+//
+// The query client holds a poll to one toast per run of failures, and knows a
+// poll by its readers' `refetchInterval` (`queryIsPolling`). So:
+// - every `refetchInterval` in the app is listed in `POLLS`, by the function
+//   that sets it, beside the tests that check that poll under the app's client
+//   (each must exist and name the function); the guard fails on a poll not
+//   listed, so a new one comes with its test;
+// - nothing polls by a timer of its own (`setInterval` calling `refetch`,
+//   `refetchQueries`, `invalidateQueries` or `fetchQuery`): the client could not
+//   tell it from a reader asking again, and it would toast every time.
+//
+// Mutation checks, run on 2026-11-10: taking `useImports` out of `POLLS`, or
+// naming a test for the system page that does not exist, fails "lists every
+// poll"; a hook with `setInterval(() => void q.refetch(), 5000)` in
+// `useVideoFrames.ts` fails "finds no poll by a timer of its own".
+
+/** Each function in `src` that sets a `refetchInterval`, by name. */
+function pollSites(src: string): string[] {
+  const code = withoutComments(src);
+  const fns = functionsIn(code);
+  const names = [...code.matchAll(/\brefetchInterval\s*:/g)].map((m) => {
+    const [from] = scopeOf(code, m.index!);
+    return fns.find((f) => f.body[0] === from)?.name ?? '(module)';
+  });
+  return [...new Set(names)];
+}
+
+/** Where `src` polls by a timer of its own: a `setInterval` whose callback asks
+ * a query again. */
+function timerPolls(src: string): number[] {
+  const code = withoutComments(src);
+  return [...code.matchAll(/\bsetInterval\s*\(/g)]
+    .filter((m) => {
+      const open = m.index! + m[0].length - 1;
+      return /\b(?:refetch|refetchQueries|invalidateQueries|fetchQuery)\s*\(/.test(code.slice(open, closing(code, open)));
+    })
+    .map((m) => lineOf(code, m.index!));
+}
+
+const POLL_HOOKS_TEST = 'src/hooks/__tests__/pollHooks.test.tsx';
+
+/** Every poll in the app (`file: function`), and the tests that check it says
+ * a run of failures once, or stands aside for a line that says each one. */
+const POLLS: Record<string, string[]> = {
+  'src/hooks/useEcho.ts: useImports': [POLL_HOOKS_TEST],
+  'src/hooks/useEcho.ts: useVoiceTestPoll': [POLL_HOOKS_TEST],
+  'src/hooks/useJobs.ts: useJob': [POLL_HOOKS_TEST, 'src/pages/__tests__/jobDetailLoadFailure.test.tsx'],
+  'src/hooks/useJobs.ts: useJobs': [POLL_HOOKS_TEST],
+  'src/hooks/useNotifications.ts: useNotifications': [POLL_HOOKS_TEST],
+  'src/hooks/useSavedSearches.ts: useSavedSearches': [POLL_HOOKS_TEST],
+  'src/hooks/useSystemStatus.ts: useSystemStatus': [POLL_HOOKS_TEST, 'src/layouts/__tests__/healthPoll.test.tsx'],
+  'src/hooks/useVideoFrames.ts: useVideoFrames': [POLL_HOOKS_TEST],
+  'src/pages/SystemStatusPage.tsx: SystemStatusPage': ['src/pages/__tests__/systemStatusPage.test.tsx'],
+};
+
+describe('the fifth guard: a poll says a run of failures once', () => {
+  const sources = import.meta.glob(['../../**/*.{ts,tsx}', '!**/__tests__/**', '!**/*.test.{ts,tsx}'], {
+    query: '?raw',
+    import: 'default',
+    eager: true,
+  }) as Record<string, string>;
+  const tests = import.meta.glob('../../**/__tests__/*.test.{ts,tsx}', {
+    query: '?raw',
+    import: 'default',
+    eager: true,
+  }) as Record<string, string>;
+
+  it('lists every poll beside the tests that check it', () => {
+    const found = Object.entries(sources)
+      .flatMap(([file, src]) => pollSites(src).map((name) => `${file.replace('../../', 'src/')}: ${name}`))
+      .sort();
+    expect(found).toEqual(Object.keys(POLLS).sort());
+    for (const [site, files] of Object.entries(POLLS)) {
+      const name = site.split(': ')[1];
+      for (const file of files) {
+        const test = tests[file.replace('src/', '../../')];
+        expect(test, `${site}: ${file}`).toBeDefined();
+        expect(test.includes(name), `${file} names ${name}`).toBe(true);
+      }
+    }
+  });
+
+  it('finds no poll by a timer of its own', () => {
+    const offenders = Object.entries(sources)
+      .map(([file, src]) => [file.replace('../../', 'src/'), timerPolls(src)] as const)
+      .filter(([, lines]) => lines.length > 0);
+    expect(offenders).toEqual([]);
+  });
+
+  it.each([
+    ['export function useThing() {\n  return useQuery({ queryKey: k, queryFn: f, refetchInterval: 5000 });\n}', ['useThing']],
+    ['function Page() {\n  const q = useQuery({ queryKey: k, queryFn: f, refetchInterval: (q) => (q.state.data ? 3000 : false) });\n}', ['Page']],
+    ['// refetchInterval: 5000 in a comment\nexport function useThing() {\n  return useQuery({ queryKey: k, queryFn: f });\n}', []],
+  ])('reads where a poll is set: %s', (src, names) => {
+    expect(pollSites(src)).toEqual(names);
+  });
+
+  it.each([
+    ['function Page() {\n  useEffect(() => {\n    const id = setInterval(() => void q.refetch(), 5000);\n  }, []);\n}', [3]],
+    ['const id = window.setInterval(() => qc.invalidateQueries({ queryKey: k }), 4000);', [1]],
+    ['const id = window.setInterval(() => WSClient.send(socket, "ping"), 30000);', []],
+    ['const t = setTimeout(() => void qc.invalidateQueries({ queryKey: k }), 500);', []],
+  ])('knows a timer that polls from one that does not: %s', (src, lines) => {
+    expect(timerPolls(src)).toEqual(lines);
   });
 });

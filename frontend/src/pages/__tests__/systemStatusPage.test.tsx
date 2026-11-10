@@ -16,6 +16,8 @@ import { AxiosError, AxiosHeaders } from 'axios';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MeResponse } from '../../hooks/useMe';
 import type { HealthLLMResponse, SchedulerStatus, YouTubeQuotaStatus } from '../../services/systemApi';
+import { createQueryClient } from '../../services/queryClient';
+import { clearToasts, recordToasts } from '../../services/__tests__/failures';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -310,5 +312,42 @@ describe('restart control', () => {
     expect(status.getAttribute('data-restart-status')).toBe('failed');
     expect(status.textContent).toBe('Self-restart is only wired up for Windows hosts today.');
     expect(waitForApi).not.toHaveBeenCalled();
+  });
+});
+
+// T-3.4.1.27: the page's three polls (every minute) under the app's own query
+// client. Each section says its failure on its own line, every interval, so the
+// toast stands aside every time and a run of failures never reaches it.
+// Mutation check, run on 2026-11-10: `meta` off the scheduler's poll fails this
+// with a toast for the first failed poll.
+describe("the page's polls under the app's query client", () => {
+  it('say a failing poll on its line each minute, and never in a toast', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    clearToasts();
+    const toasts = recordToasts();
+    try {
+      failing.add('/health/scheduler');
+      act(() =>
+        root.render(
+          <QueryClientProvider client={createQueryClient()}>
+            <MemoryRouter initialEntries={['/account/system']}>
+              <SystemStatusPage />
+            </MemoryRouter>
+          </QueryClientProvider>,
+        ),
+      );
+      for (let poll = 0; poll < 3; poll++) {
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(poll === 0 ? 1500 : 62_000);
+        });
+        await flush();
+        expect(section('scheduler')!.textContent).toContain('Try again');
+      }
+      expect(get.mock.calls.filter(([url]) => url === '/health/scheduler')).toHaveLength(6);
+      expect(toasts.messages).toEqual([]);
+    } finally {
+      toasts.stop();
+      vi.useRealTimers();
+    }
   });
 });

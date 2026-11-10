@@ -24,6 +24,14 @@
  * page's readiness. Dropping each option fails that reader's rows where its line
  * shows.
  *
+ * T-3.4.1.27: the Echo page's readiness stands aside by a rule of its own
+ * (`statusShownOnPage`): in place of a first read, and for a 403, which the page
+ * says with its upgrade card whatever readiness it still shows. Mutation checks,
+ * run on 2026-11-10: `{ inlineErrors: 'load' }` back on that reader fails "a
+ * 403 on a refresh behind readiness" (the card and a toast); the rule without
+ * its 403 clause fails the same row; the rule without its first-read clause
+ * fails every "says a failed first read once" row but the 401's.
+ *
  * The guard lists every file with such a reader (`CONDITIONAL_READERS`) and the
  * test that checks it, this file for most.
  */
@@ -37,11 +45,13 @@ import { createQueryClient } from '../../services/queryClient';
 import { MFA_KEY } from '../../hooks/useAccountSecurity';
 import {
   FAILURE_KINDS,
+  PLAN_WORDS,
   SERVER_WORDS,
   clearToasts,
   failures,
   flush,
   press,
+  refusedByPlan,
   toastMessages,
   type FailureKind,
 } from '../../services/__tests__/failures';
@@ -499,6 +509,7 @@ describe('the report peek', () => {
 
 describe("the Echo page's readiness", () => {
   const FALLBACK = "Couldn't read Echo's status.";
+  const UPGRADE = 'Echo opens at Studio.';
   const STATUS = {
     ready: false,
     total_rows: 40,
@@ -525,6 +536,30 @@ describe("the Echo page's readiness", () => {
     await refresh(client, ['echo', 'status']);
     expectToastAlone('noWords', FALLBACK);
     expect(text()).toContain("You're on the way.");
+  });
+
+  // T-3.4.1.27: a 403 is the upgrade card's, whatever readiness is on screen.
+  it('leaves a 403 on a refresh behind readiness to the upgrade card, with no toast', async () => {
+    echo.status.mockResolvedValue(STATUS);
+    const client = createQueryClient();
+    await mount(<EchoPage />, '/echo', client);
+    await settle();
+    expect(text()).toContain("You're on the way.");
+    echo.status.mockImplementation(() => Promise.reject(refusedByPlan()));
+    await refresh(client, ['echo', 'status']);
+    expect(count(text(), UPGRADE)).toBe(1);
+    expect(text()).not.toContain("You're on the way.");
+    expect(text()).not.toContain(PLAN_WORDS);
+    expect(toastMessages()).toEqual([]);
+  });
+
+  it('leaves a 403 on the first read to the upgrade card, with no toast', async () => {
+    echo.status.mockImplementation(() => Promise.reject(refusedByPlan()));
+    await mount(<EchoPage />, '/echo');
+    await settle();
+    expect(count(text(), UPGRADE)).toBe(1);
+    expect(text()).not.toContain(FALLBACK);
+    expect(toastMessages()).toEqual([]);
   });
 });
 

@@ -47,8 +47,10 @@ export function useSystemStatus() {
     queryFn: fetchHealth,
     refetchInterval: 60_000,
     refetchOnWindowFocus: true,
-    // The health endpoint itself never throws a toast — a transient 5xx
-    // should not spam the user — so we leave errors quiet.
+    // Nothing on the page says a failed check (the banner shows the last one
+    // read), so the global toast does, once per run of failures: it is a poll,
+    // and the query client holds a poll to one toast until a check succeeds
+    // again (T-3.4.1.27). A 401 says nothing; the session ends in one place.
     retry: 1,
     staleTime: 30_000,
   });

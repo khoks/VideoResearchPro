@@ -1,4 +1,5 @@
 import { MutationCache, QueryCache, QueryClient, type Query } from '@tanstack/react-query';
+import { isAxiosError } from 'axios';
 import { useJobStore } from '../stores/jobStore';
 import { apiErrorMessage, globalErrorToastMessage, isSessionEnded } from '../utils/apiError';
 import { detailFromErrorBody } from '../utils/ingestResults';
@@ -7,6 +8,77 @@ function toastError(error: unknown): void {
   // Null for errors the page already shows where the action started.
   const message = globalErrorToastMessage(error);
   if (message) useJobStore.getState().pushToast('error', message);
+}
+
+type AnyQuery = Query<unknown, unknown, unknown, readonly unknown[]>;
+
+/**
+ * Whether `query` is a poll now: an enabled, mounted reader asks for it again
+ * every so many milliseconds (`refetchInterval`, a number or worked out from the
+ * query, as TanStack works it out). A reader with no interval, or one whose
+ * interval says `false` now (a capture that has finished), does not poll.
+ */
+export function queryIsPolling<TError>(query: Query<unknown, TError, unknown, readonly unknown[]>): boolean {
+  return query.observers.some((observer) => {
+    const { enabled, refetchInterval } = observer.options;
+    if ((typeof enabled === 'function' ? enabled(query) : enabled) === false) return false;
+    const every = typeof refetchInterval === 'function' ? refetchInterval(query) : refetchInterval;
+    return typeof every === 'number' && every > 0 && Number.isFinite(every);
+  });
+}
+
+/**
+ * What kind of failure `error` is, for a poll's streak: the status the server
+ * answered with, or no answer at all (a dropped connection, a timeout). On the
+ * polled routes the words under one status are one fixed sentence for an
+ * account (a 404's not found, a plan's 403, the rate limiter's 429), and words
+ * with a count or a time in them must not toast every interval.
+ */
+export function pollFailureKind(error: unknown): string {
+  if (isAxiosError(error)) return error.response ? `status ${error.response.status}` : 'no answer';
+  return 'other';
+}
+
+/**
+ * One toast per run of failures of a poll (T-3.4.1.27). A poll that keeps
+ * failing used to toast on every interval: the health check every minute, a
+ * run's page every five seconds behind the run already on screen.
+ *
+ * A streak starts with the first failure the toast says, and lasts until a
+ * fetch of the query succeeds (the cache's `onSuccess`, which `setQueryData`
+ * never calls) or nobody reads the query any more (its last reader unmounts),
+ * so coming back to a page whose poll still fails says so again, as a first
+ * read would. Within a streak each kind of failure (`pollFailureKind`) is said
+ * once: no answer, then the server's words, says both, and a poll flapping
+ * between the two says each once, not every interval.
+ *
+ * The query's own state cannot mark a streak: TanStack writes the failure
+ * before the cache's `onError` runs (status `'error'`, the new error, one more
+ * `errorUpdateCount`), a fetch with no data clears the error before it starts,
+ * and `dataUpdateCount` moves on every `setQueryData` too. So the cache keeps
+ * the record itself.
+ *
+ * Only a poll is held to its streak. Any other query is asked again by the
+ * reader (a page visit, a focus, a retry), and says every failure, as before. A
+ * failure a line on the page says is not counted as said: when that line has
+ * gone, the toast says the next one.
+ */
+class PollFailureStreaks {
+  private said = new WeakMap<AnyQuery, Set<string>>();
+
+  /** Whether the toast should say this failure of `query`: always for a query
+   * that does not poll, and for a poll, the first of its kind in this streak. */
+  firstSaying(query: AnyQuery, error: unknown): boolean {
+    const kinds = this.said.get(query) ?? new Set<string>();
+    const kind = pollFailureKind(error);
+    if (kinds.has(kind) && queryIsPolling(query)) return false;
+    this.said.set(query, kinds.add(kind));
+    return true;
+  }
+
+  end(query: AnyQuery): void {
+    this.said.delete(query);
+  }
 }
 
 /**
@@ -22,17 +94,33 @@ function toastError(error: unknown): void {
  * A query follows the same rule (T-3.4.1.26). Its toast comes once its retry has
  * failed too, as before, unless a reader of it on the page now says the failure
  * there: see `queryFailureShownOnPage`.
+ *
+ * A poll says a run of failures once (T-3.4.1.27): see `PollFailureStreaks`.
+ * A page may also say a failure whose reader it has taken off the screen: see
+ * `sayFailuresOnPage`.
  */
 export function createQueryClient(): QueryClient {
+  const streaks = new PollFailureStreaks();
+  const queryCache: QueryCache = new QueryCache({
+    onError: (error, query) => {
+      if (queryFailureShownOnPage(query) || pageSaysFailure(queryCache, query, error)) return;
+      // Null for a 401 (the session ends in one place, T-5.4.22) and for the
+      // refusals their pages say where they were started.
+      const message = globalErrorToastMessage(error);
+      if (message && streaks.firstSaying(query, error)) useJobStore.getState().pushToast('error', message);
+    },
+    // Called for a fetch that succeeded, and never for `setQueryData`, so a
+    // run's progress written into the cache over the socket ends no streak.
+    onSuccess: (_data, query) => streaks.end(query),
+  });
+  queryCache.subscribe((event) => {
+    if (event.type === 'observerRemoved' && event.query.getObserversCount() === 0) streaks.end(event.query);
+  });
   return new QueryClient({
     defaultOptions: {
       queries: { retry: 1, staleTime: 5000 },
     },
-    queryCache: new QueryCache({
-      onError: (error, query) => {
-        if (!queryFailureShownOnPage(query)) toastError(error);
-      },
-    }),
+    queryCache,
     mutationCache: new MutationCache({
       onError: (error, _variables, _context, mutation) => {
         if (!mutation.meta?.errorsShownHere) toastError(error);
@@ -58,6 +146,39 @@ export function queryFailureShownOnPage<TError>(query: Query<unknown, TError, un
     const shown = meta?.errorsShownHere;
     return shown === true || (shown === 'load' && query.state.data === undefined);
   });
+}
+
+/**
+ * A page's say over a failure that no mounted reader says (T-3.4.1.27): a
+ * failure that lands after the page has taken off the screen the readers that
+ * would have said it. The Echo page's upgrade card takes the place of every
+ * section whose read a change of plan refuses. So when the plan changes in
+ * another tab, a window focus refreshes every Echo read at once, and each
+ * section's 403 can land with no reader left to stand aside: each would toast
+ * beside the card. The page's rule gives them to the card
+ * (`useEchoPlanRefusal`).
+ *
+ * Asked after the readers, with the failure as it lands, which TanStack has
+ * already written to `query.state`. A page that takes a failure this way must
+ * show it: the rule and what the page shows are worked out from the same thing,
+ * not from what has rendered so far, or the order the answers come in decides.
+ */
+export type PageSaysFailure = (query: AnyQuery, error: unknown) => boolean;
+
+const pageRules = new WeakMap<QueryCache, Set<PageSaysFailure>>();
+
+/** Gives `rule` its say over the failures of `cache`'s queries until the
+ * returned function is called: from a page's mount to its unmount. */
+export function sayFailuresOnPage(cache: QueryCache, rule: PageSaysFailure): () => void {
+  const rules = pageRules.get(cache) ?? new Set<PageSaysFailure>();
+  pageRules.set(cache, rules.add(rule));
+  return () => {
+    rules.delete(rule);
+  };
+}
+
+function pageSaysFailure(cache: QueryCache, query: AnyQuery, error: unknown): boolean {
+  return [...(pageRules.get(cache) ?? [])].some((rule) => rule(query, error));
 }
 
 /**

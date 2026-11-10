@@ -12,6 +12,7 @@ import {
   useDeleteContext,
   useEchoConnectors,
   useEchoContext,
+  useEchoPlanRefusal,
   useEchoStatus,
   useRecordContext,
   useRevokeSource,
@@ -89,8 +90,10 @@ export function EchoPage() {
 
   // Each read's failure is said on this page alone (T-3.4.1.26). Readiness keeps
   // what it last read on screen and shows its line only in place of a first
-  // read, so a failed refresh behind it keeps the toast ('load').
+  // read, so a failed refresh behind it keeps the toast ('load'). A 403 on any
+  // Echo read, this one included, is the upgrade card's (`useEchoPlanRefusal`).
   const status = useEchoStatus(allowed, { inlineErrors: 'load' });
+  const refusedByPlan = useEchoPlanRefusal();
   const connectors = useEchoConnectors(allowed, { inlineErrors: true });
   const [searchParams] = useSearchParams();
   // Back from a provider through /echo/connectors/:name/callback.
@@ -101,7 +104,7 @@ export function EchoPage() {
   const revoke = useRevokeSource();
   const revokeScope = useRevokeScope(revoking?.source ?? null);
 
-  const forbidden = isForbidden(status.error) || isForbidden(context.error);
+  const forbidden = refusedByPlan || isForbidden(status.error) || isForbidden(context.error);
   // The server's words, else the page's sentence, and nothing for a 401.
   const statusError = status.isError ? inlineErrorMessage(status.error, "Couldn't read Echo's status.") : null;
   const connectorsError = connectors.isError ? inlineErrorMessage(connectors.error, "Couldn't list connectors.") : null;

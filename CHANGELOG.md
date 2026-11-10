@@ -10,6 +10,36 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Changed: a second cancel says nothing, an Author output's end follows its write, a failure refetches the run, and an answer cancels a late refetch (T-5.2.32 to T-5.2.35, 2026-11-10)
+
+PR [#457](https://github.com/khoks/VideoResearchPro/pull/457). [D-172](docs/decisions.md#d-172--only-the-cancel-whose-own-write-took-announces-it-an-author-output-stops-at-the-write-and-keeps-nothing-when-it-ends-unfinished-a-failure-refetches-the-run-and-a-refetch-in-flight-at-an-end-is-cancelled-rather-than-out-ranked-2026-11-10).
+
+- A second cancel that raced the first no longer announces the cancel again: only the cancel whose own save took publishes it. It still answers 200 and still revokes, as before.
+- An Author output's progress, end and cancel are each one conditional write, so a cancelled output never shows "generating" again and is never overwritten by "completed". A cancel that reaches an output which has just finished answers 400 instead of marking it cancelled, and the task is revoked only once the output says cancelled.
+- **Fixed:** an output cancelled, failed or skipped after a book's last progress report kept its manuscript, citations and EPUB, and its content was still served. An output that ends other than completed now keeps no text, citations or files, from the moment it reads ended. A worker that fails an output before the create route records its dispatch keeps its own words, where "Queued" overwrote them.
+- The studio ignores late events for an output it holds as ended, skipped included.
+- A failed run's error event now refetches the run and the jobs lists.
+- **Fixed:** after Cancel or Approve, a refresh already in flight could bring the run back as active, or the approval list back, for up to 5 seconds. Each answer now cancels that refresh before it is stored.
+- No migration, no new setting and no route change. Restart the API and the worker, and reload the page. Still open: two live deliveries of one output can still replace a completed output's files (T-5.2.36, the owner's call).
+
+### Changed: a fact's key out of the access log's paths, and the import script's one-line stop (T-4.11.4.8, T-4.11.4.9, 2026-11-10)
+
+PR [#459](https://github.com/khoks/VideoResearchPro/pull/459). [D-171](docs/decisions.md#d-171--a-users-words-in-a-url-path-are-chosen-by-route-template-in-the-same-filter-a-path-no-template-matches-is-written-whole-and-the-import-script-answers-a-stop-on-one-line-and-names-what-a-part-way-stop-kept-2026-11-10).
+
+- uvicorn's access log writes a fact's key in `DELETE /api/v1/echo/context/{kind}/{key}` by its length, such as `DELETE /api/v1/echo/context/interest/[25 characters]`. The method, the other segments, the query and the status stay, and a path no route serves is written whole. A test reads every route's path parameters and fails on one nobody has classified.
+- `backend/scripts/echo_import.py` answers a stopped import with the route's words on one line, such as `Preview stopped: ValueError`, and exits 1, in place of Python's traceback, which could quote the file's contents. A run that stopped part-way names its import and what it kept, counted from the rows, and says to undo it under Your imports.
+- An unused import is gone from `newsletter_service.py`.
+- No migration and no new setting. Restart the API. Still open: a fact whose key holds `/` cannot be deleted (S-3.1.1), and Vite's dev proxy writes a failed request's path whole to its log (T-4.11.4.10).
+
+### Changed: one message per failure for polls too (T-3.4.1.27, 2026-11-10)
+
+PR [#458](https://github.com/khoks/VideoResearchPro/pull/458). [D-170](docs/decisions.md#d-170--a-poll-says-a-run-of-failures-once-the-streak-is-the-caches-own-record-a-page-may-take-a-failure-no-reader-says-and-the-guard-lists-every-poll-2026-11-10).
+
+- A poll that keeps failing, such as the health check every 60 seconds or the run page every 5 seconds behind a run on screen, now says so once, and again only after it has recovered or its page has been left. A different kind of failure in the same run is said once more. A 401 still says nothing, and a query that does not poll still says every failure.
+- With the Echo page open, a change of plan shows the upgrade card and no toast, whatever order the answers come in. A status read that succeeds again takes the card away.
+- The guard test lists every poll beside its test and refuses a component that polls by a timer of its own.
+- Frontend only. Reload the page.
+
 ### Changed: a cancel reaches every open tab, and a page ignores late events from a run that ended (T-5.2.28, T-5.2.30, 2026-11-10)
 
 PR [#453](https://github.com/khoks/VideoResearchPro/pull/453). [D-169](docs/decisions.md#d-169--a-cancel-that-takes-is-announced-after-its-commit-a-page-takes-no-more-events-for-a-run-it-holds-as-ended-the-runs-videos-follow-its-cached-status-and-every-cached-jobs-list-takes-a-runs-events-2026-11-10).

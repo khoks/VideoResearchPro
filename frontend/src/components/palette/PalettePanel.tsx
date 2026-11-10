@@ -196,12 +196,15 @@ export default function PalettePanel({ onClose }: { onClose: () => void }) {
   // empty state flashed "Nothing matches" before the request was even sent.
   const settling = query.trim() !== q;
   const searching = settling || (!!q && search.isFetching);
+  // A failed search has one voice, for a screen reader too: the toast while
+  // actions still match (this status then counts what is listed), the alert in
+  // the list when none do (this status stays quiet).
   const status = !query.trim()
     ? ''
     : searching && !search.data
       ? 'Searching'
-      : search.isError
-        ? searchError && 'Search is unavailable; actions still work'
+      : search.isError && shownActions.length === 0
+        ? ''
         : `${total} ${total === 1 ? 'result' : 'results'}`;
 
   return (

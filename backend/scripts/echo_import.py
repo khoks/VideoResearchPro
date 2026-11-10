@@ -11,19 +11,40 @@ Shares are embedded inline here unless ``--queue`` hands them to the worker.
     ./venv/Scripts/python scripts/echo_import.py --email you@example.com --file chat.txt \\
         --options '{"self_name": "Rahul", "timezone": "Asia/Kolkata"}'
 
-Exits 0 when it previewed or imported, 1 when nothing was imported (the file
-could not be read, or the run stopped; one line on stderr says which, in the
-route's words) and 2 when an argument is wrong or the account is missing or
-not on the Studio plan.
+Exits 0 when it previewed or imported. Exits 1 when the file could not be
+read or the preview or the run stopped: one line on stderr says why, in the
+words ``POST /echo/import`` answers with. A run that stopped part-way keeps
+what it committed before the stop under a failed import, so a second line
+names that import and what it holds; "Your imports" on the Echo import page
+lists it, and its "Undo import" removes it (run this file again only after
+that, or its shares are stored twice). Exits 2 when an argument is wrong or
+the account is missing or not on the Studio plan.
 """
 from __future__ import annotations
 
 import argparse
 import json
+import logging
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+
+def _say_what_it_kept(db, tenant_id: str, import_id: str | None) -> None:
+    """The second line of a stop, for a run that had written its import row:
+    the row's id and what it holds, counts only."""
+    if import_id is None:
+        return
+    from app.services import echo_import_service
+
+    held = echo_import_service.stored_by(db, tenant_id, import_id)
+    print(
+        f"Import {import_id} is marked failed and keeps what it stored before it stopped "
+        f"(shares: {held['shares']}, activity events: {held['events']}, facts: {held['facts']}). "
+        "Undo it under Your imports on the Echo import page before running this file again.",
+        file=sys.stderr,
+    )
 
 
 def main(argv: list[str] | None = None, *, session_factory=None) -> int:
@@ -69,8 +90,17 @@ def main(argv: list[str] | None = None, *, session_factory=None) -> int:
         if not has_feature(user, "echo_personal_brain"):
             print("Echo needs the Studio plan on that account.", file=sys.stderr)
             return 2
-        with open(args.file, "rb") as fh:
-            try:
+        # T-4.11.4.9: a stop is said below, once, in the route's words. The
+        # service also logs it by its frames, which the API's log keeps beside
+        # the route's 500; on this terminal that is the traceback the one line
+        # stands for. Its other lines (a sniff that failed, embedding) stay.
+        def _not_a_stop(record: logging.LogRecord) -> bool:
+            return not echo_import_service.is_stop_log(record)
+
+        service_log = logging.getLogger(echo_import_service.__name__)
+        service_log.addFilter(_not_a_stop)
+        try:
+            with open(args.file, "rb") as fh:
                 if args.preview:
                     pv = echo_import_service.preview(fh, args.file.name, importer=args.importer, options=options)
                     print(json.dumps({
@@ -81,17 +111,22 @@ def main(argv: list[str] | None = None, *, session_factory=None) -> int:
                 record = echo_import_service.run_import(
                     db, user, fh, args.file.name, importer=args.importer, options=options,
                 )
-            except ExportUnreadable as e:
-                print(f"Not imported: {e}", file=sys.stderr)
-                return 1
-            except echo_import_service.ImportStopped as e:
-                # T-4.11.4.9 (D-164 point 5): the service logged it by its
-                # frames, and a run that had written its row marked it failed.
-                # One line, the words POST /echo/import answers its 500 with,
-                # never the traceback, whose cause quotes what it could not
-                # read or write.
-                print(e, file=sys.stderr)
-                return 1
+        except ExportUnreadable as e:
+            # A run that had written its row says "stopped": it keeps what it
+            # committed (T-4.11.4.9).
+            print(f"Not imported: {e}" if e.import_id is None else f"Import stopped: {e}", file=sys.stderr)
+            _say_what_it_kept(db, user.id, e.import_id)
+            return 1
+        except echo_import_service.ImportStopped as e:
+            # T-4.11.4.9 (D-164 point 5): a run that had written its row
+            # marked it failed. The words POST /echo/import answers its 500
+            # with, never the traceback, whose cause quotes what it could not
+            # read or write.
+            print(e, file=sys.stderr)
+            _say_what_it_kept(db, user.id, e.import_id)
+            return 1
+        finally:
+            service_log.removeFilter(_not_a_stop)
         print(json.dumps({
             "import_id": record.id, "importer": record.importer, "status": record.status,
             "counts": json.loads(record.counts_json or "{}"),

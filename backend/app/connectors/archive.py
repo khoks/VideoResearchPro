@@ -33,7 +33,13 @@ from typing import IO, Any
 
 
 class ExportUnreadable(ValueError):
-    """The upload cannot be imported; the message is fit to show the user."""
+    """The upload cannot be imported; the message is fit to show the user.
+
+    ``import_id`` is set by ``echo_import_service.run_import`` when the run had
+    already written its import row, which then says failed and keeps what was
+    committed before the stop; None everywhere else."""
+
+    import_id: str | None = None
 
 
 def stable_id(*parts: object) -> str:

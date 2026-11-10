@@ -29,6 +29,12 @@ def _get_redis() -> redis.Redis:
     return _redis_client
 
 
+# The three run-event publishers below are best effort: a page that misses an
+# event reads the row at its next refetch. A publish that fails is logged by
+# the exception's type, as a refused revoke is (T-5.2.30), so the log never
+# carries a connection error's text.
+
+
 def publish_progress(
     job_id: str,
     status: str,
@@ -49,7 +55,7 @@ def publish_progress(
     try:
         _get_redis().publish(f"job_progress:{job_id}", json.dumps(payload))
     except Exception as e:
-        logger.warning(f"Failed to publish progress for job {job_id}: {e}")
+        logger.warning("Failed to publish progress for job %s: %s", job_id, type(e).__name__)
 
 
 def publish_status_change(
@@ -70,7 +76,7 @@ def publish_status_change(
     try:
         _get_redis().publish(f"job_progress:{job_id}", json.dumps(payload))
     except Exception as e:
-        logger.warning(f"Failed to publish status change for job {job_id}: {e}")
+        logger.warning("Failed to publish status change for job %s: %s", job_id, type(e).__name__)
 
 
 def publish_error(job_id: str, error: str) -> None:
@@ -85,7 +91,7 @@ def publish_error(job_id: str, error: str) -> None:
     try:
         _get_redis().publish(f"job_progress:{job_id}", json.dumps(payload))
     except Exception as e:
-        logger.warning(f"Failed to publish error for job {job_id}: {e}")
+        logger.warning("Failed to publish error for job %s: %s", job_id, type(e).__name__)
 
 
 # T-8.3.3.8: one channel per user. The WebSocket manager subscribes to the

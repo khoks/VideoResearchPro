@@ -486,7 +486,7 @@ Approve a subset of the searched documents and resume the job. Body: `{ "approve
 All or nothing against the tier's document cap ([D-115](decisions.md#d-115--the-document-cap-counts-visible-documents-a-request-that-names-its-documents-is-all-or-nothing-and-nothing-is-granted-before-approval-2026-10-29)): Free 500, Pro 5,000, Studio unlimited, counting the documents in the caller's library. A document already there never counts again; one only someone else added counts as new. Over the cap is a 429 whose `detail` holds the shared quota keys (`error`, `resource`, `consumed`, `limit`, `retry_at`) plus `requested`, `available` and `message`, and nothing is added. Visibility is granted here, for the approved documents only. `POST /library/upload-pdf` and `POST /library/paste-urls` refuse the same way. Subscribing to or syncing a channel is refused only when the library is already full; otherwise the sync stops at the cap, newest uploads first, and says how many it left out.
 
 ### `POST /api/v1/jobs/{job_id}/cancel`
-Cancel a running job. Revokes the active Celery task. Returns updated `JobResponse`. The run stays cancelled even where the revoke cannot stop it (T-5.2.20): a task still queued when no worker was up, or one already running on the solo pool, which cannot be interrupted. A delivered task returns at once on a cancelled row, as on a failed or completed one (T-5.2.23), before it writes, publishes or charges anything, and a running one stops at its next check. Every status and progress write a run makes is conditional on the row being neither cancelled, failed nor completed, so a cancel that lands during the report still wins over `completed` and the unused report file is removed, and a task delivered again for a completed run never writes over it. The cancel's own write is conditional too (T-5.2.22): `cancelled` only over a run that has not ended. A run that completed or failed before the cancel reached it, whether before the route read the row or between that read and the write, keeps its end, and the answer is 400 with what it ended as ("This run has already completed, so there is nothing to cancel."); nothing is revoked then. The task is revoked only once the row says cancelled, and a revoke the broker refuses is logged, not answered: the row already stops the run.
+Cancel a running job. Revokes the active Celery task. Returns updated `JobResponse`. The run stays cancelled even where the revoke cannot stop it (T-5.2.20): a task still queued when no worker was up, or one already running on the solo pool, which cannot be interrupted. A delivered task returns at once on a cancelled row, as on a failed or completed one (T-5.2.23), before it writes, publishes or charges anything, and a running one stops at its next check. Every status and progress write a run makes is conditional on the row being neither cancelled, failed nor completed, so a cancel that lands during the report still wins over `completed` and the unused report file is removed, and a task delivered again for a completed run never writes over it. The cancel's own write is conditional too (T-5.2.22): `cancelled` only over a run that has not ended. A run that completed or failed before the cancel reached it, whether before the route read the row or between that read and the write, keeps its end, and the answer is 400 with what it ended as ("This run has already completed, so there is nothing to cancel."); nothing is revoked then. The task is revoked only once the row says cancelled, and a revoke the broker refuses is logged, not answered: the row already stops the run. Once the row says cancelled, and before the revoke, the route publishes a `job_status_change` to `cancelled` on the run's channel (T-5.2.30; see `WS /ws/jobs`), so every page open on the run shows the cancel at once rather than at its next refetch. The write has committed by then, so no page reads `cancelled` before the row does. A cancel that loses the race publishes nothing, and a publish Redis refuses is logged by its exception type and the cancel still answers 200.
 
 ### `DELETE /api/v1/jobs/{job_id}`
 Delete a job. Drops `job_documents` rows (documents and chunks survive in the global library), deletes the report file if present, and clears the per-job Q&A exchanges. Returns 204.
@@ -1495,19 +1495,18 @@ After connecting, send subscribe/unsubscribe messages:
 { "action": "unsubscribe", "topic": "notifications" }
 ```
 
-The server publishes progress events for any subscribed job:
+The server publishes three kinds of event for a subscribed job, each with `job_id` and an ISO `timestamp`:
 
 ```json
-{
-  "job_id": "...",
-  "type": "status_change" | "progress" | "log" | "completed" | "failed",
-  "status": "extracting",          // when type == status_change
-  "phase": "fetch_transcripts",    // when type == progress
-  "completed": 12,                  // when type == progress
-  "total": 25,                      // when type == progress
-  "message": "..."                  // human-readable status
-}
+// a progress line: status is the run's current stage
+{ "type": "job_progress", "job_id": "...", "status": "extracting", "progress_pct": 40, "message": "Video 2/5: ...", "data": {} }
+// a status change, from the run or from POST /jobs/{job_id}/cancel (T-5.2.30)
+{ "type": "job_status_change", "job_id": "...", "old_status": "extracting", "new_status": "cancelled", "message": "Job cancelled by user" }
+// a failure
+{ "type": "job_error", "job_id": "...", "status": "failed", "error": "No transcripts available." }
 ```
+
+Each goes out only once the row says what it says: a run publishes after its write commits (T-5.2.21), and the cancel route after its own. An event can still arrive after the run has ended, when the run's last write committed just before a cancel and its publish follows the cancel's, so the web client drops every event for a run it already holds as `completed`, `failed` or `cancelled` and leaves the next refetch to correct anything (T-5.2.28). Author outputs publish progress lines and status changes in these shapes, under the output's id.
 
 A socket subscribed to notifications also receives one event per new notification of its token's user:
 

@@ -17,8 +17,9 @@ filter decides what the access log may write of a URL, by what each
 parameter is named.
 
 **A user's words in a URL's path (T-4.11.4.8).** One route takes them there:
-``DELETE /api/v1/echo/context/{kind}/{key}``, whose key is a fact's, which the
-user types. The same filter matches each path against the templates in
+``DELETE /api/v1/echo/context/{kind}/{key:path}``, whose key is a fact's,
+which the user types, and is the rest of the path, every ``/`` in it included
+(S-3.1.1). The same filter matches each path against the templates in
 ``WORDS_PATH_PARAMS`` and writes each words segment by its length
 (``/api/v1/echo/context/interest/[12 characters]``), the method, the other
 segments, the query and the status as they were. A path no such template
@@ -132,14 +133,15 @@ def redact_query_words(text: str) -> str:
 
 
 # The path parameters whose value is a user's own words (T-4.11.4.8), by the
-# template of the route that reads each, as the app serves it: a fact's key,
-# which the user types on the Echo page. Every other path parameter is an id,
-# a digest, a session's jti or a name from a fixed set (a provider, a use case,
+# template of the route that reads each, as the app serves it, convertor
+# included: a fact's key, which the user types on the Echo page, and which is
+# the rest of the path (S-3.1.1). Every other path parameter is an id, a
+# digest, a session's jti or a name from a fixed set (a provider, a use case,
 # a connector, a context kind), and stands.
 # `tests/test_utils/test_access_log_words.py` holds every route's path
 # parameters to this or to its own list of kept ones.
 WORDS_PATH_PARAMS: Mapping[str, frozenset[str]] = MappingProxyType({
-    "/api/v1/echo/context/{kind}/{key}": frozenset({"key"}),
+    "/api/v1/echo/context/{kind}/{key:path}": frozenset({"key"}),
 })
 
 _PATH_PARAM = re.compile(r"\{(?P<name>\w+)(?::(?P<convertor>\w+))?\}")
@@ -151,17 +153,20 @@ def _template_pattern(template: str, words: frozenset[str]) -> re.Pattern[str]:
     uvicorn writes the path it routed, decoded and percent-encoded again, so a
     segment is matched as Starlette matches it, ``[^/]+``. A words value alone
     may run over a ``/``: the route decodes ``%2F`` before it matches, so a key
-    holding one comes out as more segments than its template has (and answers
-    404), and it is still the user's. A raw ``?`` starts the query, so neither
-    runs past one, and a decoded ``?`` or ``#`` in a key is written ``%3F`` or
-    ``%23``, inside the segment. The literal parts match in any case and
-    percent-encoded, a trailing ``/`` stands, and the path may sit anywhere in
-    the text: after a host, a root path or a space."""
+    holding one comes out as more segments than its template names, and it is
+    still the user's. A words ``:path`` parameter takes the rest of the path as
+    Starlette's ``.*`` does, a trailing ``/`` included, since the route reads
+    that ``/`` as the key's (S-3.1.1); anywhere else a trailing ``/`` stands.
+    A raw ``?`` starts the query, so no value runs past one, and a decoded
+    ``?`` or ``#`` in a key is written ``%3F`` or ``%23``, inside the segment.
+    The literal parts match in any case and percent-encoded, and the path may
+    sit anywhere in the text: after a host, a root path or a space."""
     parts, end = [], 0
     for found in _PATH_PARAM.finditer(template):
         parts.append(_spelled(template[end:found.start()]))
         if found["name"] in words:
-            parts.append(rf"""(?P<{found['name']}>[^?\s"']+?)""")
+            lazy = "" if found["convertor"] == "path" else "?"
+            parts.append(rf"""(?P<{found['name']}>[^?\s"']+{lazy})""")
         elif found["convertor"] == "path":
             parts.append(r"""[^?\s"']*?""")
         else:

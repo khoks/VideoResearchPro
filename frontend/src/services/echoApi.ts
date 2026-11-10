@@ -681,9 +681,9 @@ export const echoApi = {
   recordContext: (payload: RecordContextPayload) =>
     api.post<PersonalContextItem>('/echo/context', payload).then(r => r.data),
 
-  /** Path-param delete. Keys are URL-encoded; a key containing `/` cannot
-   * be addressed this way (Starlette decodes before routing), so the form
-   * refuses such keys up front. */
+  /** Path-param delete. The key is URL-encoded whole, so a `/` in it goes as
+   * `%2F`; the server decodes it before routing, and the route reads the key
+   * as the rest of its path (`{key:path}`, S-3.1.1), slashes included. */
   deleteContext: (kind: string, key: string) =>
     api
       .delete<{ deleted: boolean }>(

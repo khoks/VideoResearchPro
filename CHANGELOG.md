@@ -10,6 +10,25 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Changed: a fact whose key holds `/` is deleted by its route (T-3.1.1.1, 2026-11-10)
+
+PR [#462](https://github.com/khoks/VideoResearchPro/pull/462). [D-174](docs/decisions.md#d-174--a-facts-key-is-the-rest-of-its-delete-routes-path-the-access-log-writes-all-of-it-and-the-echo-pages-form-accepts--in-a-label-2026-11-10).
+
+- `DELETE /api/v1/echo/context/{kind}/{key}` takes the key as the rest of the path (`{key:path}`), every `/` included. A key with no `/` is matched and answered as before.
+- **Fixed:** a fact whose key holds `/` could be written through `POST /echo/context`, which accepts any key of 1 to 128 characters, but its delete answered 404, because the server decodes `%2F` before it routes. Such a fact is now deleted, including one stored before.
+- The access log still writes the whole key by its length, however many `/` it holds; a key ending in `/` was written as `[1 character]/`.
+- The Echo page's form accepts `/` in a label. A derived fact holding `/` keeps its whole key under Kept deleted, and the next sync skips it.
+- No migration and no new setting. Restart the API. Still open: a fact labelled exactly `.` or `..` cannot be deleted from a page, since a browser resolves such a segment before it sends the request (S-3.1.2, the owner's call).
+
+### Changed: the dev proxy's error line leaves the request path out (T-4.11.4.10, 2026-11-10)
+
+PR [#461](https://github.com/khoks/VideoResearchPro/pull/461). [D-173](docs/decisions.md#d-173--the-dev-proxys-failed-request-line-names-its-method-and-leaves-the-path-out-through-a-customlogger-that-rewrites-that-line-alone-and-a-stack-loses-only-the-url-vite-was-given-2026-11-10).
+
+- While the API is down or restarting, Vite's dev proxy, which the browser goes through under the launchers, logs each failed request to `.frontend.err.log`. It now writes `http proxy error: DELETE [path left out]` and the stack where it wrote the whole path, so a search's words or a fact's key no longer land there.
+- The stack still says how the backend failed (`ECONNREFUSED`, `socket hang up`), and every other line Vite writes goes through unchanged.
+- `--logLevel` and `--clearScreen` on Vite's command line no longer reach its logger; nothing in the repo passes either.
+- Frontend dev server only, with no owner step: Vite restarts its dev server when its config changes. `.frontend.err.log` keeps the lines written before. Still open: Vite 8 relays the browser's console to that log when it detects an agent in its environment (T-4.11.4.11, the owner's call).
+
 ### Changed: a second cancel says nothing, an Author output's end follows its write, a failure refetches the run, and an answer cancels a late refetch (T-5.2.32 to T-5.2.35, 2026-11-10)
 
 PR [#457](https://github.com/khoks/VideoResearchPro/pull/457). [D-172](docs/decisions.md#d-172--only-the-cancel-whose-own-write-took-announces-it-an-author-output-stops-at-the-write-and-keeps-nothing-when-it-ends-unfinished-a-failure-refetches-the-run-and-a-refetch-in-flight-at-an-end-is-cancelled-rather-than-out-ranked-2026-11-10).

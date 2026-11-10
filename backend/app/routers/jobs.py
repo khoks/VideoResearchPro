@@ -12,6 +12,7 @@ from app.services import (
     chroma_service,
     document_cap_service,
     job_service,
+    progress_service,
     report_service,
     visibility_service,
 )
@@ -267,18 +268,27 @@ def cancel_job(
         raise HTTPException(status_code=404, detail="Job not found")
     if job.status in job_service.ENDED_STATUSES:
         raise _cannot_cancel(job.status)
+    status_before = job.status
 
     # T-5.2.22: only while the row is still active, in one conditional UPDATE.
     # The run can complete or fail between the read above and this write; it
     # then keeps its end, and the cancel answers what it would have answered
     # a moment later.
     job = job_service.update_job_status(
-        db, job_id, "cancelled", progress_message="Job cancelled by user", unless_ended=True
+        db, job_id, "cancelled", progress_message=_CANCELLED_WORDS, unless_ended=True
     )
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
     if job.status != "cancelled":
+        # Lost the race: the row keeps the run's end, which is not this
+        # cancel's to announce, so nothing is published (T-5.2.30).
         raise _cannot_cancel(job.status)
+
+    # T-5.2.30: every open page of this run hears of the cancel now, not at
+    # its next refetch. The write above has committed, so no page reads
+    # `cancelled` before the row says it. Before the revoke, which can wait
+    # on a broker that is down.
+    _announce_cancelled(job_id, status_before)
 
     # Revoked only once the row says cancelled, and with the task id the row
     # holds now (an approval may have stored the resume's meanwhile). A run
@@ -299,6 +309,27 @@ def cancel_job(
 
 
 _ENDED_WORDS = {"completed": "completed", "failed": "failed", "cancelled": "been cancelled"}
+
+# What a cancelled run's row says, and what its open pages are told.
+_CANCELLED_WORDS = "Job cancelled by user"
+
+
+def _announce_cancelled(job_id: str, status_before: str) -> None:
+    """Publish the cancel on ``job_progress:{job_id}`` as a status change, the
+    event a run's own transitions send and ``useJobProgress`` applies, so every
+    tab open on the run shows it cancelled at once (T-5.2.30).
+
+    Called only once the row says ``cancelled``. Best effort: the row is the
+    cancel, and a page that misses this event reads it at its next refetch, so
+    a publish that fails (Redis down) is logged by the exception's type alone,
+    as the revoke is, and the cancel still answers 200. A second cancel that
+    raced this one also answers 200 and sends the same event again, which a
+    page that holds the run as cancelled drops (T-5.2.28).
+    """
+    try:
+        progress_service.publish_status_change(job_id, status_before, "cancelled", _CANCELLED_WORDS)
+    except Exception as e:  # noqa: BLE001 - the row already says cancelled
+        logger.warning("[job:%s] cancelled, but the change could not be published: %s", job_id, type(e).__name__)
 
 
 def _cannot_cancel(status_: str) -> HTTPException:

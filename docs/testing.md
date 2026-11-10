@@ -2,7 +2,7 @@
 
 > Status: living doc (last refreshed 2026-11-04). Owns: testing strategy, fixture catalogue, how to add a test, how to run the LLM stress harness. Setup commands live in [docs/contributing.md](contributing.md).
 
-The backend ships with **5,800+ tests** under `backend/tests/` (`pytest tests/ --collect-only -q` prints the count). The frontend gates on `tsc -b` through `npm run build`, and since 2026-10-19 has two suites of its own: **vitest + jsdom** unit tests under `frontend/src/**/*.test.{ts,tsx}` (`npm test`; the reader's sanitiser, parsers, citation resolution, card, toolbar and composer) and **Playwright device tests** under `frontend/tests/` (`npm run test:mobile`; see [§5.6](#56-frontend-suites)). ESLint runs by hand (`npm run lint`); CI does not run it. This doc explains the conventions so a new contributor can add a test in five minutes.
+The backend ships with **6,000+ tests** under `backend/tests/` (`pytest tests/ --collect-only -q` prints the count). The frontend gates on `tsc -b` through `npm run build`, and since 2026-10-19 has two suites of its own: **vitest + jsdom** unit tests under `frontend/src/**/*.test.{ts,tsx}` (`npm test`; the reader's sanitiser, parsers, citation resolution, card, toolbar and composer) and **Playwright device tests** under `frontend/tests/` (`npm run test:mobile`; see [§5.6](#56-frontend-suites)). ESLint runs by hand (`npm run lint`); CI does not run it. This doc explains the conventions so a new contributor can add a test in five minutes.
 
 ---
 

@@ -137,6 +137,8 @@ Run:
    ```
    Don't do this until step 3 is green. Once deleted, recovery is restoring from a `data/chroma/` backup.
 
+   Until then, `scripts/check_embedded_flags.py` stops, its dry run included: it checks flags against the configured collection alone, so while another collection holds chunks of this database's documents it names that collection and writes nothing (T-5.2.26). The same refusal shows a lost pin: a dry run that names `videoresearchpro_global` while `.env` points at `pratidhvani_global` means the library's chunks are split, and this section, or the pin, resolves it.
+
 ### Rollback
 
 If anything looks wrong post-migration (Q&A returns nothing, chunk count mismatch, etc.):

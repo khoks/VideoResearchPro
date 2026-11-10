@@ -32,6 +32,17 @@ CHROMA_PERSIST_DIR points the wrong way) writes nothing; --empty-store-ok says
 the store really was emptied. Idempotent: a second run finds nothing to
 clear. Run it when no job is ingesting.
 
+It also lists the store's other collections and reads their metadata (none
+is created, no model loaded), and prints each with how many of this
+database's documents its chunks name (T-5.2.26). The Q&A, notes, shares and
+personal-context collections, under their configured names, are not read. A
+collection holding chunks of this database's documents, such as the legacy
+videoresearchpro_global beside a partly re-embedded pratidhvani_global,
+stops the dry run and --write alike, --empty-store-ok or not: point
+CHROMA_GLOBAL_COLLECTION_NAME at the collection that holds the library, or
+migrate the chunks into one collection (docs/migration-code-identifiers.md,
+section A).
+
 Usage (from backend/):
     ./venv/Scripts/python scripts/check_embedded_flags.py
     ./venv/Scripts/python scripts/check_embedded_flags.py --document-ids <id>,<id>
@@ -87,11 +98,29 @@ def _query_only(db, on: bool) -> None:
         db.execute(text(f"PRAGMA query_only = {'ON' if on else 'OFF'}"))
 
 
+def _print_other_collections(data: dict) -> None:
+    for name in data["other_kinds"]:
+        print(f"{name}: another kind of row (Q&A, notes, shares or personal context), not read.")
+    for entry in data["other_collections"]:
+        line = (
+            f"{entry['name']}: {entry['rows_scanned']} row(s) scanned, "
+            f"{entry['chunks_of_this_database']} chunk(s) of this database"
+        )
+        if entry["documents"]:
+            line += (
+                f", naming {entry['documents']} document(s): {entry['documents_only_here']} "
+                f"named by no chunk in {data['collection']}, {entry['documents_to_clear']} "
+                "of those a write would clear"
+            )
+        print(line + ".")
+
+
 def _print(data: dict) -> None:
     print(
         f"{data['collection']}: {data['chunks_scanned']} chunk(s) scanned, "
         f"{data['chunks_of_no_document']} of no document in this database."
     )
+    _print_other_collections(data)
     print(
         f"{data['flagged']} document(s) flagged embedded: {data['flagged_with_chunks']} with "
         f"chunks, {data['without_chunks']} without. {data['unflagged_with_chunks']} not "

@@ -58,8 +58,35 @@ configured collection (``get_or_create_collection``): an install that
 embedded under the legacy ``videoresearchpro_global`` and lost its
 ``CHROMA_GLOBAL_COLLECTION_NAME`` pin, or an API started from another working
 directory, leaves an empty collection for this check to read. A store that
-really was emptied is cleared only with ``empty_store_ok``. The CLI is
-``scripts/check_embedded_flags.py``; ``--write`` is the owner's step.
+really was emptied is cleared only with ``empty_store_ok``.
+
+The configured collection is not always the only one holding the library's
+chunks (T-5.2.26). After a lost pin the app embeds new documents into an
+empty ``pratidhvani_global`` while most of the library still sits in
+``videoresearchpro_global``; a few chunks of this database then pass every
+guard above, and every document whose chunks are only in the other
+collection looks chunkless. So the check also lists the store's collections
+and reads every other one, metadata only (never created, no embedding model
+loaded). Any collection holding chunks of this database's documents stops the
+write, and the dry run, whatever ``empty_store_ok`` says: the owner points
+``CHROMA_GLOBAL_COLLECTION_NAME`` at the collection that holds the library,
+or migrates the chunks into one collection (docs/migration-code-identifiers.md,
+section A). Two tests tell a chunk collection from the app's others:
+
+* by name, the Q&A, notes, shares and personal-context collections, under
+  their configured names, are never read. They hold rows of other kinds,
+  some naming a document (a note's target), and Echo's hold a tenant's
+  private rows.
+* by shape, a row of any other collection counts only when it is a chunk of
+  a document here: its id is ``{video_id}:{n}`` or ``{document_id}:{n}``, or
+  its metadata names the document and carries an integer ``chunk_index``,
+  as every chunk the chunker writes (and the old per-job collections' chunks)
+  does. A Q&A exchange (``qa:{id}``), a note (``note:{id}``), a share or a
+  personal-context row has neither, so a renamed setting's old collection
+  does not stop the check.
+
+The CLI is ``scripts/check_embedded_flags.py``; ``--write`` is the owner's
+step.
 """
 from __future__ import annotations
 
@@ -74,7 +101,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.models.document import Document
 from app.models.transcript_cache import TranscriptCache
-from app.services import chroma_service
+from app.services import chroma_service, echo_vectors
 from app.services.metadata_backfill_service import _DocumentIndex, _scan_chunks
 
 logger = logging.getLogger(__name__)
@@ -88,6 +115,22 @@ CLEARED_BUCKETS = (BUCKET_CACHED, BUCKET_FETCH_AGAIN)
 
 # Ids per IN (...) list: well under SQLite's bound-parameter limit.
 _ID_BATCH = 500
+
+
+@dataclass
+class OtherCollection:
+    """A collection in the store besides the configured one, as read."""
+
+    name: str
+    rows_scanned: int = 0
+    # Rows shaped as chunks of a document in this database.
+    chunks_of_this_database: int = 0
+    # The documents of this database those chunks name...
+    documents: int = 0
+    # ...of which no chunk of the configured collection names...
+    documents_only_here: int = 0
+    # ...and the flagged ones a write would have cleared.
+    documents_to_clear: int = 0
 
 
 @dataclass
@@ -114,10 +157,18 @@ class FlagCheckReport:
     cleared: int = 0
     # Chunks named them by the time of the write: a job embedded them since.
     kept_on_recheck: int = 0
+    # Every other collection read, by name. One whose chunks name a document
+    # of this database stops the write (T-5.2.26).
+    other_collections: list[OtherCollection] = field(default_factory=list)
+    # The app's collections of other kinds, by their configured names: not read.
+    other_kinds: list[str] = field(default_factory=list)
     stopped: str = ""
 
     def without_chunks(self) -> int:
         return sum(len(rows) for rows in self.found.values())
+
+    def holding_this_database(self) -> list[OtherCollection]:
+        return [entry for entry in self.other_collections if entry.documents]
 
     def as_dict(self) -> dict[str, Any]:
         data = asdict(self)
@@ -141,6 +192,105 @@ def _open_collection() -> Any:
     embedding model loaded, since only metadata is read."""
     return chroma_service.get_chroma_client().get_collection(
         name=settings.CHROMA_GLOBAL_COLLECTION_NAME, embedding_function=None
+    )
+
+
+def _other_kind_names() -> set[str]:
+    """The app's collections that hold rows of other kinds, by their
+    configured names: Q&A exchanges, notes, and Echo's (shares, personal
+    context; ``echo_collection_names`` lists every one)."""
+    return {
+        settings.CHROMA_QA_COLLECTION_NAME,
+        settings.CHROMA_NOTES_COLLECTION_NAME,
+        *echo_vectors.echo_collection_names(),
+    }
+
+
+def _is_chunk_index(value: Any) -> bool:
+    if isinstance(value, bool):
+        return False
+    if isinstance(value, int):
+        return value >= 0
+    return isinstance(value, float) and value.is_integer() and value >= 0
+
+
+def _chunk_owner(chunk_id: str, meta: dict, index: _DocumentIndex) -> str:
+    """The document of this database a row of another collection is a chunk
+    of, or "". A chunk is told by its shape: its id is ``{key}:{n}`` with
+    ``key`` a document's ``video_id`` or ``document_id``, or its metadata
+    names a document and carries an integer ``chunk_index``. A note naming
+    a document has neither (``note:{id}``, no ``chunk_index``)."""
+    _, sep, suffix = chunk_id.rpartition(":")
+    if sep and suffix.isdigit():
+        owner = _owner_of_chunk_id(chunk_id, index)
+        if owner:
+            return owner
+    if _is_chunk_index(meta.get("chunk_index")):
+        owner = index.resolve(meta)
+        if owner in index.known:
+            return owner
+    return ""
+
+
+def _scan_other_collections(
+    report: FlagCheckReport, index: _DocumentIndex, page_size: int
+) -> tuple[dict[str, set[str]], str]:
+    """Read every collection in the store besides the configured one and
+    the app's collections of other kinds, metadata only: never created, no
+    embedding model loaded. Returns ``({name: documents its chunks name},
+    "")``, or why the pass stopped: one unread collection is a doubt."""
+    client = chroma_service.get_chroma_client()
+    try:
+        listed = client.list_collections()
+    except Exception as exc:  # noqa: BLE001 — a doubt: nothing written
+        logger.exception("check_embedded_flags: could not list the store's collections")
+        return {}, f"could not list the store's collections ({type(exc).__name__}); nothing written"
+    other_kinds = _other_kind_names()
+    named_by: dict[str, set[str]] = {}
+    for name in sorted({c if isinstance(c, str) else c.name for c in listed}):
+        if name == report.collection:
+            continue
+        if name in other_kinds:
+            report.other_kinds.append(name)
+            continue
+        entry = OtherCollection(name=name)
+        report.other_collections.append(entry)
+        try:
+            collection = client.get_collection(name=name, embedding_function=None)
+        except Exception as exc:  # noqa: BLE001 — a doubt: nothing written
+            logger.exception("check_embedded_flags: could not open another collection")
+            return named_by, f"could not open the collection {name} ({type(exc).__name__}); nothing written"
+        documents: set[str] = set()
+
+        def visit(chunk_id: str, meta: dict, entry: OtherCollection = entry,
+                  documents: set[str] = documents) -> None:
+            entry.rows_scanned += 1
+            owner = _chunk_owner(chunk_id, meta, index)
+            if owner:
+                entry.chunks_of_this_database += 1
+                documents.add(owner)
+
+        stopped = _scan_chunks(collection, page_size, visit, "check_embedded_flags")
+        if stopped:
+            return named_by, f"reading {name}: {stopped}"
+        entry.documents = len(documents)
+        named_by[name] = documents
+    return named_by, ""
+
+
+def _held_elsewhere(report: FlagCheckReport) -> str:
+    """Why a write stops while other collections hold chunks of this database."""
+    listed = "; ".join(
+        f"{entry.name} holds chunks of {entry.documents} document(s) of this database, "
+        f"{entry.documents_only_here} of them named by no chunk in {report.collection}"
+        for entry in report.holding_this_database()
+    )
+    return (
+        f"{listed}. This check reads {report.collection} alone, so a document whose "
+        "chunks sit only elsewhere would look chunkless. Point CHROMA_GLOBAL_COLLECTION_NAME "
+        "at the collection that holds the library, or migrate the chunks into one collection "
+        "and delete the other once Q&A answers from it (docs/migration-code-identifiers.md, "
+        "section A). Nothing written"
     )
 
 
@@ -212,19 +362,10 @@ def check_embedded_flags(
     collection is still scanned, since any chunk may name them. A dry run
     leaves the session with nothing to commit. A collection with no chunks
     while documents are flagged stops the check unless ``empty_store_ok``
-    says the store really was emptied.
+    says the store really was emptied. Another collection holding chunks of
+    this database's documents stops it whatever ``empty_store_ok`` says.
     """
     report = FlagCheckReport(write=write, collection=settings.CHROMA_GLOBAL_COLLECTION_NAME)
-    try:
-        collection = _open_collection()
-    except Exception as exc:  # noqa: BLE001 — reported; nothing to read
-        logger.exception("check_embedded_flags: could not open the global collection")
-        report.stopped = (
-            f"could not open the collection {report.collection} "
-            f"({type(exc).__name__}); nothing read, nothing written"
-        )
-        return report
-
     rows = db.query(
         Document.document_id, Document.video_id, Document.source_type,
         Document.source_id, Document.embedded_in_chroma,
@@ -232,6 +373,20 @@ def check_embedded_flags(
     index = _DocumentIndex()
     for row in rows:
         index.add(row)
+
+    try:
+        collection = _open_collection()
+    except Exception as exc:  # noqa: BLE001 — reported; nothing to check against
+        logger.exception("check_embedded_flags: could not open the global collection")
+        report.stopped = (
+            f"could not open the collection {report.collection} "
+            f"({type(exc).__name__}); nothing written"
+        )
+        # Where the library is, when the pin names a collection that is not there.
+        _, unread = _scan_other_collections(report, index, page_size)
+        if not unread and report.holding_this_database():
+            report.stopped += ". " + _held_elsewhere(report)
+        return report
 
     named: set[str] = set()
 
@@ -245,6 +400,7 @@ def check_embedded_flags(
     report.stopped = _scan_chunks(collection, page_size, visit, "check_embedded_flags")
     if report.stopped:
         return report
+    named_elsewhere, unread = _scan_other_collections(report, index, page_size)
 
     wanted = {d for d in (document_ids or []) if d}
     stranded = []
@@ -276,7 +432,18 @@ def check_embedded_flags(
             "video_id": row.video_id or "",
         })
     report.to_clear = sum(len(report.found[b]) for b in CLEARED_BUCKETS)
+    to_clear_ids = {row["document_id"] for b in CLEARED_BUCKETS for row in report.found[b]}
+    for entry in report.other_collections:
+        documents = named_elsewhere.get(entry.name, set())
+        entry.documents_only_here = len(documents - named)
+        entry.documents_to_clear = len(documents & to_clear_ids)
 
+    if unread:
+        report.stopped = unread
+        return report
+    if report.holding_this_database():
+        report.stopped = _held_elsewhere(report)
+        return report
     if report.chunks_scanned and report.chunks_scanned == report.chunks_of_no_document:
         report.stopped = (
             f"none of the {report.chunks_scanned} chunks in {report.collection} belongs to a "

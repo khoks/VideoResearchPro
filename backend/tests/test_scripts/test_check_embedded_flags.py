@@ -17,6 +17,15 @@ chunks, and chunks of a document that no longer exists.
 Mutation checks: a check that ignores chunk ids counts the legacy documents
 chunkless, and its write unflags them; without the write, the next job reuses
 a stranded document and inserts nothing.
+
+T-5.2.26 puts other collections beside the library: the legacy
+``videoresearchpro_global`` holding chunks of this database stops the write
+and the dry run names it; the app's Q&A, notes, shares and personal-context
+collections are not read, and a renamed setting's old Q&A or notes
+collection holds no row shaped as a chunk. Mutation checks: a check that
+reads the configured collection alone clears flags that are right; without
+the shape test a notes collection under an old name blocks every write;
+without the names the check reads Echo's private collections.
 """
 from __future__ import annotations
 
@@ -303,7 +312,10 @@ def test_a_scan_that_stops_part_way_writes_nothing(library, db, tmp_path, monkey
 
 def test_a_store_that_belongs_to_another_database_writes_nothing(library, db, tmp_path, monkeypatch):
     """The wrong DATABASE_URL or CHROMA_PERSIST_DIR: no chunk names a document
-    here, so every flagged document would look chunkless."""
+    here, so every flagged document would look chunkless. That store holds
+    the other install's collection alone; this library's collection is in
+    another store (were it beside, it would be T-5.2.26's case)."""
+    chroma_service.get_chroma_client().delete_collection("pratidhvani_global")
     other = chroma_service.get_chroma_client().create_collection("another_install", embedding_function=None)
     other.add(ids=["vidELSEWHERE:0"], embeddings=[[0.1, 0.2]], documents=["x"],
               metadatas=[{"document_id": "someone-elses-document", "chunk_index": 0}])
@@ -323,7 +335,9 @@ def test_an_empty_store_writes_nothing_unless_the_owner_says_it_was_emptied(libr
     under ``videoresearchpro_global`` and lost its pin reads an empty
     ``pratidhvani_global``. No chunk is scanned, so neither the mismatch guard
     nor the missing-collection refusal fires, and every flagged document
-    would look chunkless."""
+    would look chunkless. Here the store holds nothing else: with the
+    library beside it, the check names where it is (the lost-pin test below)."""
+    chroma_service.get_chroma_client().delete_collection("pratidhvani_global")
     chroma_service.get_chroma_client().create_collection("an_empty_store", embedding_function=None)
     monkeypatch.setattr(embedded_flag_service.settings, "CHROMA_GLOBAL_COLLECTION_NAME", "an_empty_store")
     before = _flags(db)
@@ -357,6 +371,241 @@ def test_a_missing_collection_is_neither_created_nor_cleared_against(library, db
     assert _flags(db) == before
     names = [c.name for c in chroma_service.get_chroma_client().list_collections()]
     assert "no_such_collection" not in names
+    assert "pratidhvani_global holds chunks of 4 document(s) of this database" in report["stopped"], (
+        "and it says where the library is"
+    )
+
+
+# ---------------------------------------------------------------- other chunk collections (T-5.2.26)
+
+LEGACY = "videoresearchpro_global"
+OTHER_KINDS = ("notes_global", "personal_context_global", "qa_library_global", "shares_global")
+
+
+def _embed_into(monkeypatch, name: str, docs: list[Document]) -> None:
+    """Chunks written as a job writes them, into the collection ``name``:
+    the app's own write path pointed there, as an install pinned to it did."""
+    with monkeypatch.context() as m:
+        m.setattr(chroma_service.settings, "CHROMA_GLOBAL_COLLECTION_NAME", name)
+        chroma_service.insert_chunks([chunk for doc in docs for chunk in _chunks_for(doc)])
+
+
+def _rows(name: str, ids: list[str], metadatas: list[dict]) -> None:
+    """Rows of another kind, with their own ids and metadata."""
+    chroma_service.get_chroma_client().get_or_create_collection(name, embedding_function=None).add(
+        ids=ids, embeddings=[[0.1, 0.2, 0.3]] * len(ids), documents=["x"] * len(ids), metadatas=metadatas,
+    )
+
+
+def _other_kinds_beside(library: dict) -> None:
+    """The app's other collections, under their configured names, and two a
+    renamed setting left behind. Notes name a document, as some may."""
+    notes = [{"tenant_id": "t1", "source_type": "note", "source_id": f"note:{n}", "target_type": "document",
+              "target_id": library["video"], "document_id": library["video"]} for n in ("n1", "n2")]
+    exchanges = [{"source": "job", "exchange_id": str(n), "job_id": "job-1", "tenant_id": "t1"} for n in (1, 2)]
+    for name in ("notes_global", "notes_before_a_rename"):
+        _rows(name, ["note:n1", "note:n2"], notes)
+    for name in ("qa_library_global", "qa_before_a_rename"):
+        _rows(name, ["qa:1", "qa:2"], exchanges)
+    _rows("shares_global", ["share:s1"], [{"tenant_id": "t1", "document_id": library["pdf"]}])
+    _rows("personal_context_global", ["fact:f1", "signal:g1"], [{"tenant_id": "t1"}, {"tenant_id": "t1"}])
+
+
+def _documents(db, library: dict, *names: str) -> list[Document]:
+    return [db.get(Document, library[name]) for name in names]
+
+
+def _other(report: dict, name: str) -> dict:
+    return next(entry for entry in report["other_collections"] if entry["name"] == name)
+
+
+def test_a_legacy_collection_holding_chunks_of_this_database_stops_the_write(
+    library, db, tmp_path, monkeypatch, capsys
+):
+    """A lost pin and a partial re-embed: pratidhvani_global holds a few of
+    this database's chunks, the legacy collection more. Two documents a write
+    would clear have chunks there."""
+    _embed_into(monkeypatch, LEGACY, _documents(db, library, "video", "pdf", "ok"))
+    before = _flags(db)
+
+    code, report = _run(tmp_path, "--write")
+
+    assert code == 1 and report["cleared"] == 0 and _flags(db) == before
+    assert (f"{LEGACY} holds chunks of 3 document(s) of this database, 2 of them named by no chunk "
+            "in pratidhvani_global") in report["stopped"]
+    assert "CHROMA_GLOBAL_COLLECTION_NAME" in report["stopped"]
+    assert "migration-code-identifiers.md" in report["stopped"] and "Nothing written" in report["stopped"]
+    legacy = _other(report, LEGACY)
+    assert legacy["chunks_of_this_database"] == legacy["rows_scanned"] > 0
+    assert (legacy["documents"], legacy["documents_only_here"], legacy["documents_to_clear"]) == (3, 2, 2)
+
+    code, dry = _run(tmp_path)
+    assert code == 1 and dry["stopped"] == report["stopped"], "the dry run says so too"
+    assert dry["to_clear"] == 5, "and still shows what a write would clear"
+    out = capsys.readouterr().out
+    assert f"{LEGACY}: {legacy['rows_scanned']} row(s) scanned" in out
+    assert "naming 3 document(s): 2 named by no chunk in pratidhvani_global, 2 of those a write would clear" in out
+
+    code, _ = _run(tmp_path, "--write", "--empty-store-ok")
+    assert code == 1 and _flags(db) == before, "--empty-store-ok says nothing about another collection"
+    code, _ = _run(tmp_path, "--write", "--document-ids", library["reddit"])
+    assert code == 1 and _flags(db) == before, "narrowing the check does not narrow the doubt"
+
+    chroma_service.get_chroma_client().delete_collection(LEGACY)
+    code, after = _run(tmp_path, "--write")
+    assert code == 0 and after["cleared"] == 5, "migrated and deleted: the check writes again"
+
+
+def test_the_lost_pin_an_empty_configured_collection_beside_the_library(library, db, tmp_path, monkeypatch):
+    """The API's startup created the configured collection empty; the library
+    is in the collection the lost pin named. The empty-store guard would
+    send the owner looking; this names the collection, and --empty-store-ok
+    cannot clear against it."""
+    chroma_service.get_chroma_client().create_collection("pratidhvani_fresh", embedding_function=None)
+    monkeypatch.setattr(embedded_flag_service.settings, "CHROMA_GLOBAL_COLLECTION_NAME", "pratidhvani_fresh")
+    before = _flags(db)
+
+    code, report = _run(tmp_path, "--write", "--empty-store-ok")
+
+    assert code == 1 and report["cleared"] == 0 and _flags(db) == before
+    assert report["chunks_scanned"] == 0
+    assert ("pratidhvani_global holds chunks of 4 document(s) of this database, 4 of them named by no "
+            "chunk in pratidhvani_fresh") in report["stopped"]
+    assert _other(report, "pratidhvani_global")["documents_to_clear"] == 3, "ok, legacy_video, legacy_podcast"
+
+
+def test_collections_of_other_kinds_do_not_stop_the_write(library, db, tmp_path, monkeypatch, capsys):
+    """Q&A, notes (naming a document), shares and personal context, under
+    their configured names, are not read at all; a renamed setting's old Q&A
+    and notes collections are read, and hold no row shaped as a chunk."""
+    _other_kinds_beside(library)
+    opened = _record_opened(monkeypatch)
+
+    code, report = _run(tmp_path, "--write")
+
+    assert code == 0 and not report["stopped"] and report["cleared"] == 5
+    assert report["other_kinds"] == list(OTHER_KINDS)
+    assert not set(opened) & set(OTHER_KINDS), "never opened, so never read"
+    for name in ("notes_before_a_rename", "qa_before_a_rename"):
+        entry = _other(report, name)
+        assert entry["rows_scanned"] == 2 and entry["chunks_of_this_database"] == entry["documents"] == 0
+    out = capsys.readouterr().out
+    assert "notes_global: another kind of row" in out
+    assert "notes_before_a_rename: 2 row(s) scanned, 0 chunk(s) of this database." in out
+
+
+def test_a_legacy_collection_naming_no_document_of_this_database_does_not_stop_the_write(
+    library, db, tmp_path, monkeypatch
+):
+    """Another install's chunks, or chunks of documents deleted here."""
+    _embed_into(monkeypatch, LEGACY, [Document(
+        document_id="another-databases-document", source_type="video", source_id="vidOTHERDB01",
+        video_id="vidOTHERDB01", title="Elsewhere")])
+
+    code, report = _run(tmp_path, "--write")
+
+    assert code == 0 and not report["stopped"] and report["cleared"] == 5
+    legacy = _other(report, LEGACY)
+    assert legacy["rows_scanned"] > 0 and legacy["chunks_of_this_database"] == legacy["documents"] == 0
+
+
+def test_an_unreadable_other_collection_stops_the_write(library, db, tmp_path, monkeypatch):
+    """A collection the check could not read might hold the library."""
+    _embed_into(monkeypatch, LEGACY, _documents(db, library, "ok"))
+    real_scan = embedded_flag_service._scan_chunks
+
+    def fails_on_the_legacy_collection(collection, *args):
+        if collection.name == LEGACY:
+            raise_on = MagicMock(side_effect=RuntimeError("disk error"))
+            return real_scan(SimpleNamespace(get=raise_on), *args)
+        return real_scan(collection, *args)
+
+    monkeypatch.setattr(embedded_flag_service, "_scan_chunks", fails_on_the_legacy_collection)
+    before = _flags(db)
+
+    code, report = _run(tmp_path, "--write")
+
+    assert code == 1 and report["stopped"].startswith(f"reading {LEGACY}: scan failed")
+    assert report["cleared"] == 0 and _flags(db) == before
+
+
+def _record_opened(monkeypatch) -> list[str]:
+    """Names the check opens; each must be opened with no embedding model."""
+    client = chroma_service.get_chroma_client()
+    real_get = client.get_collection
+    opened: list[str] = []
+
+    def get_collection(name, embedding_function="not given", **kwargs):
+        assert embedding_function is None, f"{name} opened with an embedding function"
+        opened.append(name)
+        return real_get(name=name, embedding_function=None, **kwargs)
+
+    def creates(*args, **kwargs):
+        raise AssertionError("the check created a collection")
+
+    monkeypatch.setattr(client, "get_collection", get_collection)
+    monkeypatch.setattr(client, "get_or_create_collection", creates)
+    monkeypatch.setattr(client, "create_collection", creates)
+    monkeypatch.setattr(chroma_service, "_get_embedding_function", creates)
+    return opened
+
+
+def test_the_check_creates_no_collection_and_loads_no_model(library, db, tmp_path, monkeypatch):
+    _embed_into(monkeypatch, LEGACY, _documents(db, library, "video"))
+    _other_kinds_beside(library)
+    names = sorted(c.name for c in chroma_service.get_chroma_client().list_collections())
+    opened = _record_opened(monkeypatch)
+
+    code, report = _run(tmp_path)
+
+    assert code == 1 and LEGACY in report["stopped"]
+    assert sorted(opened) == sorted(["pratidhvani_global", LEGACY, "notes_before_a_rename", "qa_before_a_rename"])
+    assert sorted(c.name for c in chroma_service.get_chroma_client().list_collections()) == names
+
+
+def test_mutation_a_check_that_reads_the_configured_collection_alone_clears_flags_that_are_right(
+    library, db, tmp_path, monkeypatch
+):
+    """T-5.2.26's hole, reopened: the documents whose chunks are only in the
+    legacy collection look chunkless, and the write clears their flags."""
+    _embed_into(monkeypatch, LEGACY, _documents(db, library, "video", "pdf"))
+    monkeypatch.setattr(embedded_flag_service, "_scan_other_collections", lambda report, index, page_size: ({}, ""))
+
+    code, report = _run(tmp_path, "--write")
+
+    assert code == 0 and report["cleared"] == 5
+    flags = _flags(db)
+    assert flags[library["video"]] is False and flags[library["pdf"]] is False
+
+
+def test_mutation_without_the_shape_test_a_renamed_notes_collection_stops_the_write(
+    library, db, tmp_path, monkeypatch
+):
+    """Any row naming a document counted as a chunk: notes naming their
+    target, under a name the settings no longer give, would block every write."""
+    _other_kinds_beside(library)
+
+    def any_row_naming_a_document(chunk_id, meta, index):
+        owner = index.resolve(meta)
+        return owner if owner in index.known else ""
+
+    monkeypatch.setattr(embedded_flag_service, "_chunk_owner", any_row_naming_a_document)
+
+    code, report = _run(tmp_path, "--write")
+
+    assert code == 1 and "notes_before_a_rename holds chunks of 1 document(s)" in report["stopped"]
+
+
+def test_mutation_without_the_names_the_check_reads_echos_private_collections(
+    library, db, tmp_path, monkeypatch
+):
+    _other_kinds_beside(library)
+    opened = _record_opened(monkeypatch)
+    monkeypatch.setattr(embedded_flag_service, "_other_kind_names", lambda: set())
+
+    _run(tmp_path)
+
+    assert {"shares_global", "personal_context_global", "notes_global"} <= set(opened)
 
 
 # ---------------------------------------------------------------- the next job embeds what --write cleared

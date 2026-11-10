@@ -286,7 +286,7 @@ def _held_elsewhere(report: FlagCheckReport) -> str:
         for entry in report.holding_this_database()
     )
     return (
-        f"{listed}. This check reads {report.collection} alone, so a document whose "
+        f"{listed}. Flags are checked against {report.collection} alone, so a document whose "
         "chunks sit only elsewhere would look chunkless. Point CHROMA_GLOBAL_COLLECTION_NAME "
         "at the collection that holds the library, or migrate the chunks into one collection "
         "and delete the other once Q&A answers from it (docs/migration-code-identifiers.md, "
@@ -384,7 +384,11 @@ def check_embedded_flags(
         )
         # Where the library is, when the pin names a collection that is not there.
         _, unread = _scan_other_collections(report, index, page_size)
-        if not unread and report.holding_this_database():
+        for entry in report.other_collections:
+            entry.documents_only_here = entry.documents
+        if unread:
+            report.stopped += f". Also {unread}"
+        elif report.holding_this_database():
             report.stopped += ". " + _held_elsewhere(report)
         return report
 

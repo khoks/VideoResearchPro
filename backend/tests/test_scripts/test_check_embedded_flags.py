@@ -371,9 +371,8 @@ def test_a_missing_collection_is_neither_created_nor_cleared_against(library, db
     assert _flags(db) == before
     names = [c.name for c in chroma_service.get_chroma_client().list_collections()]
     assert "no_such_collection" not in names
-    assert "pratidhvani_global holds chunks of 4 document(s) of this database" in report["stopped"], (
-        "and it says where the library is"
-    )
+    assert ("pratidhvani_global holds chunks of 4 document(s) of this database, 4 of them named by no chunk "
+            "in no_such_collection") in report["stopped"], "and it says where the library is"
 
 
 # ---------------------------------------------------------------- other chunk collections (T-5.2.26)

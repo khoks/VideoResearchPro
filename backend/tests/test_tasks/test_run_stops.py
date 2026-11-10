@@ -11,7 +11,7 @@ it already followed.
 T-5.2.22: ``POST /jobs/{id}/cancel`` wrote ``cancelled`` unconditionally, so a
 run that completed or failed between the route's read and its write was
 turned into a cancelled one. The write is now conditional on the run not
-having ended (``update_job_status(..., unless_ended=True)``); a run that
+having ended (``write_job_status(..., unless_ended=True)``); a run that
 ended first keeps its end, the route answers what a cancel a moment later
 answers (400, with what it ended as), and nothing is revoked.
 
@@ -321,7 +321,7 @@ def _active_row(db, tenant_id: str) -> str:
 
 
 def _the_run_ends_first(monkeypatch, db, end: str, *, conditional: bool = True) -> None:
-    real = job_service.update_job_status
+    real = job_service.write_job_status
 
     def ended_then_written(db_, job_id, status, *args, **kwargs):
         _end(db, job_id, end)
@@ -329,7 +329,7 @@ def _the_run_ends_first(monkeypatch, db, end: str, *, conditional: bool = True) 
             kwargs.pop("unless_ended", None)
         return real(db_, job_id, status, *args, **kwargs)
 
-    monkeypatch.setattr(job_service, "update_job_status", ended_then_written)
+    monkeypatch.setattr(job_service, "write_job_status", ended_then_written)
 
 
 ENDED_ANSWER = {

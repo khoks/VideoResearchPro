@@ -18,6 +18,7 @@ import {
   isReadableOutput,
   isActiveOutput,
   isOrphanedPending,
+  isOutputEnded,
   isTerminalMessage,
   outputProgressLine,
   outputSizeLabel,
@@ -85,9 +86,20 @@ describe('S-6.7.1 progress helpers', () => {
     expect(applyOutputProgress(row, msg({ type: 'job_error', status: 'failed', error: 'boom' })).error_message).toBe('boom');
   });
 
+  it('leaves an ended row as it is, the same object (T-5.2.34)', () => {
+    for (const status of ['completed', 'failed', 'cancelled', 'skipped']) {
+      const ended = { ...row, status, progress_message: 'Ended' };
+      expect(applyOutputProgress(ended, msg({ status: 'generating', progress_pct: 50, message: 'Chapter 2' }))).toBe(ended);
+      expect(applyOutputProgress(ended, msg({ type: 'job_status_change', new_status: 'generating' }))).toBe(ended);
+      expect(isOutputEnded(status)).toBe(true);
+    }
+    expect(isOutputEnded('pending') || isOutputEnded('generating') || isOutputEnded(undefined)).toBe(false);
+  });
+
   it('knows which messages end a run', () => {
     expect(isTerminalMessage(msg({ type: 'job_status_change', new_status: 'completed' }))).toBe(true);
     expect(isTerminalMessage(msg({ type: 'job_status_change', new_status: 'cancelled' }))).toBe(true);
+    expect(isTerminalMessage(msg({ type: 'job_status_change', new_status: 'skipped' }))).toBe(true);
     expect(isTerminalMessage(msg({ type: 'job_error' }))).toBe(true);
     expect(isTerminalMessage(msg({ type: 'job_status_change', new_status: 'generating' }))).toBe(false);
     expect(isTerminalMessage(msg({ progress_pct: 40 }))).toBe(false);

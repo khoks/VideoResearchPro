@@ -224,13 +224,32 @@ export function outputProgressLine(output: Pick<OutputItem, 'progress_pct' | 'pr
   return message ? `${pct}% · ${message}` : `${pct}%`;
 }
 
-/** Fold one socket message into an output row. Returns the same object when
- * the message is for another id, so React Query keeps referential equality. */
+/** An output in one of these has ended, and the server never moves it on: every
+ * status and progress write refuses an ended row (`TERMINAL_STATUSES`, T-5.2.34). */
+const ENDED_OUTPUT_STATUSES: ReadonlySet<string> = new Set(['completed', 'failed', 'cancelled', 'skipped']);
+
+export function isOutputEnded(status: string | null | undefined): boolean {
+  return status != null && ENDED_OUTPUT_STATUSES.has(status);
+}
+
+/**
+ * Fold one socket message into an output row. Returns the same object when the
+ * message is for another id, so React Query keeps referential equality, and
+ * when the row has ended (T-5.2.34).
+ *
+ * The worker writes a progress line, commits, then publishes it, so a cancel
+ * that commits in between is followed by one event naming `generating`.
+ * Dropping events for an ended output closes that gap and hides nothing: an end
+ * reaches the cache only on the server's word, from a fetch or from an event
+ * published once the write that ended the row has committed, and the page
+ * writes no output status of its own (`useCancelOutput` refetches). A refetch
+ * is not an event: it replaces the row whatever it held.
+ */
 export function applyOutputProgress<T extends Pick<OutputItem, 'id' | 'status' | 'progress_pct' | 'progress_message' | 'error_message'>>(
   output: T,
   msg: WSProgressMessage,
 ): T {
-  if (msg.job_id !== output.id) return output;
+  if (msg.job_id !== output.id || isOutputEnded(output.status)) return output;
   return {
     ...output,
     status: msg.new_status ?? msg.status ?? output.status,
@@ -242,8 +261,7 @@ export function applyOutputProgress<T extends Pick<OutputItem, 'id' | 'status' |
 
 /** Statuses after which the row's content and lists must be refetched. */
 export function isTerminalMessage(msg: WSProgressMessage): boolean {
-  const s = msg.new_status ?? msg.status;
-  return msg.type === 'job_error' || s === 'completed' || s === 'failed' || s === 'cancelled';
+  return msg.type === 'job_error' || isOutputEnded(msg.new_status ?? msg.status);
 }
 
 /** S-6.7.2: the file name a download's Content-Disposition carries. The

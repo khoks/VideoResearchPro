@@ -18,8 +18,24 @@
  * moved it. With the guard, a poll that reads `completed` a moment before its
  * event left the event dropped and the videos as they were before the end.
  *
+ * T-5.2.35: a `job_error` refetches the run and the jobs lists, as an ending
+ * status change does, and the videos once, through the status watch.
+ *
+ * T-5.2.33: a refetch already in flight when the run ends read the row before
+ * the end. The ending event's own refetch cancels it (React Query's
+ * `cancelRefetch`), and the cancel's and the approval's answers cancel it
+ * before they are stored (`storeAnswer`), since an answer that lands before its
+ * event leaves the event dropped by the guard.
+ *
  * The real `wsClient` runs over a fake WebSocket, so events are routed by job
  * id exactly as in the app; `jobsApi` is faked.
+ *
+ * Mutation checks, run by hand on 2026-11-10 for T-5.2.33 and T-5.2.35: leaving
+ * `job_error` out of `endsTheRun` fails the failure case (neither the run nor
+ * the lists are fetched again); taking `cancelQueries` out of `storeAnswer`
+ * fails the cancel-answer and approve-answer cases (the late refetch shows the
+ * run as it was); and an ending event that refetches nothing fails the
+ * in-flight case, the failure case and the cancel-from-another-tab case.
  *
  * Mutation checks, run by hand on 2026-11-10: taking the ended-status guard out
  * of `applyRunEvent` fails five cases, the two late-event ones, the cancel then
@@ -83,12 +99,20 @@ vi.stubGlobal('WebSocket', FakeWebSocket);
 const get = vi.fn<(id: string) => Promise<Job>>();
 const list = vi.fn<() => Promise<Job[]>>();
 const getVideos = vi.fn<(id: string) => Promise<unknown[]>>();
+const cancel = vi.fn<(id: string) => Promise<Job>>();
+const approve = vi.fn<(id: string, data: unknown) => Promise<Job>>();
 vi.mock('../../services/jobsApi', () => ({
-  jobsApi: { get: (id: string) => get(id), list: () => list(), getVideos: (id: string) => getVideos(id) },
+  jobsApi: {
+    get: (id: string) => get(id),
+    list: () => list(),
+    getVideos: (id: string) => getVideos(id),
+    cancel: (id: string) => cancel(id),
+    approve: (id: string, data: unknown) => approve(id, data),
+  },
 }));
 
 import { wsClient } from '../../services/wsClient';
-import { useJob, useJobs, useJobVideos } from '../useJobs';
+import { useApproveJob, useCancelJob, useJob, useJobs, useJobVideos } from '../useJobs';
 import { useAllJobsProgress, useJobProgress } from '../useJobProgress';
 
 const CANCELLED_WORDS = 'Job cancelled by user';
@@ -116,6 +140,35 @@ function RunPage() {
 function RunWithVideos() {
   useJobVideos('j1');
   return <RunPage />;
+}
+
+/** The run's page with the jobs list beside it, both live: what a refetch of
+ * "the run and the lists" reaches. */
+function RunAndListPage() {
+  useJobs({ limit: 20, offset: 0 });
+  return <RunWithVideos />;
+}
+
+let pressCancel: () => void = () => {};
+let pressApprove: () => void = () => {};
+
+/** The run's page with its Cancel and Approve buttons. */
+function RunWithButtons() {
+  const cancelJob = useCancelJob();
+  const approveJob = useApproveJob();
+  pressCancel = () => cancelJob.mutate('j1');
+  pressApprove = () => approveJob.mutate({ id: 'j1', data: { approved_video_ids: ['v1'] } });
+  return <RunWithVideos />;
+}
+
+/** A refetch of the run that answers when the test says. */
+function heldRefetch(): (job: Job) => void {
+  let answer: (job: Job) => void = () => {};
+  get.mockReturnValueOnce(new Promise<Job>((resolve) => (answer = resolve)));
+  act(() => {
+    void qc.refetchQueries({ queryKey: ['job', 'j1'] });
+  });
+  return (job: Job) => act(() => answer(job));
 }
 
 function JobsPage({ ids }: { ids: string[] }) {
@@ -346,6 +399,87 @@ describe("useJobProgress: the run's videos follow its status", () => {
 
     expect(shown().status).toBe('completed');
     expect(getVideos).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('useJobProgress: a failure (T-5.2.35)', () => {
+  it('refetches the run and the lists once, and the videos once', async () => {
+    const noTranscripts = 'No transcripts could be fetched for any video.';
+    get
+      .mockResolvedValueOnce(run('j1', 'extracting'))
+      .mockResolvedValue({ ...run('j1', 'failed', 'Failed'), error_message: noTranscripts });
+    list.mockResolvedValue([run('j1', 'extracting')]);
+    await render(<RunAndListPage />);
+    expect([get.mock.calls.length, list.mock.calls.length, getVideos.mock.calls.length]).toEqual([1, 1, 1]);
+
+    // What `_handle_failure` publishes once the row says failed: its words can
+    // be shorter than the row's.
+    await send({ type: 'job_error', job_id: 'j1', status: 'failed', error: 'No transcripts available.' });
+
+    expect(shown().status).toBe('failed');
+    expect(qc.getQueryData<Job>(['job', 'j1'])?.error_message).toBe(noTranscripts);
+    expect([get.mock.calls.length, list.mock.calls.length, getVideos.mock.calls.length]).toEqual([2, 2, 2]);
+  });
+
+  it('refetches nothing for a run the page already holds as ended', async () => {
+    get.mockResolvedValue(run('j1', 'completed', 'Done'));
+    list.mockResolvedValue([run('j1', 'completed', 'Done')]);
+    await render(<RunAndListPage />);
+
+    await send({ type: 'job_error', job_id: 'j1', status: 'failed', error: 'No transcripts available.' });
+
+    expect(shown()).toEqual({ status: 'completed', message: 'Done' });
+    expect([get.mock.calls.length, list.mock.calls.length, getVideos.mock.calls.length]).toEqual([1, 1, 1]);
+  });
+});
+
+describe('useJobProgress: a refetch already in flight when the run ends (T-5.2.33)', () => {
+  it("is cancelled by the end's own event, so the run never reads active again", async () => {
+    get.mockResolvedValueOnce(run('j1', 'extracting'));
+    await render(<RunWithVideos />);
+    const land = heldRefetch();
+    get.mockResolvedValue(run('j1', 'cancelled', CANCELLED_WORDS));
+
+    // Another tab cancels: the refetch read the row before the commit.
+    await send(statusChange('j1', 'extracting', 'cancelled', CANCELLED_WORDS));
+    land(run('j1', 'extracting'));
+    await flush();
+
+    expect(shown()).toEqual({ status: 'cancelled', message: CANCELLED_WORDS });
+  });
+
+  it("is cancelled by this tab's own cancel answer, which can land before the event", async () => {
+    get.mockResolvedValueOnce(run('j1', 'extracting'));
+    cancel.mockResolvedValue(run('j1', 'cancelled', CANCELLED_WORDS));
+    await render(<RunWithButtons />);
+    const land = heldRefetch();
+    get.mockImplementation(pending);
+
+    act(() => pressCancel());
+    await flush();
+    expect(shown().status).toBe('cancelled');
+    // The event, behind the answer, finds the run ended and is dropped.
+    await send(statusChange('j1', 'extracting', 'cancelled', CANCELLED_WORDS));
+    land(run('j1', 'extracting'));
+    await flush();
+
+    expect(shown()).toEqual({ status: 'cancelled', message: CANCELLED_WORDS });
+    expect(getVideos).toHaveBeenCalledTimes(2);
+  });
+
+  it("is cancelled by this tab's approve answer, so the approval list does not come back", async () => {
+    get.mockResolvedValueOnce(run('j1', 'awaiting_approval', 'Found 5 candidates.'));
+    approve.mockResolvedValue(run('j1', 'extracting', 'Fetching transcripts...'));
+    await render(<RunWithButtons />);
+    const land = heldRefetch();
+    get.mockImplementation(pending);
+
+    act(() => pressApprove());
+    await flush();
+    land(run('j1', 'awaiting_approval', 'Found 5 candidates.'));
+    await flush();
+
+    expect(shown()).toEqual({ status: 'extracting', message: 'Fetching transcripts...' });
   });
 });
 

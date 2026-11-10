@@ -9,8 +9,11 @@ Three layers:
    ``content_text`` or ``content_path``) or ``failed`` (writing
    ``error_message``).
 3. **Status state machine** — `pending` → `generating` → `completed`
-   | `failed`, and `cancelled` from either live state. The service exposes
-   transition helpers so concrete outputters don't manage status directly.
+   | `failed` | `skipped`, and `cancelled` from either live state. The
+   service exposes transition helpers so concrete outputters don't manage
+   status directly. An ended output stays ended (T-5.2.34): every status and
+   progress write is one conditional ``UPDATE`` that refuses a row in
+   ``TERMINAL_STATUSES``, and its event is published only once it is written.
 
 S-6.7.1 moved generation into the Celery worker (`tasks/output_tasks.py`):
 `POST /author/outputs` writes a `pending` row and dispatches
@@ -18,7 +21,7 @@ S-6.7.1 moved generation into the Celery worker (`tasks/output_tasks.py`):
 ``report_progress`` call is published on `job_progress:{output_id}`, the
 channel job progress already uses, so the WebSocket manager and the
 frontend's `wsClient` needed no new channel. Cancellation is cooperative:
-`cancel_output` marks the row and revokes the task, and the next
+`cancel_output` marks the row, then revokes the task, and the next
 ``report_progress`` an outputter makes raises ``OutputCancelled`` (a solo-pool
 Windows worker cannot be interrupted mid-task, so revoke alone is not
 enough).
@@ -101,6 +104,17 @@ class NoOutputterError(OutputError):
 
 class OutputCancelled(OutputError):
     """Raised by ``report_progress`` when the row was cancelled meanwhile."""
+
+
+class OutputStopped(OutputError):
+    """Raised by ``report_progress`` when the row ended meanwhile, but not by a
+    cancel: another delivery of the same task completed or failed it (T-5.2.34).
+    The run stops. A completed row keeps its end, its content and its folder;
+    a failed or skipped one keeps no content, citations or files, this run's
+    included. Files are written straight into the output's one folder, so a
+    file this run wrote after the other delivery completed, and before this
+    report, has already replaced that delivery's (the two-live-deliveries case,
+    T-5.2.29, which no write here can refuse)."""
 
 
 class OutputSkipped(OutputError):
@@ -287,6 +301,80 @@ def _publish_progress(output: Output) -> None:
         logger.warning("output_service: could not publish progress for %s", output.id)
 
 
+_NO_CONTENT: dict[str, Any] = {"content_text": None, "content_path": None}
+
+
+def _write_unless_ended(db: Session, output: Output, values: dict, *, drop_content: bool = False) -> bool:
+    """Write ``values`` to the output's row unless the row has ended
+    (``TERMINAL_STATUSES``), in one conditional ``UPDATE``, and commit.
+
+    The caller's own pending changes (the content an outputter set, its
+    citations) are flushed first, in the same transaction, so the test and
+    every write are one step: a cancel that commits before it is seen and
+    nothing is written, and one that comes after finds the row ended. Refused,
+    the transaction is rolled back, those pending changes included, so an
+    ended row never takes a later write. ``output`` is refreshed from the row
+    either way. Returns whether the row was written (T-5.2.34).
+
+    ``drop_content`` is for a write that ends the output other than
+    ``completed``: the same write clears ``content_text`` and ``content_path``
+    and the same transaction deletes the citations, so the row never reads
+    ended with what a run had committed before it (a book commits its
+    manuscript with the progress reports of its EPUB and PDF).
+    """
+    db.flush()
+    values = {**values, "updated_at": datetime.now(timezone.utc)}
+    if drop_content:
+        values.update(_NO_CONTENT)
+    written = (
+        db.query(Output)
+        .filter(Output.id == output.id, Output.status.notin_(TERMINAL_STATUSES))
+        .update(values, synchronize_session=False)
+    )
+    if written != 1:
+        db.rollback()
+        db.refresh(output)
+        return False
+    if drop_content:
+        from app.services import output_citation_service
+
+        output_citation_service.delete_citations(db, output.id)
+    db.commit()
+    db.refresh(output)
+    return True
+
+
+def _clear_unfinished(db: Session, output: Output) -> None:
+    """An output that ended other than ``completed`` keeps no content,
+    citations or files (S-6.7.2, T-5.2.34), whoever ended it.
+
+    For the run that finds its output ended by someone else: a cancel, or
+    another delivery of its task that failed or skipped it. The clear is one
+    write conditional on the row still holding the end ``output`` was refreshed
+    with, which it always will, since nothing writes over an ended row; and the
+    files are removed, this run's included, since a run writes files straight
+    into the output's folder (a PDF printed after its last progress report).
+    A row another delivery completed is left as it is: its content, its
+    citations and the files in its folder are that end's.
+    """
+    ended = output.status
+    if ended not in TERMINAL_STATUSES or ended == OutputStatus.COMPLETED.value:
+        return
+    db.rollback()
+    cleared = (
+        db.query(Output)
+        .filter(Output.id == output.id, Output.status == ended)
+        .update(dict(_NO_CONTENT), synchronize_session=False)
+    )
+    if cleared == 1:
+        from app.services import output_citation_service
+
+        output_citation_service.delete_citations(db, output.id)
+    db.commit()
+    db.refresh(output)
+    _discard_artifacts(output)
+
+
 def transition_to(
     db: Session,
     output: Output,
@@ -294,20 +382,38 @@ def transition_to(
     *,
     error_message: str | None = None,
     progress_message: str | None = None,
-) -> None:
-    """Update ``output.status`` (and optionally ``error_message`` /
-    ``progress_message``), commit, and publish the change on
-    `job_progress:{output_id}`. The state machine isn't strictly enforced
-    (any → any) so callers can re-try generation."""
+    drop_content: bool = False,
+) -> bool:
+    """Write ``status`` (and optionally ``error_message`` /
+    ``progress_message``) unless the output has already ended, commit, and only
+    then publish the change on `job_progress:{output_id}`. ``drop_content``
+    clears the content and citations in the same write, for an end other than
+    ``completed`` (``_write_unless_ended``).
+
+    T-5.2.34: an output that ended stays ended, as a run does: a cancel never
+    writes over a finished output, a run never writes ``completed`` or
+    ``failed`` over a cancel, and no page is told of an end that did not
+    happen. Refused, nothing is written or published, the caller's pending
+    changes included, and ``output`` holds the row as it is. Returns whether
+    the change was written. The open page drops events for an output it holds
+    as ended, which is sound only while every end goes out after the write
+    that made it, as here."""
     old = output.status
-    output.status = new_status.value if isinstance(new_status, OutputStatus) else new_status
+    values: dict[str, Any] = {
+        "status": new_status.value if isinstance(new_status, OutputStatus) else new_status,
+    }
     if error_message is not None:
-        output.error_message = error_message
+        values["error_message"] = error_message
     if progress_message is not None:
-        output.progress_message = progress_message[:500]
-    output.updated_at = datetime.now(timezone.utc)
-    db.commit()
+        values["progress_message"] = progress_message[:500]
+    if not _write_unless_ended(db, output, values, drop_content=drop_content):
+        logger.info(
+            "output_service: output_id=%s is already %s; %s not written",
+            output.id, output.status, values["status"],
+        )
+        return False
     _publish_status(output.id, old, output.status, output.progress_message or output.status)
+    return True
 
 
 def _discard_artifacts(output: Output) -> None:
@@ -320,23 +426,45 @@ def _discard_artifacts(output: Output) -> None:
         logger.warning("output_service: could not discard artifacts for %s", output.id)
 
 
-def current_status(db: Session, output: Output) -> str:
-    """The row's status as committed — another process (the API's cancel)
-    may have changed it since this session loaded ``output``."""
-    status = db.query(Output.status).filter(Output.id == output.id).scalar()
-    return status or output.status
+def record_queued(db: Session, output: Output, task_id: str | None) -> None:
+    """After dispatch: keep the task's id, and say ``Queued`` while the output
+    is still ``pending``, then commit.
+
+    The worker can take the task and end the output before the route gets
+    here (an outputter that fails on its first step), so ``Queued`` is one
+    write conditional on ``pending`` (T-5.2.34): an output that started or
+    ended keeps the progress message its run wrote. The task id is kept
+    whatever the status, as the task itself does when it starts; it writes no
+    status or progress and publishes nothing."""
+    db.query(Output).filter(Output.id == output.id).update(
+        {"celery_task_id": task_id}, synchronize_session=False
+    )
+    db.query(Output).filter(Output.id == output.id, Output.status == OutputStatus.PENDING.value).update(
+        {"progress_message": "Queued", "updated_at": datetime.now(timezone.utc)}, synchronize_session=False
+    )
+    db.commit()
+    db.refresh(output)
 
 
 def report_progress(db: Session, output: Output, pct: int, message: str) -> None:
     """Record and publish generation progress. Outputters call this between
     units of work (a chapter, a slide); it is also the cancellation point:
-    if the row was cancelled meanwhile it raises ``OutputCancelled``."""
-    if current_status(db, output) == OutputStatus.CANCELLED.value:
-        raise OutputCancelled("Cancelled by user")
-    output.progress_pct = max(0, min(100, int(pct)))
-    output.progress_message = (message or "")[:500]
-    output.updated_at = datetime.now(timezone.utc)
-    db.commit()
+    if the row was cancelled meanwhile it raises ``OutputCancelled``.
+
+    T-5.2.34: written first, in the conditional write ``transition_to`` uses,
+    and published only once written, as a run's progress is (T-5.2.21). A
+    read before the write, as here until then, let a cancel land between the
+    two, and the line went out after it. Refused, nothing is published: a
+    cancelled row raises ``OutputCancelled``, any other end ``OutputStopped``.
+    """
+    values = {
+        "progress_pct": max(0, min(100, int(pct))),
+        "progress_message": (message or "")[:500],
+    }
+    if not _write_unless_ended(db, output, values):
+        if output.status == OutputStatus.CANCELLED.value:
+            raise OutputCancelled("Cancelled by user")
+        raise OutputStopped(f"The output is already {output.status}")
     _publish_progress(output)
 
 
@@ -349,6 +477,22 @@ def cancel_output(db: Session, user_id: str, output_id: str) -> Output | None:
         return None
     if row.status in TERMINAL_STATUSES:
         raise OutputError(f"Output cannot be cancelled (status: {row.status})")
+    # T-5.2.34: only while the output has not ended, in one conditional write,
+    # announced only once that write has committed, as a run's cancel is
+    # (T-5.2.22, T-5.2.30). An output that finished between the read above and
+    # this write keeps its end, and the cancel answers what it would have a
+    # moment later. A second cancel that finds it cancelled by the first
+    # answers with the cancelled row, as before, and publishes nothing. The
+    # same write clears what the run had committed so far (a book's manuscript
+    # and citations go in with its EPUB and PDF progress reports), so a
+    # cancelled output serves no content from the moment it says cancelled,
+    # not only once the run notices; the run removes its files then.
+    transition_to(db, row, OutputStatus.CANCELLED, progress_message="Cancelled by user", drop_content=True)
+    if row.status != OutputStatus.CANCELLED.value:
+        raise OutputError(f"Output cannot be cancelled (status: {row.status})")
+    # Revoked only once the row says cancelled: terminating a task that is
+    # closing an output that just finished could lose the usage its scope
+    # writes on the way out (D-163's reasoning for runs).
     if row.celery_task_id:
         try:
             from app.tasks.celery_app import celery_app
@@ -358,8 +502,6 @@ def cancel_output(db: Session, user_id: str, output_id: str) -> Output | None:
             celery_app.control.revoke(row.celery_task_id, terminate=True)
         except Exception:  # noqa: BLE001
             logger.warning("output_service: revoke failed for output %s", output_id)
-    transition_to(db, row, OutputStatus.CANCELLED, progress_message="Cancelled by user")
-    db.refresh(row)
     return row
 
 
@@ -377,9 +519,12 @@ def run_generation(db: Session, user: User, output: Output) -> Output:
     refreshed Output row.
 
     Runs inside the `generate_output` Celery task (S-6.7.1), or inline for
-    `POST /author/outputs?sync=true`. A row cancelled before it starts is
-    left alone; a cancel during generation ends it as `cancelled` with no
-    content.
+    `POST /author/outputs?sync=true`. A row that ended before it starts
+    (cancelled, or finished by another delivery of its task) is left alone;
+    a cancel during generation, or after its last progress report, ends it
+    as `cancelled` with no content, citations or files, including what the
+    run committed with its progress reports, and so does a failure or a skip
+    (T-5.2.34).
 
     E-5.2: the whole run is metered against ``user`` (feature author), from
     the task, the inline route and a newsletter issue alike. The scope closes
@@ -400,11 +545,12 @@ def _run_generation(db: Session, user: User, output: Output) -> Output:
             f"Registered: {list_outputters()}"
         )
 
-    if current_status(db, output) == OutputStatus.CANCELLED.value:
-        db.refresh(output)
-        return output
+    # T-5.2.34: the write is the check. An output cancelled before it starts,
+    # or finished by another delivery of its task, is left alone and nothing
+    # is published, the 5 % below included.
     output.progress_pct = 5
-    transition_to(db, output, OutputStatus.GENERATING, progress_message="Generating")
+    if not transition_to(db, output, OutputStatus.GENERATING, progress_message="Generating"):
+        return output
     # The status-change event carries no percentage; send one so a live
     # row shows 5 % rather than 0 % until the first unit of work reports.
     _publish_progress(output)
@@ -414,24 +560,22 @@ def _run_generation(db: Session, user: User, output: Output) -> Output:
         logger.info("output_service: output_id=%s cancelled during generation", output.id)
         db.rollback()
         db.refresh(output)
-        output.content_text = None
-        output.content_path = None
-        _discard_artifacts(output)
-        if output.status != OutputStatus.CANCELLED.value:
-            transition_to(db, output, OutputStatus.CANCELLED, progress_message="Cancelled by user")
-        else:
-            db.commit()
+        _end_unfinished(db, output, OutputStatus.CANCELLED, progress_message="Cancelled by user")
+        return output
+    except OutputStopped:
+        # Another delivery of the task ended the row. A completed end keeps its
+        # content and files; any other end keeps none, this run's files
+        # included.
+        logger.info("output_service: output_id=%s ended meanwhile as %s; this run stops", output.id, output.status)
+        db.rollback()
         db.refresh(output)
+        _clear_unfinished(db, output)
         return output
     except OutputSkipped as e:
         logger.info("output_service: output_id=%s skipped: %s", output.id, e)
         db.rollback()
         db.refresh(output)
-        output.content_text = None
-        output.content_path = None
-        _discard_artifacts(output)
-        transition_to(db, output, OutputStatus.SKIPPED, progress_message=provider_error_text(e)[:500])
-        db.refresh(output)
+        _end_unfinished(db, output, OutputStatus.SKIPPED, progress_message=provider_error_text(e)[:500])
         return output
     except OutputError as e:
         logger.warning(
@@ -442,11 +586,9 @@ def _run_generation(db: Session, user: User, output: Output) -> Output:
         )
         db.rollback()
         db.refresh(output)
-        _discard_artifacts(output)
         # T-5.6.17: an OutputError is our own sentence, but one can carry a
         # model call's words (a deck's failed outline), so they are scrubbed.
-        transition_to(db, output, OutputStatus.FAILED, error_message=provider_error_text(e), progress_message="Failed")
-        db.refresh(output)
+        _end_unfinished(db, output, OutputStatus.FAILED, error_message=provider_error_text(e), progress_message="Failed")
         return output
     except Exception as e:  # noqa: BLE001
         # T-4.11.4.4: by its frames and type. A database error or a renderer's
@@ -460,27 +602,39 @@ def _run_generation(db: Session, user: User, output: Output) -> Output:
         )
         db.rollback()
         db.refresh(output)
-        _discard_artifacts(output)
-        transition_to(
+        _end_unfinished(
             db,
             output,
             OutputStatus.FAILED,
             error_message=f"Unexpected error: {error_summary(e)}",
             progress_message="Failed",
         )
-        db.refresh(output)
         return output
 
-    # A cancel that landed after the outputter's last progress report must
-    # still win: the user was told it stopped.
-    if current_status(db, output) == OutputStatus.CANCELLED.value:
-        db.rollback()
-        db.refresh(output)
-        _discard_artifacts(output)
-        return output
-
-    # Outputter populated content_text or content_path; mark completed.
+    # Outputter populated content_text or content_path; mark completed. A
+    # cancel that landed after the outputter's last progress report still
+    # wins, since the user was told it stopped: the conditional write finds the
+    # row cancelled and rolls back this run's uncommitted content with it
+    # (T-5.2.34). Until then a read stood here, and a cancel landing between it
+    # and the write was overwritten by `completed`. What the run committed with
+    # its progress reports went with the cancel's own write, and the files it
+    # wrote since go here, as they do when another delivery failed or skipped
+    # the output meanwhile.
     output.progress_pct = 100
-    transition_to(db, output, OutputStatus.COMPLETED, progress_message="Done")
-    db.refresh(output)
+    if not transition_to(db, output, OutputStatus.COMPLETED, progress_message="Done"):
+        _clear_unfinished(db, output)
+        return output
     return output
+
+
+def _end_unfinished(db: Session, output: Output, status: OutputStatus, **fields: str) -> None:
+    """End a run that did not complete as ``status``, unless the output has
+    already ended. Either way an output that did not complete keeps no content,
+    citations or files (S-6.7.2): this run's end clears them in its own write;
+    an end someone else wrote (a cancel, another delivery's failure) has them
+    cleared after it. An output another delivery of the task completed keeps
+    the content and files its end wrote."""
+    if transition_to(db, output, status, drop_content=True, **fields):
+        _discard_artifacts(output)
+        return
+    _clear_unfinished(db, output)

@@ -11,6 +11,11 @@ run's end (the 400 since T-5.2.22) publishes nothing, and a publish that
 fails (Redis down) is logged by the exception's type and never fails the
 cancel: the row is the cancel.
 
+T-5.2.32: only the cancel whose own conditional write made the row cancelled
+announces it. ``job_service.write_job_status`` reports the row count, so a
+second cancel that read the run active and found it cancelled by the first
+answers 200 as it always has, and publishes nothing.
+
 Every case runs the real route against the test database, with a fake Redis
 client in place of the publisher's (no Redis) and a patched revoke (no
 broker). Each check is a function the main cases call, and the mutation
@@ -22,9 +27,8 @@ the error's text. Each check must refuse its mutant.
 """
 from __future__ import annotations
 
-import inspect
 import json
-import textwrap
+from datetime import datetime
 from unittest.mock import patch
 
 import pytest
@@ -34,6 +38,7 @@ from app.models.job import Job
 from app.routers import jobs as jobs_router
 from app.services import job_service, progress_service
 from app.tasks.celery_app import celery_app
+from tests.mutation import mutant as _mutant
 
 CANCELLED_WORDS = "Job cancelled by user"
 SECRET = "hunter2"
@@ -112,41 +117,21 @@ def _end(db, job_id: str, end: str) -> None:
 
 
 def _the_run_ends_first(monkeypatch, db, end: str) -> None:
-    real = job_service.update_job_status
+    """The run ends, or with ``cancelled`` another cancel's write lands,
+    between the route's read and its own write."""
+    real = job_service.write_job_status
 
     def ended_then_written(db_, job_id, status, *args, **kwargs):
         _end(db, job_id, end)
         return real(db_, job_id, status, *args, **kwargs)
 
-    monkeypatch.setattr(job_service, "update_job_status", ended_then_written)
+    monkeypatch.setattr(job_service, "write_job_status", ended_then_written)
 
 
 def _cancel(client, job_id: str, revoke=None):
     with patch.object(celery_app.control, "revoke", side_effect=revoke) as revoked:
         response = client.post(f"/api/v1/jobs/{job_id}/cancel")
     return response, revoked
-
-
-def _mutant(monkeypatch, func, *edits: tuple[str, str]) -> None:
-    """Run ``func`` from its own source with each ``(old, new)`` edit made,
-    until the test ends: a change to the production code, not a stand-in.
-
-    The edited source is compiled in a copy of the function's module namespace
-    and only its code object is kept, so the function object stays the one
-    FastAPI registered and every caller already holds, and it still reads the
-    real module's globals (the fake publisher included). Every edit goes in
-    one call: the source is read from the file at the function's first line."""
-    source = textwrap.dedent(inspect.getsource(func))
-    for old, new in edits:
-        assert source.count(old) == 1, f"the mutation's anchor is not in {func.__name__} exactly once: {old!r}"
-        source = source.replace(old, new)
-    lines = source.splitlines(keepends=True)
-    while lines[0].lstrip().startswith("@"):  # the route's decorator: registered once, already
-        lines.pop(0)
-    assert lines[0].startswith("def "), lines[0]
-    namespace = dict(vars(inspect.getmodule(func)))
-    exec(compile("".join(lines), inspect.getsourcefile(func), "exec", dont_inherit=True), namespace)
-    monkeypatch.setattr(func, "__code__", namespace[func.__name__].__code__)
 
 
 # ================================================================ the checks
@@ -193,6 +178,50 @@ def _check_a_cancel_that_loses(client, db, test_user, timeline, monkeypatch, end
     assert _publishes(timeline) == []
     assert _row(db, job_id).status == end
     revoked.assert_not_called()
+
+
+def _check_two_racing_cancels_publish_once(client, db, test_user, timeline, monkeypatch):
+    """Two cancels race (T-5.2.32): both read the run active, and the other
+    one, the real route run in full, writes and announces first. Both answer
+    200 with the run cancelled, as before; one event goes out, from the cancel
+    whose write took, after that write's commit."""
+    job_id = _active_row(db, test_user.id)
+    real = job_service.write_job_status
+    other: list = []
+
+    def the_other_cancel_lands_first(db_, job_id_, status, *args, **kwargs):
+        if not other:
+            other.append(None)
+            other[0] = jobs_router.cancel_job(job_id_, db=db_, current_user=test_user)
+        return real(db_, job_id_, status, *args, **kwargs)
+
+    monkeypatch.setattr(job_service, "write_job_status", the_other_cancel_lands_first)
+    response, revoked = _cancel(client, job_id)
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "cancelled"
+    assert other[0]["status"] == "cancelled"
+    published = _publishes(timeline)
+    assert len(published) == 1
+    assert published[0][2]["new_status"] == "cancelled"
+    assert _published_after_its_commit(timeline)
+    # Each still revokes, as before: the row is what stops a run.
+    assert revoked.call_count == 2
+    assert _row(db, job_id).status == "cancelled"
+
+
+def _check_a_cancel_that_finds_it_cancelled(client, db, test_user, timeline, monkeypatch):
+    """Another cancel's write landed between this one's read and its write: the
+    answer is 200 with the run cancelled, as it always was, and nothing is
+    published, since this cancel's write did not take (T-5.2.32)."""
+    job_id = _active_row(db, test_user.id)
+    _the_run_ends_first(monkeypatch, db, "cancelled")
+    response, _ = _cancel(client, job_id)
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "cancelled"
+    assert _publishes(timeline) == []
+    assert _row(db, job_id).status == "cancelled"
 
 
 def _check_a_publish_redis_refuses(client, db, test_user, timeline, monkeypatch):
@@ -272,12 +301,51 @@ def test_a_cancel_that_loses_the_race_publishes_nothing(client, db, test_user, t
 
 @pytest.mark.parametrize("end", ["completed", "failed", "cancelled"])
 def test_a_cancel_after_the_end_publishes_nothing(client, db, test_user, timeline, end):
+    """A cancel of a run already over answers 400 at the route's first check,
+    a run already cancelled included, as it always has."""
     job_id = _active_row(db, test_user.id)
     _end(db, job_id, end)
     response, _ = _cancel(client, job_id)
 
     assert response.status_code == 400
     assert _publishes(timeline) == []
+
+
+# ================================================================ a second cancel (T-5.2.32)
+
+
+def test_two_racing_cancels_publish_once(client, db, test_user, timeline, monkeypatch):
+    _check_two_racing_cancels_publish_once(client, db, test_user, timeline, monkeypatch)
+
+
+def test_a_cancel_whose_write_finds_the_run_cancelled_answers_200_and_publishes_nothing(
+    client, db, test_user, timeline, monkeypatch
+):
+    _check_a_cancel_that_finds_it_cancelled(client, db, test_user, timeline, monkeypatch)
+
+
+def test_write_job_status_says_whether_its_own_write_took(db, test_user):
+    """The contract the route reads: ``written`` is this call's row count, so a
+    status the row already holds tells a refused write from one that took, and
+    the conditional write moves ``updated_at`` as the ORM's flush does."""
+    job_id = _active_row(db, test_user.id)
+    # Long ago, so the move shows whatever the clock's resolution (on Windows
+    # two writes a few milliseconds apart can read the same time).
+    before = datetime(2000, 1, 1)
+    db.query(Job).filter(Job.id == job_id).update({"updated_at": before}, synchronize_session=False)
+    db.commit()
+
+    took = job_service.write_job_status(db, job_id, "cancelled", progress_message=CANCELLED_WORDS, unless_ended=True)
+    again = job_service.write_job_status(db, job_id, "cancelled", progress_message="again", unless_ended=True)
+
+    assert (took.job.status, took.written) == ("cancelled", True)
+    assert (again.job.status, again.written) == ("cancelled", False)
+    row = _row(db, job_id)
+    assert row.progress_message == CANCELLED_WORDS
+    assert row.updated_at > before
+    assert job_service.write_job_status(db, "no-such-job", "cancelled", unless_ended=True) == (None, False)
+    # The other callers' contract is unchanged: the row, either way.
+    assert job_service.update_job_status(db, job_id, "cancelled", unless_ended=True).status == "cancelled"
 
 
 # ================================================================ a publish that fails
@@ -299,7 +367,9 @@ def test_each_run_event_publisher_logs_a_refusal_by_its_type(monkeypatch, publis
 # ================================================================ mutation checks on the real code
 
 _ANNOUNCE = "    _announce_cancelled(job_id, status_before)\n"
-_CONDITIONAL_WRITE = '    job = job_service.update_job_status(\n        db, job_id, "cancelled",'
+# T-5.2.32: the announcement, only when this cancel's own write took.
+_ANNOUNCE_IF_WRITTEN = "    if written:\n        _announce_cancelled(job_id, status_before)\n"
+_CONDITIONAL_WRITE = '    job, written = job_service.write_job_status(\n        db, job_id, "cancelled",'
 _GUARDED_PUBLISH = (
     "    try:\n"
     '        progress_service.publish_status_change(job_id, status_before, "cancelled", _CANCELLED_WORDS)\n'
@@ -310,14 +380,14 @@ _GUARDED_PUBLISH = (
 _UNGUARDED_PUBLISH = (
     '    progress_service.publish_status_change(job_id, status_before, "cancelled", _CANCELLED_WORDS)\n'
 )
-_ANNOUNCED_BEFORE_THE_WRITE = ((_ANNOUNCE, ""), (_CONDITIONAL_WRITE, _ANNOUNCE + _CONDITIONAL_WRITE))
+_ANNOUNCED_BEFORE_THE_WRITE = ((_ANNOUNCE_IF_WRITTEN, ""), (_CONDITIONAL_WRITE, _ANNOUNCE + _CONDITIONAL_WRITE))
 _LOGS_THE_TEXT = ("job_id, type(e).__name__)", "job_id, e)")
 
 
 def test_mutation_a_route_that_announces_nothing_fails_the_take_check(client, db, test_user, timeline,
                                                                      monkeypatch):
     """The route as it was before T-5.2.30: the cancel took and nothing went out."""
-    _mutant(monkeypatch, jobs_router.cancel_job, (_ANNOUNCE, ""))
+    _mutant(monkeypatch, jobs_router.cancel_job, (_ANNOUNCE_IF_WRITTEN, ""))
     with pytest.raises(AssertionError):
         _check_a_cancel_that_takes(client, db, test_user, timeline)
     assert _publishes(timeline) == []
@@ -341,6 +411,39 @@ def test_mutation_a_route_that_announces_before_its_write_fails_the_lose_check(c
     with pytest.raises(AssertionError):
         _check_a_cancel_that_loses(client, db, test_user, timeline, monkeypatch)
     assert [payload["new_status"] for _, _, payload in _publishes(timeline)] == ["cancelled"]
+
+
+def test_mutation_a_route_that_announces_whatever_its_write_did_fails_the_second_cancel_checks(
+    client, db, test_user, timeline, monkeypatch
+):
+    """The route as #453 left it: announced once the row says cancelled, by
+    whichever cancel wrote it. The race publishes twice, and a cancel whose
+    write found the run cancelled publishes the other's event again."""
+    _mutant(monkeypatch, jobs_router.cancel_job, (_ANNOUNCE_IF_WRITTEN, _ANNOUNCE))
+    with pytest.raises(AssertionError):
+        _check_two_racing_cancels_publish_once(client, db, test_user, timeline, monkeypatch)
+    assert len(_publishes(timeline)) == 2
+
+
+def test_mutation_a_route_that_announces_whatever_its_write_did_fails_the_found_cancelled_check(
+    client, db, test_user, timeline, monkeypatch
+):
+    _mutant(monkeypatch, jobs_router.cancel_job, (_ANNOUNCE_IF_WRITTEN, _ANNOUNCE))
+    with pytest.raises(AssertionError):
+        _check_a_cancel_that_finds_it_cancelled(client, db, test_user, timeline, monkeypatch)
+    assert len(_publishes(timeline)) == 1
+
+
+def test_mutation_a_write_that_always_says_written_fails_the_second_cancel_checks(
+    client, db, test_user, timeline, monkeypatch
+):
+    """``write_job_status`` reporting a write it did not make, so the route
+    cannot tell the cancels apart."""
+    _mutant(monkeypatch, job_service.write_job_status,
+            ("written = query.update(values, synchronize_session=False) == 1",
+             "query.update(values, synchronize_session=False)"))
+    with pytest.raises(AssertionError):
+        _check_a_cancel_that_finds_it_cancelled(client, db, test_user, timeline, monkeypatch)
 
 
 def test_mutation_an_unguarded_announcement_fails_the_raising_publisher_check(client, db, test_user, timeline,

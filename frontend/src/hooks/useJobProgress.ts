@@ -62,6 +62,14 @@ function applyToLists(queryClient: QueryClient, jobId: string, msg: WSProgressMe
   return ended;
 }
 
+/** An event that ends the run: a status change to an end, or a failure, which
+ * `_handle_failure` and the run's own checks publish once the row says
+ * `failed` (T-5.2.35; until then a `job_error` refetched neither the run nor
+ * the lists). */
+function endsTheRun(msg: WSProgressMessage): boolean {
+  return msg.type === 'job_error' || (msg.type === 'job_status_change' && isRunEnded(msg.new_status));
+}
+
 /** A run's videos change as it reaches these: saved for the approval list, or
  * settled by its end (each video's transcript status). */
 function videosSettleAt(status: string | null | undefined): boolean {
@@ -84,8 +92,12 @@ export function useJobProgress(jobId: string | null) {
       if (heldEnded) return;
 
       // An event that ends the run refetches it and the lists, for what its
-      // end changes beside the status (its report, its finish time).
-      if (msg.type === 'job_status_change' && isRunEnded(msg.new_status)) {
+      // end changes beside the status (its report, its finish time, the
+      // row's own words for a failure, which a `job_error` can put shorter).
+      // A refetch also cancels one already in flight, which read the row
+      // before the end and would show the run going again (T-5.2.33). The
+      // videos are not fetched here: they follow the status the event set.
+      if (endsTheRun(msg)) {
         queryClient.invalidateQueries({ queryKey: ['jobs'] });
         queryClient.invalidateQueries({ queryKey: ['job', jobId] });
       }

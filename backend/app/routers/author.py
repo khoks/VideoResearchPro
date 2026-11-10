@@ -351,10 +351,9 @@ def create_and_generate(
         )
         db.refresh(row)
         return _to_item(row)
-    row.celery_task_id = getattr(result, "id", None)
-    row.progress_message = "Queued"
-    db.commit()
-    db.refresh(row)
+    # T-5.2.34: the worker may have taken the task and ended the output
+    # already, so "Queued" is written only while it is still pending.
+    output_service.record_queued(db, row, getattr(result, "id", None))
     return _to_item(row)
 
 

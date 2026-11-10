@@ -10,6 +10,11 @@ Shares are embedded inline here unless ``--queue`` hands them to the worker.
     ./venv/Scripts/python scripts/echo_import.py --email you@example.com --file ~/Downloads/export.zip
     ./venv/Scripts/python scripts/echo_import.py --email you@example.com --file chat.txt \\
         --options '{"self_name": "Rahul", "timezone": "Asia/Kolkata"}'
+
+Exits 0 when it previewed or imported, 1 when nothing was imported (the file
+could not be read, or the run stopped; one line on stderr says which, in the
+route's words) and 2 when an argument is wrong or the account is missing or
+not on the Studio plan.
 """
 from __future__ import annotations
 
@@ -78,6 +83,14 @@ def main(argv: list[str] | None = None, *, session_factory=None) -> int:
                 )
             except ExportUnreadable as e:
                 print(f"Not imported: {e}", file=sys.stderr)
+                return 1
+            except echo_import_service.ImportStopped as e:
+                # T-4.11.4.9 (D-164 point 5): the service logged it by its
+                # frames, and a run that had written its row marked it failed.
+                # One line, the words POST /echo/import answers its 500 with,
+                # never the traceback, whose cause quotes what it could not
+                # read or write.
+                print(e, file=sys.stderr)
                 return 1
         print(json.dumps({
             "import_id": record.id, "importer": record.importer, "status": record.status,

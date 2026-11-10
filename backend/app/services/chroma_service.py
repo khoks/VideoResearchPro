@@ -923,6 +923,16 @@ def backfill_chunk_document_ids(session_factory=None, page_size: int = 2000) -> 
 
 # --- Startup migration ----------------------------------------------------
 
+# Before the global library an install kept one collection per job, named
+# ``job_<id>``. ``migrate_legacy_per_job_collections`` merges them, and
+# ``embedded_flag_service`` names them as such when they block its check.
+LEGACY_PER_JOB_PREFIX = "job_"
+
+
+def is_legacy_per_job_collection(name: str) -> bool:
+    return name.startswith(LEGACY_PER_JOB_PREFIX)
+
+
 def migrate_legacy_per_job_collections() -> None:
     """Merge any legacy ``job_*`` collections into the global collection.
 
@@ -949,7 +959,9 @@ def migrate_legacy_per_job_collections() -> None:
         logger.exception("migrate_legacy_per_job_collections: list_collections failed")
         return
 
-    legacy = [c for c in all_collections if getattr(c, "name", "").startswith("job_")]
+    legacy = [
+        c for c in all_collections if is_legacy_per_job_collection(getattr(c, "name", ""))
+    ]
     if not legacy:
         logger.info("migrate_legacy_per_job_collections: nothing to migrate")
         return

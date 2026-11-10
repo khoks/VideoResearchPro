@@ -32,7 +32,7 @@ from dataclasses import replace
 from datetime import datetime, timezone
 from typing import IO, Any
 
-from sqlalchemy import insert
+from sqlalchemy import func, insert
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -62,7 +62,28 @@ class ImportStopped(RuntimeError):
     (T-4.11.4.4). It is already logged by its frames, and a run's row is
     already ``failed`` with the words its message carries. The route answers
     with them, so the failure never reaches the server's own log of an
-    unhandled exception, which would write its text whole."""
+    unhandled exception, which would write its text whole.
+
+    ``import_id`` names that row when the run had written one, None for a
+    preview or a run that could not start. A run that stops part-way keeps
+    what it committed before the stop under that row, until it is undone
+    (``scripts/echo_import.py`` says so, T-4.11.4.9)."""
+
+    def __init__(self, message: str, *, import_id: str | None = None) -> None:
+        super().__init__(message)
+        self.import_id = import_id
+
+
+# The `extra` of each log line written just before a stop is raised, which the
+# caller then says in the route's words. The command line answers the stop on
+# one line and leaves these out of the operator's terminal (T-4.11.4.9); the
+# API keeps them in its log beside the route's 500.
+_STOP_LOG = {"echo_import_stop": True}
+
+
+def is_stop_log(record: logging.LogRecord) -> bool:
+    """True for a line this module logs as a preview or a run stops."""
+    return bool(getattr(record, "echo_import_stop", False))
 
 
 def _now() -> datetime:
@@ -143,6 +164,7 @@ def _preview_or_stop(importer, source: ImportSource, options: dict[str, Any]) ->
         logger.error(
             "echo: importer %s failed to preview %s: %s",
             getattr(importer, "name", "?"), loggable_filename(source.filename), traceback_without_text(e),
+            extra=_STOP_LOG,
         )
         raise ImportStopped(f"Preview stopped: {type(e).__name__}") from e
 
@@ -210,6 +232,7 @@ def run_import(db: Session, user: Any, fileobj: IO[bytes], filename: str, *,
         logger.error(
             "echo: a %s import of %s could not start: %s",
             module.name, loggable_filename(filename), traceback_without_text(e),
+            extra=_STOP_LOG,
         )
         raise ImportStopped(f"Import could not start: {type(e).__name__}") from e
 
@@ -304,10 +327,14 @@ def run_import(db: Session, user: Any, fileobj: IO[bytes], filename: str, *,
         logger.error(
             "echo: import %s failed after %d shares: %s",
             record.id[:8], counts["shares"], traceback_without_text(e),
+            extra=_STOP_LOG,
         )
         if isinstance(e, ExportUnreadable):
+            # T-4.11.4.9: the row stays, holding what was committed before
+            # the stop, so the caller can name it.
+            e.import_id = record.id
             raise
-        raise ImportStopped(record.error) from e
+        raise ImportStopped(record.error, import_id=record.id) from e
 
     record.counts_json = json.dumps({**counts, **stats, "embedded": 0})
     record.status = "embedding" if counts["shares"] else "done"
@@ -416,6 +443,27 @@ def get_import(db: Session, tenant_id: str, import_id: str) -> EchoImport:
     if record is None or record.tenant_id != tenant_id:
         raise ImportNotFound(import_id)
     return record
+
+
+def stored_by(db: Session, tenant_id: str, import_id: str) -> dict[str, int]:
+    """What an import holds now, found the way ``delete_import`` finds it: its
+    shares, the events it added and the facts it recorded. A run that stopped
+    part-way counted rows its last batch rolled back, so its ``counts_json``
+    can say more than this (T-4.11.4.9)."""
+    from app.models.activity_event import ActivityEvent
+    from app.models.personal_context import PersonalContext
+
+    record = get_import(db, tenant_id, import_id)
+    shares = db.query(func.count(Share.id)).filter(Share.tenant_id == tenant_id, Share.import_id == import_id)
+    events = db.query(func.count(ActivityEvent.id)).filter(
+        ActivityEvent.tenant_id == tenant_id,
+        ActivityEvent.connector == record.importer,
+        ActivityEvent.payload_json.like(f"%{import_id}%"),
+    )
+    facts = db.query(func.count(PersonalContext.id)).filter(
+        PersonalContext.tenant_id == tenant_id, PersonalContext.source == f"import:{import_id}",
+    )
+    return {"shares": shares.scalar() or 0, "events": events.scalar() or 0, "facts": facts.scalar() or 0}
 
 
 def _store_new_events(db: Session, tenant_id: str, connector: str, import_id: str,

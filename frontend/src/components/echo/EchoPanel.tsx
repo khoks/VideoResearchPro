@@ -35,6 +35,7 @@ import { isMacPlatform, useShortcuts } from '../../hooks/useShortcuts';
 import { useColors, useShadows } from '../../hooks/useTheme';
 import { openApiLink } from '../../services/apiFiles';
 import { echoApi, type DraftResponse, type EchoCard } from '../../services/echoApi';
+import { ERRORS_SHOWN_HERE } from '../../services/queryClient';
 import { suggestionsApi, type SuggestionContext } from '../../services/suggestionsApi';
 import { useEchoPanelStore, type AskTarget, type EchoTurn } from '../../stores/echoPanelStore';
 import { fonts, fontSize, fontWeight, lineHeight, radius, space, target as touch, z } from '../../theme';
@@ -686,7 +687,14 @@ function DraftComposer() {
   const c = useColors();
   const status = useEchoStatus();
   const connectors = useEchoConnectors();
-  const gate = useQuery({ queryKey: ['echo', 'draft', 'status'], queryFn: () => echoApi.draftStatus(), retry: false, staleTime: 60_000 });
+  // A failed read is said in the gate's own words, and only there (T-3.4.1.26).
+  const gate = useQuery({
+    queryKey: ['echo', 'draft', 'status'],
+    queryFn: () => echoApi.draftStatus(),
+    retry: false,
+    staleTime: 60_000,
+    meta: ERRORS_SHOWN_HERE,
+  });
   const addTurn = useEchoPanelStore((st) => st.addTurn);
   const updateTurn = useEchoPanelStore((st) => st.updateTurn);
   const [text, setText] = useState('');
@@ -696,8 +704,10 @@ function DraftComposer() {
   const view = draftGateView(gate.data, gate.error, readiness);
 
   if (!view.available) {
+    // A 401: the session is ending, and there is nothing to say.
+    if (!view.title && !view.lines.length) return null;
     return (
-      <div data-echo-gate="" style={{ fontFamily: fonts.ui }}>
+      <div data-echo-gate="" role={gate.isError ? 'alert' : undefined} style={{ fontFamily: fonts.ui }}>
         <p style={{ margin: 0, fontSize: fontSize.sm, fontWeight: fontWeight.semibold, color: c.textPrimary }}>{view.title}</p>
         {view.lines.map((line) => (
           <p key={line} style={{ margin: `${space['1']} 0 0`, fontSize: fontSize.sm, color: c.textSecondary, lineHeight: lineHeight.normal }}>

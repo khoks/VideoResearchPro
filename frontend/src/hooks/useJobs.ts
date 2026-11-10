@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { jobsApi } from '../services/jobsApi';
-import { ERRORS_SHOWN_HERE } from '../services/queryClient';
+import { ERRORS_SHOWN_HERE, queryErrorsMeta, type QueryLineOptions } from '../services/queryClient';
 import type { JobCreate, JobProvenance, VideoApproval } from '../types/job';
 
 /** In flight, these hold the first-run wizard's Back, steps and Skip, which would
@@ -8,20 +8,27 @@ import type { JobCreate, JobProvenance, VideoApproval } from '../types/job';
 export const createJobKey = ['jobs', 'create'] as const;
 export const approveJobKey = ['jobs', 'approve'] as const;
 
-export function useJobs(params?: { status?: string; limit?: number; offset?: number }) {
+/** The runs page says a failed read; the studio's create dialog says
+ * nothing, so only the page passes `inlineErrors` (T-3.4.1.26). */
+export function useJobs(params?: { status?: string; limit?: number; offset?: number }, { inlineErrors }: QueryLineOptions = {}) {
   return useQuery({
     queryKey: ['jobs', params?.status ?? null, params?.limit ?? null, params?.offset ?? null],
     queryFn: () => jobsApi.list(params),
     refetchInterval: 10000,
+    meta: queryErrorsMeta(inlineErrors),
   });
 }
 
-export function useJob(id: string | null) {
+/** The run page says a failed first read in place of the run (`'load'`); the
+ * channel page, the library and the wizard read a run's status and say
+ * nothing, so they leave `inlineErrors` off (T-3.4.1.26). */
+export function useJob(id: string | null, { inlineErrors }: QueryLineOptions = {}) {
   return useQuery({
     queryKey: ['job', id],
     queryFn: () => jobsApi.get(id!),
     enabled: !!id,
     refetchInterval: 5000,
+    meta: queryErrorsMeta(inlineErrors),
   });
 }
 

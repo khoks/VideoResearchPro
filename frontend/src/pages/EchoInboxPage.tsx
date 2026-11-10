@@ -25,6 +25,7 @@ import {
   shareReadingLabel,
 } from '../utils/echoShares';
 import type { HttpErrorLike } from '../utils/ingestResults';
+import { inlineErrorMessage } from '../utils/apiError';
 import { importedProvenance, importerLabel } from '../utils/echoImports';
 
 const PAGE = 100;
@@ -76,6 +77,8 @@ export function EchoInboxPage() {
   const items = shares.data?.items ?? [];
   const total = shares.data?.total ?? 0;
   const forbidden = isForbidden(shares.error);
+  // A failed load is said here alone: the hook sets `meta` (T-3.4.1.26).
+  const loadError = shares.isError ? inlineErrorMessage(shares.error, 'Something blocked the fetch.') : null;
 
   const confirmDelete = () => {
     if (!deleting) return;
@@ -176,12 +179,14 @@ export function EchoInboxPage() {
               <Skeleton variant="row" />
             </div>
           ) : shares.isError ? (
-            <EmptyState
-              size="sm"
-              title="Couldn't load the inbox."
-              description="Something blocked the fetch."
-              action={<Button variant="secondary" size="sm" onClick={() => shares.refetch()}>Retry</Button>}
-            />
+            loadError && (
+              <EmptyState
+                size="sm"
+                title="Couldn't load the inbox."
+                description={loadError}
+                action={<Button variant="secondary" size="sm" onClick={() => shares.refetch()}>Retry</Button>}
+              />
+            )
           ) : items.length === 0 ? (
             <EmptyState
               title={q || state ? 'Nothing matches.' : 'Nothing shared yet.'}

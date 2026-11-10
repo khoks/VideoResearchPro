@@ -20,6 +20,7 @@ import { ReaderLoading } from '../components/reader/ReaderLoading';
 import { ReaderShell, StatTiles, formatPublished, parseMarkdownDoc } from '../components/reader';
 import { useJobStore } from '../stores/jobStore';
 import { downloadUrl } from '../utils/download';
+import { inlineErrorMessage } from '../utils/apiError';
 import {
   isActiveOutput,
   downloadLabel,
@@ -80,9 +81,14 @@ export function OutputReaderPage() {
     return <ReaderLoading label="Opening the manuscript…" />;
   }
 
+  // Each read's failure is said on this page alone: the hooks set `meta`. A
+  // 403 and a 404 keep the page's words; anything else says the server's,
+  // else the page's, and a 401 nothing (T-3.4.1.26).
   const err = output.error ?? content.error;
   if (err || !output.data) {
     const status = httpStatus(err);
+    const failure = inlineErrorMessage(err, 'Something went wrong while loading it.');
+    if (err && !failure) return null;
     return (
       <EmptyState
         title={
@@ -97,7 +103,7 @@ export function OutputReaderPage() {
             ? 'Books and the other Author Studio outputs come with the Pro and Studio tiers.'
             : status === 404
               ? 'It may have been deleted, or it belongs to another account.'
-              : 'Something went wrong while loading it.'
+              : failure
         }
         action={back}
       />
@@ -181,7 +187,11 @@ export function OutputReaderPage() {
           ]}
         />
       }
-      after={cited ? <OutputSources citations={citations.data} kind={item.kind} isError={citations.isError} /> : null}
+      after={
+        cited ? (
+          <OutputSources citations={citations.data} kind={item.kind} isError={citations.isError} error={citations.error} />
+        ) : null
+      }
     >
       {parsed.content}
     </ReaderShell>

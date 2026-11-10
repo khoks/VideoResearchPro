@@ -43,7 +43,7 @@ import { fonts, fontSize, fontWeight, lineHeight, measure, radius, space } from 
 import { formatDuration, formatDate, statusTone } from '../utils/formatters';
 import { buildClarifyContext, CLARIFY_ANSWER_MAX_CHARS } from '../utils/clarifyContext';
 import { depthLabel, depthOf, withDepth, type Depth } from '../utils/depth';
-import { inlineErrorMessage, isSessionEnded } from '../utils/apiError';
+import { inlineErrorMessage, isNotFound, isSessionEnded } from '../utils/apiError';
 import { isDefaultSourceTypes, sourceTypeLabel, windowLabel } from '../utils/jobForm';
 import { useJobStore } from '../stores/jobStore';
 import { wsClient } from '../services/wsClient';
@@ -67,7 +67,9 @@ export function JobDetailPage() {
   const { jobId } = useParams<{ jobId: string }>();
   const navigate = useNavigate();
   const c = useColors();
-  const { data: job, isLoading } = useJob(jobId || null);
+  // A failed first read is said in place of the run, and only there; a poll
+  // that fails behind a run already on screen keeps its toast (T-3.4.1.26).
+  const { data: job, isLoading, isError, error } = useJob(jobId || null, { inlineErrors: 'load' });
   const { data: videos } = useJobVideos(jobId || null);
   const approveJob = useApproveJob();
   const cancelJob = useCancelJob();
@@ -91,13 +93,27 @@ export function JobDetailPage() {
     );
   }
   if (!job) {
+    // A 404 is the run being gone; anything else says the server's words, else
+    // the page's, and a 401 nothing.
+    const failure = isError && !isNotFound(error)
+      ? inlineErrorMessage(error, 'Something blocked the request. Try again in a moment.')
+      : null;
+    if (isError && isSessionEnded(error)) return null;
     return (
       <div style={{ maxWidth: measure.grid, margin: '0 auto' }}>
-        <EmptyState
-          title="We can't find that job."
-          description="It may have been deleted, or the link is stale."
-          action={<Button onClick={() => navigate('/jobs')}>Back to active runs</Button>}
-        />
+        {failure ? (
+          <EmptyState
+            title="Couldn't load this run."
+            description={failure}
+            action={<Button onClick={() => navigate('/jobs')}>Back to active runs</Button>}
+          />
+        ) : (
+          <EmptyState
+            title="We can't find that job."
+            description="It may have been deleted, or the link is stale."
+            action={<Button onClick={() => navigate('/jobs')}>Back to active runs</Button>}
+          />
+        )}
       </div>
     );
   }

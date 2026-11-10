@@ -53,7 +53,8 @@ type Step = 1 | 2 | 3;
 export function WelcomePage() {
   const c = useColors();
   const navigate = useNavigate();
-  const { data, isLoading, isError, refetch } = useOnboarding();
+  // A failed read is said by the wizard alone (T-3.4.1.26).
+  const { data, isLoading, isError, error, refetch } = useOnboarding({ inlineErrors: true });
   const update = useUpdateOnboarding();
   const saveStep = useUpdateOnboarding({ inlineErrors: true });
   const starting = useIsMutating({ mutationKey: createJobKey }) > 0;
@@ -96,11 +97,17 @@ export function WelcomePage() {
   }
 
   if (isError || !data || step === null) {
+    // The server's words, else the wizard's, and nothing for a 401.
+    const failure = inlineErrorMessage(
+      error,
+      'The wizard keeps its place on the server, and that request failed. Try again, or skip and explore on your own.',
+    );
+    if (isError && !failure) return null;
     return (
       <Shell onSkip={skip} skipLabel="Skip for now">
         <EmptyState
           title="Couldn't load your progress."
-          description="The wizard keeps its place on the server, and that request failed. Try again, or skip and explore on your own."
+          description={failure}
           action={
             <Button variant="secondary" onClick={() => void refetch()}>
               Retry

@@ -18,6 +18,7 @@ import {
   Spinner,
 } from '../components/primitives';
 import { useColors } from '../hooks/useTheme';
+import { inlineErrorMessage } from '../utils/apiError';
 import {
   fonts,
   fontSize,
@@ -65,7 +66,11 @@ function referenceSourceLabel(ref: QAHistoryReference): string {
 
 export function QAHistoryChatPage() {
   const c = useColors();
-  const { data: history, isLoading, isError, refetch } = useQAHistoryChatHistory();
+  const { data: history, isLoading, isError, error, refetch } = useQAHistoryChatHistory();
+  // A failed read is said here alone: the hook sets `meta` (T-3.4.1.26).
+  const loadError = isError
+    ? inlineErrorMessage(error, 'Something blocked the request. You can still ask a new question below.')
+    : null;
   const askChat = useAskQAHistoryChat();
   const qaHistoryAvailable = useFeatureAvailable('qa_history');
 
@@ -190,11 +195,11 @@ export function QAHistoryChatPage() {
           </div>
         )}
 
-        {isError && (
+        {loadError && (
           <EmptyState
             size="sm"
             title="Couldn't load your echoes."
-            description="Something blocked the request. You can still ask a new question below."
+            description={loadError}
             action={
               <Button size="sm" variant="secondary" onClick={() => void refetch()}>
                 Retry

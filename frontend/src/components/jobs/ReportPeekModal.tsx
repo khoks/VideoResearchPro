@@ -5,6 +5,7 @@ import { useColors, useShadows } from '../../hooks/useTheme';
 import { openBlobInNewTab } from '../../services/apiFiles';
 import { fonts, fontSize, fontWeight, radius, space, z } from '../../theme';
 import { REPORT_FRAME_SANDBOX } from '../../utils/reportDocument';
+import { inlineErrorMessage } from '../../utils/apiError';
 
 /**
  * The job page's quick peek at the stored HTML report (the reading room at
@@ -20,6 +21,13 @@ export function ReportPeekModal({ jobId, onClose }: { jobId: string; onClose: ()
   const s = useShadows();
   const report = useReportDocument(jobId);
   const src = useObjectUrl(report.data);
+  // Said in place of the frame, and only there: the hook sets `meta`. Nothing
+  // for a 401 (T-3.4.1.26).
+  const loadError = !report.isError
+    ? null
+    : report.error?.response?.status === 404
+      ? 'This run has no report.'
+      : inlineErrorMessage(report.error, 'Could not load the report.');
 
   return (
     <div
@@ -108,7 +116,7 @@ export function ReportPeekModal({ jobId, onClose }: { jobId: string; onClose: ()
             }}
           >
             {report.isError ? (
-              report.error?.response?.status === 404 ? 'This run has no report.' : 'Could not load the report.'
+              loadError
             ) : (
               <>
                 <Spinner size={16} /> Loading the report…

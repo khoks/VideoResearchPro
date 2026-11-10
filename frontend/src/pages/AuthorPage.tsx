@@ -65,6 +65,7 @@ import {
   type CohesionLevel,
 } from '../utils/authorOutputs';
 import type { HttpErrorLike } from '../utils/ingestResults';
+import { inlineErrorMessage } from '../utils/apiError';
 import type { Job } from '../types/job';
 
 const OUTPUT_STATUSES = ['pending', 'generating', 'completed', 'failed'] as const;
@@ -98,7 +99,8 @@ export function AuthorPage() {
   const [creatingKind, setCreatingKind] = useState<string | null>(() => intent?.kind ?? null);
   const [deleting, setDeleting] = useState<OutputItem | null>(null);
 
-  const kinds = useAuthorKinds(allowed);
+  // Each read's failure is said on this page alone (T-3.4.1.26).
+  const kinds = useAuthorKinds(allowed, { inlineErrors: true });
   const outputs = useAuthorOutputs(
     { kind: kindFilter || undefined, status: statusFilter || undefined },
     allowed,
@@ -138,6 +140,11 @@ export function AuthorPage() {
     cancelMut.mutate(output.id, { onSuccess: () => pushToast('info', `Cancelled “${output.title}”.`) });
 
   const forbidden = isForbidden(kinds.error) || isForbidden(outputs.error);
+  // The server's words, else the page's sentence, and nothing for a 401.
+  const kindsError = kinds.isError
+    ? inlineErrorMessage(kinds.error, 'The studio needs the backend to say what it can generate.')
+    : null;
+  const outputsError = outputs.isError ? inlineErrorMessage(outputs.error, 'Something blocked the fetch. Try again.') : null;
   const partition = useMemo(() => partitionKinds(kinds.data), [kinds.data]);
 
   // S-6.7.2: every format comes from `GET …/download`, which names the file.
@@ -211,16 +218,18 @@ export function AuthorPage() {
                 <Skeleton variant="card" />
               </div>
             ) : kinds.isError ? (
-              <EmptyState
-                size="sm"
-                title="Couldn't load output kinds."
-                description="The studio needs the backend to say what it can generate."
-                action={
-                  <Button variant="secondary" size="sm" onClick={() => kinds.refetch()}>
-                    Retry
-                  </Button>
-                }
-              />
+              kindsError && (
+                <EmptyState
+                  size="sm"
+                  title="Couldn't load output kinds."
+                  description={kindsError}
+                  action={
+                    <Button variant="secondary" size="sm" onClick={() => kinds.refetch()}>
+                      Retry
+                    </Button>
+                  }
+                />
+              )
             ) : (
               <div style={kindGrid}>
                 {partition.available.map((kind) => (
@@ -295,16 +304,18 @@ export function AuthorPage() {
                 <Skeleton variant="row" />
               </div>
             ) : outputs.isError ? (
-              <EmptyState
-                size="sm"
-                title="Couldn't load your outputs."
-                description="Something blocked the fetch. Try again."
-                action={
-                  <Button variant="secondary" size="sm" onClick={() => outputs.refetch()}>
-                    Retry
-                  </Button>
-                }
-              />
+              outputsError && (
+                <EmptyState
+                  size="sm"
+                  title="Couldn't load your outputs."
+                  description={outputsError}
+                  action={
+                    <Button variant="secondary" size="sm" onClick={() => outputs.refetch()}>
+                      Retry
+                    </Button>
+                  }
+                />
+              )
             ) : !outputs.data || outputs.data.length === 0 ? (
               <EmptyState
                 title={kindFilter || statusFilter ? 'Nothing matches these filters.' : 'Nothing authored yet.'}
@@ -628,6 +639,8 @@ function CreateOutputModal({
   const askedFilter = useDebounced(docFilter, DOC_FILTER_DEBOUNCE_MS);
   const knowledge = useKnowledgeSources(isDeck, askedFilter);
   const docCandidates = knowledge.data ?? [];
+  // Said in the picker alone: the hook sets `meta` (T-3.4.1.26).
+  const knowledgeError = knowledge.isError ? inlineErrorMessage(knowledge.error, 'Could not load your knowledge reports.') : null;
   const docCapNote = knowledgeCapNote(docCandidates.length, askedFilter);
   // Until this filter's answer is in, an empty list says nothing about it.
   const docsAsking = knowledge.isLoading || docFilter !== askedFilter || knowledge.isPlaceholderData;
@@ -657,7 +670,11 @@ function CreateOutputModal({
       : isDeck
         ? sourceIds.length > 0
         : selected.size > 0 && isBook && cohesion !== 'none',
+    // Only a book's framing says a failed estimate, next to its cohesion choice;
+    // a deck's or a newsletter's leaves it to the toast (T-3.4.1.26).
+    { inlineErrors: isBook },
   );
+  const estimateError = estimate.isError ? inlineErrorMessage(estimate.error, 'Could not estimate the cost.') : null;
   const toggleFormat = (format: string, on: boolean) => {
     const next = new Set(chosen);
     if (on) next.add(format);
@@ -921,9 +938,11 @@ function CreateOutputModal({
                       <Spinner />
                     </div>
                   ) : knowledge.isError ? (
-                    <div style={{ padding: space['4'], fontFamily: fonts.body, fontSize: fontSize.sm, color: c.error }}>
-                      Could not load your knowledge reports.
-                    </div>
+                    knowledgeError && (
+                      <div role="alert" style={{ padding: space['4'], fontFamily: fonts.body, fontSize: fontSize.sm, color: c.error }}>
+                        {knowledgeError}
+                      </div>
+                    )
                   ) : docCandidates.length === 0 ? (
                     <div style={{ padding: space['4'], fontFamily: fonts.body, fontSize: fontSize.sm, color: c.textMuted, fontStyle: 'italic' }}>
                       {docFilter
@@ -986,7 +1005,7 @@ function CreateOutputModal({
               {cohesion !== 'none' && selected.size > 0 && (
                 <>
                   {' '}
-                  {estimate.isLoading ? 'Estimating the cost…' : estimate.isError ? 'Could not estimate the cost.' : estimateLabel(estimate.data)}
+                  {estimate.isLoading ? 'Estimating the cost…' : estimate.isError ? estimateError : estimateLabel(estimate.data)}
                   {estimate.data && estimateLabel(estimate.data) ? '.' : ''}
                 </>
               )}

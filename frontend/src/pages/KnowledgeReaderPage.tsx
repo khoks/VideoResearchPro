@@ -18,6 +18,7 @@ import { ReaderShell, StatTiles, describeSource, formatPublished, parseMarkdownD
 import { citedFileFailed } from '../components/citation/citedFile';
 import { openApiFile, openableApiFile } from '../services/apiFiles';
 import { depthOf } from '../utils/depth';
+import { inlineErrorMessage } from '../utils/apiError';
 
 /** T-1.15.3.8: the reader's cut-off note, wired to the same extraction as the drawer's. */
 function ReaderCutOffNote({ videoId, writtenAt }: { videoId: string; writtenAt: string | null | undefined }) {
@@ -35,7 +36,8 @@ function ReaderCutOffNote({ videoId, writtenAt }: { videoId: string; writtenAt: 
 export function KnowledgeReaderPage() {
   const { videoId } = useParams<{ videoId: string }>();
   const navigate = useNavigate();
-  const { data, isLoading, error } = useKnowledge(videoId ?? null);
+  // A failed read is said on this page alone (T-3.4.1.26).
+  const { data, isLoading, error } = useKnowledge(videoId ?? null, true, { inlineErrors: true });
 
   const parsed = useMemo(
     () => (data?.knowledge_report_md ? parseMarkdownDoc(data.knowledge_report_md, { title: data.title }) : null),
@@ -63,13 +65,10 @@ export function KnowledgeReaderPage() {
   }
 
   if (error) {
-    return (
-      <EmptyState
-        title="The knowledge report could not be opened"
-        description={error instanceof Error ? error.message : 'Something went wrong while loading it.'}
-        action={back}
-      />
-    );
+    // The server's words, never axios's, else the page's; nothing for a 401.
+    const failure = inlineErrorMessage(error, 'Something went wrong while loading it.');
+    if (!failure) return null;
+    return <EmptyState title="The knowledge report could not be opened" description={failure} action={back} />;
   }
 
   if (!data || !parsed) {

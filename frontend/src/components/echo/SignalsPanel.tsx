@@ -32,6 +32,7 @@ import {
   type SignalLayer,
 } from '../../utils/echoSignals';
 import { formatDate } from '../../utils/formatters';
+import { inlineErrorMessage } from '../../utils/apiError';
 
 interface FormState {
   mode: 'create' | 'edit';
@@ -61,6 +62,8 @@ export function SignalsPanel() {
   const [exporting, setExporting] = useState(false);
 
   const items = signals.data?.items ?? [];
+  // A failed load is said here alone: the hook sets `meta` (T-3.4.1.26).
+  const loadError = signals.isError ? inlineErrorMessage(signals.error, "Couldn't load your signals.") : null;
   const learning = learningSummary(signals.data?.learning, formatDate);
 
   const learnNow = () =>
@@ -147,12 +150,14 @@ export function SignalsPanel() {
           <Skeleton variant="text" />
         </div>
       ) : signals.isError ? (
-        <div style={{ marginTop: space['3'], display: 'flex', gap: space['3'], alignItems: 'center', fontFamily: fonts.ui, fontSize: fontSize.sm, color: c.error }}>
-          <span>Couldn't load your signals.</span>
-          <Button size="sm" variant="tertiary" onClick={() => signals.refetch()}>
-            Retry
-          </Button>
-        </div>
+        loadError && (
+          <div style={{ marginTop: space['3'], display: 'flex', gap: space['3'], alignItems: 'center', fontFamily: fonts.ui, fontSize: fontSize.sm, color: c.error }}>
+            <span role="alert">{loadError}</span>
+            <Button size="sm" variant="tertiary" onClick={() => signals.refetch()}>
+              Retry
+            </Button>
+          </div>
+        )
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: space['4'], marginTop: space['4'] }}>
           {LAYERS.map((layer) => (

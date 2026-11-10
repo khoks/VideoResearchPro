@@ -17,6 +17,8 @@ import { useEchoPanelStore } from '../../stores/echoPanelStore';
 import { usePaletteStore } from '../../stores/paletteStore';
 import { shortcutLabel } from '../../utils/echoPanel';
 import { fonts, fontSize, fontWeight, lineHeight, radius, space, z } from '../../theme';
+import { queryErrorsMeta } from '../../services/queryClient';
+import { inlineErrorMessage } from '../../utils/apiError';
 import {
   GROUP_LABEL,
   countResults,
@@ -72,14 +74,6 @@ export default function PalettePanel({ onClose }: { onClose: () => void }) {
     input.current?.focus();
     return () => returnFocus.current?.focus?.();
   }, []);
-
-  const search = useQuery({
-    queryKey: ['search', q],
-    queryFn: ({ signal }) => searchApi.search(q, signal),
-    enabled: q.length > 0,
-    staleTime: 30_000,
-    placeholderData: (previous) => previous,
-  });
 
   const go = (href: string, item: RecentItem) => {
     setRecent(pushRecent(item, recent));
@@ -170,6 +164,17 @@ export default function PalettePanel({ onClose }: { onClose: () => void }) {
   }, [has, navigate, onClose, pushToast, setSingleKey, singleKey, theme, toggleTheme]);
 
   const shownActions = query.trim() ? actions.filter((a) => matchesQuery(a, query)) : actions;
+  // A failed search is said in the list only when no action matches either;
+  // then the toast stands aside, and otherwise it says it (T-3.4.1.26).
+  const search = useQuery({
+    queryKey: ['search', q],
+    queryFn: ({ signal }) => searchApi.search(q, signal),
+    enabled: q.length > 0,
+    staleTime: 30_000,
+    placeholderData: (previous) => previous,
+    meta: queryErrorsMeta(shownActions.length === 0),
+  });
+  const searchError = search.isError ? inlineErrorMessage(search.error, 'Search is unavailable right now.') : null;
   const groups = q && search.data ? search.data.groups.filter((g) => g.items.length > 0) : [];
 
   // Selection is controlled here, not left to cmdk: when results arrive after
@@ -191,12 +196,15 @@ export default function PalettePanel({ onClose }: { onClose: () => void }) {
   // empty state flashed "Nothing matches" before the request was even sent.
   const settling = query.trim() !== q;
   const searching = settling || (!!q && search.isFetching);
+  // A failed search has one voice, for a screen reader too: the toast while
+  // actions still match (this status then counts what is listed), the alert in
+  // the list when none do (this status stays quiet).
   const status = !query.trim()
     ? ''
     : searching && !search.data
       ? 'Searching'
-      : search.isError
-        ? 'Search is unavailable; actions still work'
+      : search.isError && shownActions.length === 0
+        ? ''
         : `${total} ${total === 1 ? 'result' : 'results'}`;
 
   return (
@@ -282,12 +290,13 @@ export default function PalettePanel({ onClose }: { onClose: () => void }) {
             label="Results"
             style={{ overflowY: 'auto', overscrollBehavior: 'contain', padding: space['2'], minHeight: 0 }}
           >
-            {!!query.trim() && !searching && total === 0 && (
+            {!!query.trim() && !searching && total === 0 && (!search.isError || searchError) && (
               <Command.Empty>
-                <p style={{ margin: 0, padding: space['4'], fontSize: fontSize.sm, color: c.textSecondary }}>
-                  {search.isError
-                    ? 'Search is unavailable right now.'
-                    : `Nothing in your library matches “${query.trim()}”.`}
+                <p
+                  role={search.isError ? 'alert' : undefined}
+                  style={{ margin: 0, padding: space['4'], fontSize: fontSize.sm, color: c.textSecondary }}
+                >
+                  {search.isError ? searchError : `Nothing in your library matches “${query.trim()}”.`}
                 </p>
               </Command.Empty>
             )}

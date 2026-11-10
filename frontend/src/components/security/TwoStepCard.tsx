@@ -4,7 +4,7 @@ import { Badge, Button, Card, FormField, Input, Skeleton } from '../primitives';
 import { MFA_KEY, useMfaStatus, useRefreshSecurity } from '../../hooks/useAccountSecurity';
 import { accountSecurityApi, type MfaEnrollment } from '../../services/accountSecurityApi';
 import { useColors } from '../../hooks/useTheme';
-import { apiErrorMessage } from '../../utils/apiError';
+import { apiErrorMessage, inlineErrorMessage } from '../../utils/apiError';
 import { groupKey } from '../../utils/accountSecurity';
 import { fonts, fontSize, fontWeight, lineHeight, radius, space } from '../../theme';
 import { SectionTitle } from './SectionTitle';
@@ -27,9 +27,11 @@ type Step =
  */
 export function TwoStepCard() {
   const c = useColors();
-  const status = useMfaStatus();
-  const refresh = useRefreshSecurity();
   const [step, setStep] = useState<Step>({ kind: 'idle' });
+  // The status line shows only while no setup step is open; then this card
+  // says a failed read, and the toast stands aside (T-3.4.1.26).
+  const status = useMfaStatus({ inlineErrors: step.kind !== 'setup' && step.kind !== 'codes' });
+  const refresh = useRefreshSecurity();
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -242,11 +244,12 @@ export function TwoStepCard() {
   } else if (status.isLoading) {
     body = <Skeleton variant="row" />;
   } else if (status.isError) {
-    body = (
+    const failure = inlineErrorMessage(status.error, 'Could not read whether two-step verification is on.');
+    body = failure ? (
       <p role="alert" style={{ ...text, color: c.error }}>
-        Could not read whether two-step verification is on.
+        {failure}
       </p>
-    );
+    ) : null;
   } else if (enabled && step.kind === 'disabling') {
     body = (
       <form onSubmit={disable} aria-label="Turn off two-step verification" style={{ display: 'flex', flexDirection: 'column', gap: space['3'] }}>

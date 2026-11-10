@@ -10,6 +10,7 @@ import { KeywordCloud } from './KeywordCloud';
 import { useChartColors, useColors } from '../../hooks/useTheme';
 import { fonts, fontSize, fontWeight, lineHeight, radius, space } from '../../theme';
 import { formatDate } from '../../utils/formatters';
+import { inlineErrorMessage } from '../../utils/apiError';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -50,11 +51,14 @@ export function IntelligenceTab({ channelId }: { channelId: string }) {
     );
   }
   if (query.isError || !query.data) {
+    // Said here alone: the hook sets `meta`. Nothing for a 401 (T-3.4.1.26).
+    const failure = inlineErrorMessage(query.error, 'Something blocked the aggregate. Try again in a moment.');
+    if (!failure) return null;
     return (
       <EmptyState
         size="sm"
         title="Couldn't read this channel."
-        description="Something blocked the aggregate. Try again in a moment."
+        description={failure}
         action={
           <Button size="sm" variant="secondary" onClick={() => void query.refetch()}>
             Retry

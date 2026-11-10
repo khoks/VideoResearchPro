@@ -1,6 +1,6 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { authorApi, type CreateOutputPayload, type ListOutputsParams, type NewsletterSettings } from '../services/authorApi';
-import { ERRORS_SHOWN_HERE, toastMutationError } from '../services/queryClient';
+import { ERRORS_SHOWN_HERE, queryErrorsMeta, toastMutationError, type QueryLineOptions } from '../services/queryClient';
 import { useJobStore } from '../stores/jobStore';
 import { isSessionEnded } from '../utils/apiError';
 import { KNOWLEDGE_SOURCES_LIMIT, describeCreateError } from '../utils/authorOutputs';
@@ -8,12 +8,19 @@ import type { HttpErrorLike } from '../utils/ingestResults';
 
 const OUTPUTS_KEY = ['author', 'outputs'] as const;
 
-export function useAuthorKinds(enabled = true) {
+// A read below with `meta` has callers that each say its failure on the page,
+// so the toast stands aside; one that takes `inlineErrors` has a caller that
+// says nothing (T-3.4.1.26).
+
+/** The studio page says a failed read; the create dialog reads the formats
+ * alone and says nothing, so only the page passes `inlineErrors`. */
+export function useAuthorKinds(enabled = true, { inlineErrors }: QueryLineOptions = {}) {
   return useQuery({
     queryKey: ['author', 'kinds'],
     queryFn: () => authorApi.listKinds(),
     staleTime: 5 * 60_000,
     enabled,
+    meta: queryErrorsMeta(inlineErrors),
   });
 }
 
@@ -27,6 +34,7 @@ export function useKnowledgeSources(enabled = true, filter = '') {
     staleTime: 60_000,
     enabled,
     placeholderData: keepPreviousData,
+    meta: ERRORS_SHOWN_HERE,
   });
 }
 
@@ -36,6 +44,7 @@ export function useAuthorOutputs(params?: ListOutputsParams, enabled = true) {
     queryFn: () => authorApi.listOutputs(params),
     staleTime: 15_000,
     enabled,
+    meta: ERRORS_SHOWN_HERE,
   });
 }
 
@@ -49,6 +58,7 @@ export function useAuthorOutput(id: string | null) {
       const status = (err as { response?: { status?: number } })?.response?.status;
       return status !== 403 && status !== 404 && count < 1;
     },
+    meta: ERRORS_SHOWN_HERE,
   });
 }
 
@@ -58,6 +68,7 @@ export function useAuthorOutputContent(id: string | null) {
     queryFn: () => authorApi.getContent(id!),
     enabled: !!id,
     staleTime: 5 * 60_000,
+    meta: ERRORS_SHOWN_HERE,
   });
 }
 
@@ -69,18 +80,22 @@ export function useAuthorOutputCitations(id: string | null) {
     queryFn: () => authorApi.getCitations(id!),
     enabled: !!id,
     staleTime: 5 * 60_000,
+    meta: ERRORS_SHOWN_HERE,
   });
 }
 
 /** S-6.1.3: the cost of generating with these settings, before it runs.
- * Keyed on what changes the price (runs and cohesion level), not the title. */
-export function useOutputEstimate(payload: CreateOutputPayload, enabled: boolean) {
+ * Keyed on what changes the price (runs and cohesion level), not the title.
+ * The dialog says a failed estimate only for a book's framing, so it passes
+ * `inlineErrors` then. */
+export function useOutputEstimate(payload: CreateOutputPayload, enabled: boolean, { inlineErrors }: QueryLineOptions = {}) {
   const cohesion = String(payload.parameters?.cohesion ?? 'none');
   return useQuery({
     queryKey: ['author', 'estimate', payload.kind, [...payload.source_ids].sort(), cohesion],
     queryFn: () => authorApi.estimateOutput(payload),
     enabled,
     staleTime: 5 * 60_000,
+    meta: queryErrorsMeta(inlineErrors),
   });
 }
 

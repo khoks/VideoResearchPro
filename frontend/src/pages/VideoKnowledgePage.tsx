@@ -5,6 +5,7 @@ import { useKnowledge, useExtractKnowledge } from '../hooks/useKnowledge';
 import { useDepthChoice } from '../hooks/useDepthChoice';
 import { useFeatureAvailable } from '../hooks/useFeatureAvailable';
 import { usePreferredDepth } from '../hooks/useMe';
+import { inlineErrorMessage } from '../utils/apiError';
 import { Badge, Button, Spinner, type BadgeTone } from '../components/primitives';
 import { NotesPanel } from '../components/notes';
 import { SuggestionCard } from '../components/qa/SuggestionCard';
@@ -60,9 +61,18 @@ export function VideoKnowledgeDrawer({ videoId, videoTitle, sourceType, defaultD
   const c = useColors();
   const s = useShadows();
   const navigate = useNavigate();
-  const { data: artifact, isLoading: isLoadingCached, isError } = useKnowledge(videoId);
   const extract = useExtractKnowledge(videoId);
   const knowledgeExtractionAvailable = useFeatureAvailable('knowledge_extraction');
+  // The drawer says a failed read in place of a report, and only while
+  // extraction is on and not running; otherwise the toast says it. A refresh
+  // that fails behind a report on screen keeps its toast too (T-3.4.1.26).
+  const {
+    data: artifact,
+    isLoading: isLoadingCached,
+    isError,
+    error,
+  } = useKnowledge(videoId, true, { inlineErrors: knowledgeExtractionAvailable && !extract.isPending ? 'load' : false });
+  const loadError = isError ? inlineErrorMessage(error, "Couldn't load the knowledge report. Try generating it again.") : null;
   const libraryQAAvailable = useFeatureAvailable('library_qa');
   const preferredDepth = usePreferredDepth();
   const { depth, pick: setDepth } = useDepthChoice(depthOf(defaultDepth) ?? preferredDepth);
@@ -202,7 +212,7 @@ export function VideoKnowledgeDrawer({ videoId, videoTitle, sourceType, defaultD
             </div>
           )}
 
-          {isError && !extract.isPending && !displayed && knowledgeExtractionAvailable && (
+          {loadError && !extract.isPending && !displayed && knowledgeExtractionAvailable && (
             <div
               role="alert"
               style={{
@@ -216,7 +226,7 @@ export function VideoKnowledgeDrawer({ videoId, videoTitle, sourceType, defaultD
                 marginBottom: space['4'],
               }}
             >
-              Couldn't load the knowledge report. Try generating it again.
+              {loadError}
             </div>
           )}
 

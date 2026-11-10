@@ -1,18 +1,21 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../contexts/AuthContext';
 import { onboardingApi, type Onboarding, type OnboardingPatch } from '../services/onboardingApi';
-import { ERRORS_SHOWN_HERE } from '../services/queryClient';
+import { ERRORS_SHOWN_HERE, queryErrorsMeta, type QueryLineOptions } from '../services/queryClient';
 
 export const onboardingKey = ['auth', 'me', 'onboarding'] as const;
 
-/** The first-run wizard's state (S-8.10.1). */
-export function useOnboarding() {
+/** The first-run wizard's state (S-8.10.1). The wizard says a failed read;
+ * the gate, the checklist, the submit form and the exports page say nothing,
+ * so only the wizard passes `inlineErrors` (T-3.4.1.26). */
+export function useOnboarding({ inlineErrors }: QueryLineOptions = {}) {
   const { isAuthenticated } = useAuth();
   return useQuery<Onboarding>({
     queryKey: onboardingKey,
     queryFn: () => onboardingApi.get(),
     enabled: isAuthenticated,
     staleTime: 30_000,
+    meta: queryErrorsMeta(inlineErrors),
   });
 }
 

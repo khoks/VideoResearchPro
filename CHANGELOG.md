@@ -10,6 +10,37 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Changed: a search's words out of the access log, the worker's last error lines, and an import's first write (T-4.11.4.5, T-4.11.4.7, T-4.11.4.6, 2026-11-10)
+
+PR [#454](https://github.com/khoks/VideoResearchPro/pull/454). [D-168](docs/decisions.md#d-168--the-access-log-writes-a-users-words-by-their-length-chosen-by-parameter-name-in-one-filter-a-fail-soft-handler-rolls-back-before-it-reads-and-an-imports-own-row-fails-as-importstopped-2026-11-10).
+
+- uvicorn's access log writes the words of a search by their length, such as `GET /api/v1/search?q=[41 characters]&limit=5`: `q` on the search, notes, Echo shares and knowledge-sources routes, `search` on the library's sources and a shelf's documents, and `focus` on the library map, where a topic's node is named by the topic. The path, the other parameters and the status stay. A test reads every route's query parameters and fails on a new one nobody has classified.
+- The newsletter's and the saved search's notification writes, the saved-search run and the scheduler tick's inbox sync log a failure by its frames and types, without the text that can quote a question, an issue's title or the inbox account's address.
+- **Fixed:** when a notification write failed, the newsletter's delivery raised after its email had gone, and a saved search's successful run was recorded as failed. Both now carry on as they promise.
+- An Echo import whose first write fails answers 500 with "Import could not start: <type>" and writes no row, instead of reaching uvicorn's unhandled-exception line with the file's name and a participant's name.
+- No migration and no new setting. Restart the API and the worker. Still open: a fact's key in `DELETE /echo/context/{kind}/{key}`'s path reaches the access log (T-4.11.4.8), and any other exception no route handles still reaches uvicorn's line whole (T-4.11.4.6, with OQ-45).
+
+### Changed: one message per failure for loading too (T-3.4.1.26, 2026-11-10)
+
+PR [#452](https://github.com/khoks/VideoResearchPro/pull/452). [D-167](docs/decisions.md#d-167--a-querys-toast-stands-aside-per-mounted-reader-a-reader-may-say-every-failure-or-only-a-first-load-and-the-guard-holds-each-condition-to-a-page-test-2026-11-10).
+
+- A page that says a failed load on its own line, such as "Could not load your notes.", no longer also shows the global toast. About 40 places follow it, among them notes, saved searches, "Speak as me", the Echo page, the shelves, the library's tabs, the run page, the studio, sessions, usage and the models page. Each line gives the server's words, else its own sentence, and nothing on a 401.
+- Where only a component with no line of its own has the failure, such as the sidebar's shelves, the toast still says it, and a page left before its load fails leaves the failure to the toast.
+- Pages that keep their content on screen, such as the library map, the report peek and the run page, say a failed first load on the page; a failed refresh behind what is shown keeps its toast.
+- **Changed, please check:** the run page says "Couldn't load this run." with the server's words for a failure that is not a missing run, which keeps "We can't find that job."; the knowledge and report readers no longer show the HTTP library's text; the runs list and the system page no longer toast a failed poll every interval, and a run page that cannot find its run no longer toasts every 5 seconds.
+- A screen reader hears a failed palette search once.
+- Frontend only. Reload the page.
+
+### Changed: the embedded-flag check refuses while another collection holds this library's chunks (T-5.2.26, 2026-11-10)
+
+PR [#451](https://github.com/khoks/VideoResearchPro/pull/451). [D-166](docs/decisions.md#d-166--the-embedded-flag-check-refuses-while-another-collection-holds-chunks-of-this-library-told-apart-by-name-and-by-shape-and-its-advice-follows-the-collections-kind-2026-11-10).
+
+- `backend/scripts/check_embedded_flags.py` now reads the Chroma store's other collections, metadata only, and stops, the dry run and `--write` alike, while any of them holds chunks of this database's documents, so a library split between a legacy collection and the configured one can no longer make documents look chunkless.
+- The Q&A, notes and Echo collections are never opened, and in any other collection only rows shaped as chunks of a document here count, so an old Q&A or notes collection left by a renamed setting does not block.
+- The stop says which fix fits each collection: merge a pre-global `job_<id>` collection, delete a leftover copy once Q&A answers from the configured collection, or re-pin `CHROMA_GLOBAL_COLLECTION_NAME` or migrate. The report lists every collection seen with its counts, and the runbook's Rollback and per-job paragraphs say the same.
+- The read-only run on the live store found no other chunk collection and nothing to clear.
+- No migration, no setting and nothing to restart.
+
 ### Changed: one message per failure in the last seven files, and the template dialog's own words (T-3.4.1.24, T-3.4.1.25, 2026-11-10)
 
 PR [#446](https://github.com/khoks/VideoResearchPro/pull/446). [D-165](docs/decisions.md#d-165--a-forms-own-words-travel-in-a-typed-error-a-surface-waits-only-for-its-own-save-a-control-that-would-replace-a-line-is-part-of-its-surface-and-a-lines-request-waits-for-whatever-would-take-the-line-away-2026-11-10).

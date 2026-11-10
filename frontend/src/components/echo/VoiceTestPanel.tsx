@@ -6,6 +6,7 @@ import { useColors } from '../../hooks/useTheme';
 import { fonts, fontSize, fontWeight, lineHeight, radius, space } from '../../theme';
 import { ProgressBar } from '../common/ProgressBar';
 import { Button, Skeleton } from '../primitives';
+import { inlineErrorMessage } from '../../utils/apiError';
 
 const SIDES: VoiceTestSide[] = ['A', 'B'];
 
@@ -37,6 +38,8 @@ export function VoiceTestPanel({ shown = [] }: { shown?: string[] }) {
   const poll = useVoiceTestPoll(writing && test ? test.id : null);
   const polled = writing ? poll.data : undefined;
   const done = polled !== undefined && polled.status !== 'generating';
+  // A failed read is said here alone: the hook sets `meta` (T-3.4.1.26).
+  const loadError = overview.isError ? inlineErrorMessage(overview.error, "Couldn't load the test.") : null;
 
   useEffect(() => {
     // Written (or failed): the overview holds the pairs and the new offer.
@@ -51,12 +54,14 @@ export function VoiceTestPanel({ shown = [] }: { shown?: string[] }) {
       {overview.isLoading ? (
         <Skeleton variant="text" />
       ) : overview.isError || !data ? (
-        <div style={{ display: 'flex', gap: space['3'], alignItems: 'center', fontFamily: fonts.ui, fontSize: fontSize.sm, color: c.error }}>
-          <span>Couldn't load the test.</span>
-          <Button size="sm" variant="tertiary" onClick={() => overview.refetch()}>
-            Retry
-          </Button>
-        </div>
+        loadError && (
+          <div style={{ display: 'flex', gap: space['3'], alignItems: 'center', fontFamily: fonts.ui, fontSize: fontSize.sm, color: c.error }}>
+            <span role="alert">{loadError}</span>
+            <Button size="sm" variant="tertiary" onClick={() => overview.refetch()}>
+              Retry
+            </Button>
+          </div>
+        )
       ) : writing && test ? (
         <Writing test={polled ?? test} />
       ) : test?.status === 'ready' ? (

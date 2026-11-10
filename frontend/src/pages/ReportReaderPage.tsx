@@ -20,6 +20,7 @@ import { useJobVideos } from '../hooks/useJobs';
 import { useCitationStills } from '../hooks/useVideoFrames';
 import { jobsApi } from '../services/jobsApi';
 import { useJobStore } from '../stores/jobStore';
+import { inlineErrorMessage } from '../utils/apiError';
 import { Button, EmptyState } from '../components/primitives';
 import { ReaderLoading } from '../components/reader/ReaderLoading';
 import {
@@ -94,13 +95,17 @@ export function ReportReaderPage() {
 
   if (error || !body || !parsed) {
     const status = error?.response?.status;
+    // Said here alone: the hook sets `meta`. The server's words, never axios's,
+    // else the page's sentence, and nothing for a 401 (T-3.4.1.26).
+    const failure = inlineErrorMessage(error, 'Something went wrong while loading it.');
+    if (!failure) return null;
     return (
       <EmptyState
         title={status === 404 ? 'No report for this run yet' : 'The report could not be opened'}
         description={
           status === 404
             ? 'Reports appear here once a topic or channel run has finished writing one.'
-            : (error?.response?.data?.detail ?? error?.message ?? 'Something went wrong while loading it.')
+            : failure
         }
         action={backToRun}
       />

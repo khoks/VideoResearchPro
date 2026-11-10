@@ -50,6 +50,7 @@ import {
   type KindGroup,
 } from '../utils/echoReadiness';
 import type { HttpErrorLike } from '../utils/ingestResults';
+import { inlineErrorMessage } from '../utils/apiError';
 
 function isForbidden(err: unknown): boolean {
   return (err as HttpErrorLike | null)?.response?.status === 403;
@@ -86,18 +87,25 @@ export function EchoPage() {
   const [deleting, setDeleting] = useState<PersonalContextItem | null>(null);
   const [revoking, setRevoking] = useState<{ source: string; count: number } | null>(null);
 
-  const status = useEchoStatus(allowed);
-  const connectors = useEchoConnectors(allowed);
+  // Each read's failure is said on this page alone (T-3.4.1.26). Readiness keeps
+  // what it last read on screen and shows its line only in place of a first
+  // read, so a failed refresh behind it keeps the toast ('load').
+  const status = useEchoStatus(allowed, { inlineErrors: 'load' });
+  const connectors = useEchoConnectors(allowed, { inlineErrors: true });
   const [searchParams] = useSearchParams();
   // Back from a provider through /echo/connectors/:name/callback.
   const connectedNow = searchParams.get('connected');
-  const context = useEchoContext({ include_expired: showExpired }, allowed);
+  const context = useEchoContext({ include_expired: showExpired }, allowed, { inlineErrors: true });
   const record = useRecordContext();
   const del = useDeleteContext();
   const revoke = useRevokeSource();
   const revokeScope = useRevokeScope(revoking?.source ?? null);
 
   const forbidden = isForbidden(status.error) || isForbidden(context.error);
+  // The server's words, else the page's sentence, and nothing for a 401.
+  const statusError = status.isError ? inlineErrorMessage(status.error, "Couldn't read Echo's status.") : null;
+  const connectorsError = connectors.isError ? inlineErrorMessage(connectors.error, "Couldn't list connectors.") : null;
+  const contextError = context.isError ? inlineErrorMessage(context.error, 'Something blocked the fetch. Try again.') : null;
   const allRows = useMemo(() => context.data ?? [], [context.data]);
   const sources = useMemo(() => countBySource(allRows), [allRows]);
 
@@ -222,7 +230,7 @@ export function EchoPage() {
               <SectionHeading>Readiness</SectionHeading>
               {status.isLoading || !readiness ? (
                 status.isError ? (
-                  <ErrorLine onRetry={() => status.refetch()}>Couldn't read Echo's status.</ErrorLine>
+                  statusError && <ErrorLine onRetry={() => status.refetch()}>{statusError}</ErrorLine>
                 ) : (
                   <Skeleton variant="paragraph" />
                 )
@@ -236,7 +244,7 @@ export function EchoPage() {
               {connectors.isLoading ? (
                 <Skeleton variant="paragraph" />
               ) : connectors.isError ? (
-                <ErrorLine onRetry={() => connectors.refetch()}>Couldn't list connectors.</ErrorLine>
+                connectorsError && <ErrorLine onRetry={() => connectors.refetch()}>{connectorsError}</ErrorLine>
               ) : (
                 <>
                   {connectedNow && (
@@ -325,16 +333,18 @@ export function EchoPage() {
                 <Skeleton variant="row" />
               </div>
             ) : context.isError ? (
-              <EmptyState
-                size="sm"
-                title="Couldn't load what Echo knows."
-                description="Something blocked the fetch. Try again."
-                action={
-                  <Button variant="secondary" size="sm" onClick={() => context.refetch()}>
-                    Retry
-                  </Button>
-                }
-              />
+              contextError && (
+                <EmptyState
+                  size="sm"
+                  title="Couldn't load what Echo knows."
+                  description={contextError}
+                  action={
+                    <Button variant="secondary" size="sm" onClick={() => context.refetch()}>
+                      Retry
+                    </Button>
+                  }
+                />
+              )
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: space['3'] }}>
                 {groups.map((g) => (
@@ -457,7 +467,7 @@ function ErrorLine({ children, onRetry }: { children: React.ReactNode; onRetry: 
   const c = useColors();
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: space['3'], fontFamily: fonts.ui, fontSize: fontSize.sm, color: c.error }}>
-      <span>{children}</span>
+      <span role="alert">{children}</span>
       <Button size="sm" variant="tertiary" onClick={onRetry}>
         Retry
       </Button>

@@ -1,22 +1,28 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { channelsApi, type Channel } from '../services/channelsApi';
-import { ERRORS_SHOWN_HERE } from '../services/queryClient';
+import { ERRORS_SHOWN_HERE, queryErrorsMeta, type QueryLineOptions } from '../services/queryClient';
 
-export function useChannels() {
+/** The library's channels tab says a failed load, and only while it is the
+ * tab on screen, so it passes `inlineErrors` (T-3.4.1.26). */
+export function useChannels({ inlineErrors }: QueryLineOptions = {}) {
   return useQuery({
     queryKey: ['channels'],
     queryFn: () => channelsApi.list(),
     staleTime: 30_000,
+    meta: queryErrorsMeta(inlineErrors),
   });
 }
 
-export function useChannel(id: string | null) {
+/** The channel page says a failed load; the graph explorer reads the name
+ * alone and says nothing, so only the page passes `inlineErrors`. */
+export function useChannel(id: string | null, { inlineErrors }: QueryLineOptions = {}) {
   return useQuery({
     queryKey: ['channel', id],
     queryFn: () => channelsApi.get(id!),
     enabled: !!id,
     // A 404 is the answer ("not on your shelf"), not a transient failure.
     retry: false,
+    meta: queryErrorsMeta(inlineErrors),
   });
 }
 

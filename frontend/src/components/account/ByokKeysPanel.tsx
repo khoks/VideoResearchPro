@@ -11,7 +11,8 @@ import {
   type CredentialMetadata,
   type KeyCheckResult,
 } from '../../services/credentialsApi';
-import { apiErrorMessage } from '../../utils/apiError';
+import { apiErrorMessage, inlineErrorMessage } from '../../utils/apiError';
+import { ERRORS_SHOWN_HERE } from '../../services/queryClient';
 import { formatDate } from '../../utils/formatters';
 import { Badge, Button, Card, FormField, Input, Modal, Skeleton } from '../primitives';
 import { fonts, fontSize, fontWeight, lineHeight, radius, space } from '../../theme';
@@ -170,7 +171,9 @@ function KeysPanel({
   const [editing, setEditing] = useState<string | null>(null);
   const [removing, setRemoving] = useState<string | null>(null);
 
-  const keys = useQuery({ queryKey: CREDENTIALS_QUERY_KEY, queryFn: credentialsApi.list });
+  // A failed load is said in this panel alone (T-3.4.1.26).
+  const keys = useQuery({ queryKey: CREDENTIALS_QUERY_KEY, queryFn: credentialsApi.list, meta: ERRORS_SHOWN_HERE });
+  const loadError = keys.isError ? inlineErrorMessage(keys.error, 'Your keys could not be loaded.') : null;
   const stored = keys.data ?? [];
   const byProvider = new Map(stored.map((k) => [k.provider, k]));
   // A key stored for a provider no call reads (say, `local` through the API).
@@ -240,9 +243,11 @@ function KeysPanel({
         </div>
       )}
 
-      {keys.isError && !keys.isLoading && (
+      {loadError && !keys.isLoading && (
         <div style={{ padding: `${space['4']} ${space['5']}`, display: 'flex', flexDirection: 'column', gap: space['3'] }}>
-          <Prose>{apiErrorMessage(keys.error, 'Your keys could not be loaded.')}</Prose>
+          <div role="alert">
+            <Prose>{loadError}</Prose>
+          </div>
           <div>
             <Button variant="secondary" size="sm" onClick={() => void keys.refetch()}>
               Try again

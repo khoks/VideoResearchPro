@@ -5,6 +5,8 @@ import { VideoRow } from './VideoRow';
 import { Button, Card, EmptyState, Input, Select, Skeleton } from '../primitives';
 import { useColors } from '../../hooks/useTheme';
 import { fonts, fontSize, fontWeight, radius, space } from '../../theme';
+import { ERRORS_SHOWN_HERE } from '../../services/queryClient';
+import { inlineErrorMessage } from '../../utils/apiError';
 
 const PAGE_SIZE = 50;
 
@@ -77,7 +79,10 @@ export function DocumentsBrowser({
     queryKey: [...queryKey, params.search ?? null, params.transcript_status ?? null, sort, page],
     queryFn: () => fetch(params),
     staleTime: 30_000,
+    // A failed load is said in place of the list, and only there (T-3.4.1.26).
+    meta: ERRORS_SHOWN_HERE,
   });
+  const loadError = query.isError ? inlineErrorMessage(query.error, 'Something blocked the library fetch.') : null;
 
   const videos = query.data ?? [];
   const hasNextPage = videos.length === PAGE_SIZE;
@@ -99,11 +104,11 @@ export function DocumentsBrowser({
       </div>
     );
   } else if (query.isError) {
-    body = (
+    body = loadError && (
       <EmptyState
         size="sm"
         title="Couldn't load these documents."
-        description="Something blocked the library fetch."
+        description={loadError}
         action={
           <Button size="sm" variant="secondary" onClick={() => void query.refetch()}>
             Retry

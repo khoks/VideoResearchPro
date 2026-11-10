@@ -33,6 +33,7 @@ from app.config import settings
 from app.database import SessionLocal
 from app.services import echo_imap_service, scheduler_service
 from app.tasks.celery_app import celery_app
+from app.utils.shared_url_log import traceback_without_text
 
 logger = logging.getLogger(__name__)
 
@@ -50,9 +51,13 @@ def scheduler_tick() -> dict:
     try:
         try:
             echo_imap_service.sync_schedule(db)
-        except Exception:  # noqa: BLE001 — never a reason to skip every other row
+        except Exception as e:  # noqa: BLE001 — never a reason to skip every other row
             db.rollback()
-            logger.exception("scheduler: could not sync the email inbox's row; the tick goes on")
+            # T-4.11.4.7: by its frames. The inbox's account is looked up by
+            # ECHO_IMAP_TENANT_EMAIL, and a database error quotes the address.
+            logger.error(
+                "scheduler: could not sync the email inbox's row; the tick goes on: %s", traceback_without_text(e)
+            )
         return scheduler_service.run_tick(db)
     finally:
         db.close()

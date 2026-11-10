@@ -4,15 +4,19 @@ import {
   type JobTemplateCreate,
   type JobTemplateUpdate,
 } from '../services/jobTemplatesApi';
-import { ERRORS_SHOWN_HERE } from '../services/queryClient';
+import { ERRORS_SHOWN_HERE, queryErrorsMeta, type QueryLineOptions } from '../services/queryClient';
 
 export const templatesKey = ['jobTemplates'] as const;
 
-export function useJobTemplates() {
+/** The templates page says a failed read; the submit form and the wizard
+ * read the list and say nothing, so only the page passes `inlineErrors`
+ * (T-3.4.1.26). */
+export function useJobTemplates({ inlineErrors }: QueryLineOptions = {}) {
   return useQuery({
     queryKey: templatesKey,
     queryFn: () => jobTemplatesApi.list(),
     staleTime: 30_000,
+    meta: queryErrorsMeta(inlineErrors),
   });
 }
 

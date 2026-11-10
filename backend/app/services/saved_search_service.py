@@ -40,6 +40,7 @@ from app.models.saved_search_run import SavedSearchRun
 from app.models.user import User
 from app.services import qa_scope_service, scheduler_service, tier_service, usage_service
 from app.utils.log_redaction import error_summary
+from app.utils.shared_url_log import traceback_without_text
 
 logger = logging.getLogger(__name__)
 
@@ -353,8 +354,9 @@ def _notify(db: Session, user: User, ss: SavedSearch, run: SavedSearchRun, summa
     from app.config import settings
     from app.services import email_service, notification_service
 
+    search_id = ss.id
     short = ss.question if len(ss.question) <= 90 else ss.question[:87] + "…"
-    href = f"/saved-searches?search={ss.id}&run={run.id}"
+    href = f"/saved-searches?search={search_id}&run={run.id}"
     try:
         notification_service.create(
             db,
@@ -364,9 +366,14 @@ def _notify(db: Session, user: User, ss: SavedSearch, run: SavedSearchRun, summa
             body=summary,
             href=href,
         )
-    except Exception:  # pragma: no cover - never fail the run
-        logger.exception("saved search %s: notification not stored", ss.id)
+    except Exception as e:  # never fail the run
+        # Rolled back before anything reads a row: a failed flush expires
+        # every object, and reading one then raised PendingRollbackError,
+        # which the run's own handler recorded as a failed run.
         db.rollback()
+        # T-4.11.4.7: by its frames. The row holds the question and what
+        # changed in its answer, and a database error quotes both.
+        logger.error("saved search %s: notification not stored: %s", search_id, traceback_without_text(e))
     if ss.notify_email and user.email:
         link = settings.APP_BASE_URL.rstrip("/") + href
         body = (
@@ -534,7 +541,10 @@ def _execute_run(db: Session, ss: SavedSearch, user: User, saved_search_id: str,
             _notify(db, user, ss, run, verdict.summary or "The answer changed.")
         return {"status": STATUS_OK, "exchange_id": exchange.id, "changed": verdict.changed, "run_id": run.id}
     except Exception as e:  # noqa: BLE001 - a run failure is recorded, not raised
-        logger.exception("saved search %s: run failed", saved_search_id)
+        # T-4.11.4.7: by its frames. The run writes the question, the answer
+        # and what changed, and a database error quotes them; the words stay
+        # on `last_error`, which the user reads.
+        logger.error("saved search %s: run failed: %s", saved_search_id, traceback_without_text(e))
         db.rollback()
         ss = db.get(SavedSearch, saved_search_id)
         if ss is not None:

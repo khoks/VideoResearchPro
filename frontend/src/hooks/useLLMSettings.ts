@@ -22,6 +22,7 @@ import {
   type QueryClient,
 } from '@tanstack/react-query';
 import api from '../services/api';
+import { ERRORS_SHOWN_HERE, queryErrorsMeta, type QueryLineOptions } from '../services/queryClient';
 
 // ── Contract types ────────────────────────────────────────────────
 
@@ -180,6 +181,8 @@ export function useLLMSettings() {
       return data;
     },
     staleTime: 60_000,
+    // Its one caller, the models page, says a failed read (T-3.4.1.26).
+    meta: ERRORS_SHOWN_HERE,
   });
 }
 
@@ -188,7 +191,7 @@ export function useLLMSettings() {
  * Overrides map is empty because saves land immediately (see module docstring);
  * the query is invalidated (debounced) after every successful save.
  */
-export function useLLMEstimate(enabled = true) {
+export function useLLMEstimate(enabled = true, { inlineErrors }: QueryLineOptions = {}) {
   return useQuery<EstimateResponse>({
     queryKey: LLM_ESTIMATE_KEY,
     queryFn: async () => {
@@ -199,6 +202,8 @@ export function useLLMEstimate(enabled = true) {
     },
     enabled,
     staleTime: 30_000,
+    // The cost panel says a failed estimate only while the page shows it.
+    meta: queryErrorsMeta(inlineErrors),
   });
 }
 

@@ -11,6 +11,7 @@ import { Badge, Button, Card, FormField, Input, Select, Skeleton, Textarea } fro
 import { useColors } from '../../hooks/useTheme';
 import { fonts, fontSize, fontWeight, lineHeight, radius, space } from '../../theme';
 import { citationLabel, draftErrorOf } from '../../utils/echoDrafts';
+import { inlineErrorMessage } from '../../utils/apiError';
 
 /**
  * "Speak as me" (S-3.4.1, S-3.4.2): drafts a reply in the user's voice. Off until
@@ -56,6 +57,8 @@ export function SpeakAsMePanel() {
 
   const text: React.CSSProperties = { margin: 0, fontFamily: fonts.body, fontSize: fontSize.sm, color: c.textSecondary, lineHeight: lineHeight.normal };
   const st = status.data;
+  // A failed read is said here alone: the hook sets `meta` (T-3.4.1.26).
+  const statusError = status.isError ? inlineErrorMessage(status.error, "Couldn't check whether drafting is on.") : null;
 
   const submit = (acknowledge: string[] = [], approved: string | null = goAhead) => {
     if (saving) return;
@@ -113,12 +116,14 @@ export function SpeakAsMePanel() {
           <Skeleton variant="text" />
         </div>
       ) : status.isError ? (
-        <div style={{ marginTop: space['3'], display: 'flex', gap: space['3'], alignItems: 'center', fontFamily: fonts.ui, fontSize: fontSize.sm, color: c.error }}>
-          <span>Couldn't check whether drafting is on.</span>
-          <Button size="sm" variant="tertiary" onClick={() => status.refetch()}>
-            Retry
-          </Button>
-        </div>
+        statusError && (
+          <div style={{ marginTop: space['3'], display: 'flex', gap: space['3'], alignItems: 'center', fontFamily: fonts.ui, fontSize: fontSize.sm, color: c.error }}>
+            <span role="alert">{statusError}</span>
+            <Button size="sm" variant="tertiary" onClick={() => status.refetch()}>
+              Retry
+            </Button>
+          </div>
+        )
       ) : st && !st.enabled ? (
         <div data-gate style={{ marginTop: space['3'] }}>
           <p style={{ ...text, fontFamily: fonts.ui, fontWeight: fontWeight.semibold, color: c.textPrimary }}>Not yet, because:</p>

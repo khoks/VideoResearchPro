@@ -16,7 +16,13 @@ import {
   type UpdateSignalPayload,
   type UploadShareFields,
 } from '../services/echoApi';
-import { ERRORS_SHOWN_HERE, toastMutationError } from '../services/queryClient';
+import {
+  ERRORS_SHOWN_HERE,
+  LOAD_ERRORS_SHOWN_HERE,
+  queryErrorsMeta,
+  toastMutationError,
+  type QueryLineOptions,
+} from '../services/queryClient';
 import { useJobStore } from '../stores/jobStore';
 import { isSessionEnded } from '../utils/apiError';
 import { draftErrorOf, isDraftStop } from '../utils/echoDrafts';
@@ -29,16 +35,21 @@ import { draftErrorOf, isDraftStop } from '../utils/echoDrafts';
 const STATUS_KEY = ['echo', 'status'] as const;
 const CONTEXT_KEY = ['echo', 'context'] as const;
 
-export function useEchoStatus(enabled = true) {
+// The Echo page says a failed status, context or connectors read on the page;
+// the panel and the tombstones card read them too and say nothing, so these
+// take `inlineErrors` from the caller with a line (T-3.4.1.26).
+
+export function useEchoStatus(enabled = true, { inlineErrors }: QueryLineOptions = {}) {
   return useQuery({
     queryKey: STATUS_KEY,
     queryFn: () => echoApi.status(),
     staleTime: 15_000,
     enabled,
+    meta: queryErrorsMeta(inlineErrors),
   });
 }
 
-export function useEchoContext(params?: ListContextParams, enabled = true) {
+export function useEchoContext(params?: ListContextParams, enabled = true, { inlineErrors }: QueryLineOptions = {}) {
   return useQuery({
     queryKey: [
       ...CONTEXT_KEY,
@@ -49,15 +60,17 @@ export function useEchoContext(params?: ListContextParams, enabled = true) {
     queryFn: () => echoApi.listContext(params),
     staleTime: 15_000,
     enabled,
+    meta: queryErrorsMeta(inlineErrors),
   });
 }
 
-export function useEchoConnectors(enabled = true) {
+export function useEchoConnectors(enabled = true, { inlineErrors }: QueryLineOptions = {}) {
   return useQuery({
     queryKey: ['echo', 'connectors'],
     queryFn: () => echoApi.listConnectors(),
     staleTime: 5 * 60_000,
     enabled,
+    meta: queryErrorsMeta(inlineErrors),
   });
 }
 
@@ -147,6 +160,8 @@ export function useShares(params: ListSharesParams, enabled = true) {
     queryFn: () => echoApi.listShares(params),
     staleTime: 10_000,
     enabled,
+    // Its one caller, the inbox, says a failed load on the page (T-3.4.1.26).
+    meta: ERRORS_SHOWN_HERE,
   });
 }
 
@@ -156,6 +171,9 @@ export function useEchoFootprint(enabled = true) {
     queryFn: () => echoApi.footprint(),
     staleTime: 10_000,
     enabled,
+    // Its one caller, the data card, says it in place of the counts, and keeps
+    // the last counts on screen when a refresh fails (T-3.4.1.26).
+    meta: LOAD_ERRORS_SHOWN_HERE,
   });
 }
 
@@ -351,6 +369,8 @@ export function useVoiceSignals(enabled = true) {
     queryFn: () => echoApi.listSignals(),
     staleTime: 15_000,
     enabled,
+    // Its one caller, the signals panel, says a failed load there (T-3.4.1.26).
+    meta: ERRORS_SHOWN_HERE,
   });
 }
 
@@ -409,8 +429,15 @@ export function useUpdateSignal() {
 
 const DRAFTS_KEY = ['echo', 'drafts'] as const;
 
+/** Its one caller, the "Speak as me" card, says a failed read there (T-3.4.1.26). */
 export function useDraftStatus(enabled = true) {
-  return useQuery({ queryKey: [...DRAFTS_KEY, 'status'], queryFn: () => echoApi.draftStatus(), staleTime: 15_000, enabled });
+  return useQuery({
+    queryKey: [...DRAFTS_KEY, 'status'],
+    queryFn: () => echoApi.draftStatus(),
+    staleTime: 15_000,
+    enabled,
+    meta: ERRORS_SHOWN_HERE,
+  });
 }
 
 export function useRecentDrafts(enabled = true) {
@@ -475,8 +502,15 @@ export function useDraftFeedback(surface: DraftSurface) {
 
 const VOICE_TEST_KEY = ['echo', 'voice-test'] as const;
 
+/** Its one caller, the voice test panel, says a failed read there (T-3.4.1.26). */
 export function useVoiceTest(enabled = true) {
-  return useQuery({ queryKey: VOICE_TEST_KEY, queryFn: () => echoApi.voiceTest(), staleTime: 15_000, enabled });
+  return useQuery({
+    queryKey: VOICE_TEST_KEY,
+    queryFn: () => echoApi.voiceTest(),
+    staleTime: 15_000,
+    enabled,
+    meta: ERRORS_SHOWN_HERE,
+  });
 }
 
 /** Polls one test while it is being written. The overview re-reads readiness,

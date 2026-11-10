@@ -31,6 +31,15 @@ export const failures = {
 
 export type FailureKind = keyof typeof failures;
 
+export const PLAN_WORDS = 'Echo needs the Studio plan.';
+
+/** A refusal by the reader's plan, a 403 with words, as a tier-gated route
+ * answers once the plan has changed. Kept out of `failures`, whose kinds every
+ * page answers alike. */
+export function refusedByPlan(): AxiosError {
+  return answered(403, { detail: PLAN_WORDS });
+}
+
 /** What a failure of each kind should leave on screen, for a page whose own sentence is `fallback`. */
 export function expectedToasts(kind: FailureKind, fallback: string): string[] {
   if (kind === 'sessionEnded') return [];
@@ -45,6 +54,25 @@ export function toastMessages(): string[] {
 
 export function clearToasts(): void {
   useJobStore.setState({ toasts: [] });
+}
+
+/**
+ * Every toast pushed from now on, in order, including those already dismissed:
+ * a toast goes after five seconds, so a test that waits through polls counts
+ * what was said, not what is still on screen. Call the returned `stop` when done.
+ */
+export function recordToasts(): { messages: string[]; stop: () => void } {
+  const seen = new Set(useJobStore.getState().toasts.map((t) => t.id));
+  const messages: string[] = [];
+  const stop = useJobStore.subscribe((state) => {
+    for (const t of state.toasts) {
+      if (!seen.has(t.id)) {
+        seen.add(t.id);
+        messages.push(t.message);
+      }
+    }
+  });
+  return { messages, stop };
 }
 
 export async function flush(): Promise<void> {

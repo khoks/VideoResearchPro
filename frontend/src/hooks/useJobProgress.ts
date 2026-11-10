@@ -62,6 +62,12 @@ function applyToLists(queryClient: QueryClient, jobId: string, msg: WSProgressMe
   return ended;
 }
 
+/** A run's videos change as it reaches these: saved for the approval list, or
+ * settled by its end (each video's transcript status). */
+function videosSettleAt(status: string | null | undefined): boolean {
+  return status === 'awaiting_approval' || isRunEnded(status);
+}
+
 export function useJobProgress(jobId: string | null) {
   const queryClient = useQueryClient();
 
@@ -77,21 +83,42 @@ export function useJobProgress(jobId: string | null) {
       applyToLists(queryClient, jobId, msg);
       if (heldEnded) return;
 
-      // Refresh on key status changes
-      if (msg.type === 'job_status_change') {
-        if (msg.new_status === 'awaiting_approval') {
-          // Videos were just saved — refetch them for the approval list
-          queryClient.invalidateQueries({ queryKey: ['jobVideos', jobId] });
-        }
-        if (isRunEnded(msg.new_status)) {
-          queryClient.invalidateQueries({ queryKey: ['jobs'] });
-          queryClient.invalidateQueries({ queryKey: ['job', jobId] });
-          queryClient.invalidateQueries({ queryKey: ['jobVideos', jobId] });
-        }
+      // An event that ends the run refetches it and the lists, for what its
+      // end changes beside the status (its report, its finish time).
+      if (msg.type === 'job_status_change' && isRunEnded(msg.new_status)) {
+        queryClient.invalidateQueries({ queryKey: ['jobs'] });
+        queryClient.invalidateQueries({ queryKey: ['job', jobId] });
       }
     });
 
     return unsubscribe;
+  }, [jobId, queryClient]);
+
+  useEffect(() => {
+    if (!jobId) return;
+
+    // The videos follow the run's cached status, whatever moved it: an event,
+    // a poll, or this tab's cancel answer. Driven by events, they missed every
+    // end a poll read first, whose event the guard above then drops, and every
+    // event the socket lost. The first status the cache receives is no move:
+    // the page fetches its videos as it opens.
+    let held = queryClient.getQueryData<Job>(['job', jobId])?.status;
+    return queryClient.getQueryCache().subscribe((event) => {
+      const [scope, id] = event.query.queryKey;
+      if (scope !== 'job' || id !== jobId) return;
+      if (event.type === 'removed') {
+        held = undefined;
+        return;
+      }
+      if (event.type !== 'updated') return;
+      const status = (event.query.state.data as Job | undefined)?.status;
+      if (status === held) return;
+      const moved = held != null;
+      held = status;
+      if (moved && videosSettleAt(status)) {
+        queryClient.invalidateQueries({ queryKey: ['jobVideos', jobId] });
+      }
+    });
   }, [jobId, queryClient]);
 }
 

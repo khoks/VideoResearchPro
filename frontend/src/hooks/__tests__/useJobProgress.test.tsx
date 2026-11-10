@@ -13,6 +13,11 @@
  * key no list has. The bell's notifications ride the same socket and are left
  * to their own listener.
  *
+ * The run's videos follow its cached status, not its events: they are fetched
+ * again when the status moves to `awaiting_approval` or to an end, whatever
+ * moved it. With the guard, a poll that reads `completed` a moment before its
+ * event left the event dropped and the videos as they were before the end.
+ *
  * The real `wsClient` runs over a fake WebSocket, so events are routed by job
  * id exactly as in the app; `jobsApi` is faked.
  *
@@ -23,6 +28,12 @@
  * `['jobs', undefined]` fails the three cases that read a list (the row stays as
  * it was); and reading the ended state after the event is applied, rather than
  * before, fails the cancel case (the event that ends the run refetches nothing).
+ * For the videos, run by hand on 2026-11-09: taking the status watch out fails
+ * the poll, event, lost-approval and own-cancel cases (the videos are never
+ * fetched again); keeping the event's own videos refetch beside it fails the
+ * event case (fetched twice); and counting the first status the cache receives
+ * as a move fails the opening case (a page opened on an ended run fetches its
+ * videos twice).
  */
 import { act, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -71,12 +82,13 @@ vi.stubGlobal('WebSocket', FakeWebSocket);
 
 const get = vi.fn<(id: string) => Promise<Job>>();
 const list = vi.fn<() => Promise<Job[]>>();
+const getVideos = vi.fn<(id: string) => Promise<unknown[]>>();
 vi.mock('../../services/jobsApi', () => ({
-  jobsApi: { get: (id: string) => get(id), list: () => list(), getVideos: () => Promise.resolve([]) },
+  jobsApi: { get: (id: string) => get(id), list: () => list(), getVideos: (id: string) => getVideos(id) },
 }));
 
 import { wsClient } from '../../services/wsClient';
-import { useJob, useJobs } from '../useJobs';
+import { useJob, useJobs, useJobVideos } from '../useJobs';
 import { useAllJobsProgress, useJobProgress } from '../useJobProgress';
 
 const CANCELLED_WORDS = 'Job cancelled by user';
@@ -98,6 +110,12 @@ function RunPage() {
   const { data } = useJob('j1');
   useJobProgress('j1');
   return <span data-status={data?.status ?? ''} data-message={data?.progress_message ?? ''} />;
+}
+
+/** The run's page as `JobDetailPage` reads it: the run, its videos, its events. */
+function RunWithVideos() {
+  useJobVideos('j1');
+  return <RunPage />;
 }
 
 function JobsPage({ ids }: { ids: string[] }) {
@@ -150,6 +168,7 @@ beforeEach(() => {
   qc = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 5000 } } });
   get.mockReset();
   list.mockReset().mockImplementation(pending);
+  getVideos.mockReset().mockResolvedValue([]);
   FakeWebSocket.instances = [];
 });
 
@@ -252,6 +271,81 @@ describe('useJobProgress: a refetch still wins', () => {
 
     await send(progress('j1', 'building_rag', 'Indexed 40 new chunks'));
     expect(shown()).toEqual({ status: 'building_rag', message: 'Indexed 40 new chunks' });
+  });
+});
+
+describe("useJobProgress: the run's videos follow its status", () => {
+  it('refetches them when a poll reads the end before its event, and the event adds nothing', async () => {
+    get.mockResolvedValueOnce(run('j1', 'generating_report')).mockResolvedValue(run('j1', 'completed', 'Done'));
+    await render(<RunWithVideos />);
+    expect(getVideos).toHaveBeenCalledTimes(1);
+
+    // The 5-second poll lands between the worker's commit and its publish.
+    await act(() => qc.refetchQueries({ queryKey: ['job', 'j1'] }));
+    await flush();
+    expect(shown().status).toBe('completed');
+    expect(getVideos).toHaveBeenCalledTimes(2);
+
+    await send(statusChange('j1', 'generating_report', 'completed', 'Done'));
+    expect(getVideos).toHaveBeenCalledTimes(2);
+  });
+
+  it('refetches them once when the event ends the run', async () => {
+    get.mockResolvedValueOnce(run('j1', 'generating_report')).mockImplementation(pending);
+    await render(<RunWithVideos />);
+
+    await send(statusChange('j1', 'generating_report', 'completed', 'Job completed successfully!'));
+
+    expect(shown().status).toBe('completed');
+    expect(getVideos).toHaveBeenCalledTimes(2);
+  });
+
+  it('refetches them when a poll reads awaiting_approval and its event never comes', async () => {
+    get
+      .mockResolvedValueOnce(run('j1', 'searching'))
+      .mockResolvedValue(run('j1', 'awaiting_approval', 'Found 5 candidates.'));
+    await render(<RunWithVideos />);
+    expect(getVideos).toHaveBeenCalledTimes(1);
+
+    await act(() => qc.refetchQueries({ queryKey: ['job', 'j1'] }));
+    await flush();
+
+    expect(shown().status).toBe('awaiting_approval');
+    expect(getVideos).toHaveBeenCalledTimes(2);
+  });
+
+  it("refetches them on this tab's own cancel answer, and not again on its event", async () => {
+    get.mockResolvedValueOnce(run('j1', 'extracting')).mockImplementation(pending);
+    await render(<RunWithVideos />);
+
+    // What `useCancelJob`'s onSuccess stores: the server's answer.
+    act(() => {
+      qc.setQueryData(['job', 'j1'], run('j1', 'cancelled', CANCELLED_WORDS));
+    });
+    await flush();
+    expect(getVideos).toHaveBeenCalledTimes(2);
+
+    await send(statusChange('j1', 'extracting', 'cancelled', CANCELLED_WORDS));
+    expect(shown()).toEqual({ status: 'cancelled', message: CANCELLED_WORDS });
+    expect(getVideos).toHaveBeenCalledTimes(2);
+  });
+
+  it('fetches them once for a page opened on an ended run, its videos answered first', async () => {
+    let answer: (job: Job) => void = () => {};
+    get.mockReturnValueOnce(new Promise<Job>((resolve) => (answer = resolve)));
+    get.mockResolvedValue(run('j1', 'completed', 'Done'));
+    await render(<RunWithVideos />);
+    expect(getVideos).toHaveBeenCalledTimes(1);
+
+    // The run's first answer lands after the videos': the first status the
+    // cache receives, not a move.
+    act(() => answer(run('j1', 'completed', 'Done')));
+    await flush();
+    await act(() => qc.refetchQueries({ queryKey: ['job', 'j1'] }));
+    await flush();
+
+    expect(shown().status).toBe('completed');
+    expect(getVideos).toHaveBeenCalledTimes(1);
   });
 });
 

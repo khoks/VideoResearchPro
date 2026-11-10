@@ -19,8 +19,13 @@
  * `{ inlineErrors: true }` on the studio's estimate fails the deck's rows;
  * `queryErrorsMeta(true)` on the palette fails "with actions still listed", and
  * the status's old failure clause fails both palette groups; `ERRORS_SHOWN_HERE`
- * in place of `LOAD_ERRORS_SHOWN_HERE` on the report peek fails its refresh row.
- * Dropping each option fails that reader's rows where its line shows.
+ * in place of `LOAD_ERRORS_SHOWN_HERE` on the report peek fails its refresh row,
+ * as it does on the library map and, as `{ inlineErrors: true }`, on the Echo
+ * page's readiness. Dropping each option fails that reader's rows where its line
+ * shows.
+ *
+ * The guard lists every file with such a reader (`CONDITIONAL_READERS`) and the
+ * test that checks it, this file for most.
  */
 import { act, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -103,12 +108,34 @@ vi.mock('../../components/notes', () => ({ NotesPanel: () => null }));
 vi.mock('../../components/qa/SuggestionCard', () => ({ SuggestionCard: () => null }));
 vi.mock('../../components/frames/VideoFramesPanel', () => ({ VideoFramesPanel: () => null }));
 
+const echo = { status: vi.fn<() => Promise<unknown>>() };
+vi.mock('../../services/echoApi', () => ({
+  echoApi: {
+    status: () => echo.status(),
+    listConnectors: async () => ({ connectors: [], supported_kinds: [], items: [] }),
+    listFactTombstones: async () => ({ items: [] }),
+    listContext: async () => [],
+  },
+}));
+vi.mock('../../components/echo/EchoDataCard', () => ({ EchoDataCard: () => null }));
+vi.mock('../../components/echo/ShareTokensCard', () => ({ ShareTokensCard: () => null }));
+vi.mock('../../components/echo/SignalsPanel', () => ({ SignalsPanel: () => null }));
+vi.mock('../../components/echo/SpeakAsMePanel', () => ({ SpeakAsMePanel: () => null }));
+vi.mock('../../components/echo/ActivityTimeline', () => ({ ActivityTimeline: () => null }));
+vi.mock('../../components/echo/ConnectorsPanel', () => ({ ConnectorsPanel: () => null }));
+vi.mock('../../components/echo/ReadinessDomains', () => ({ ReadinessDomains: () => null }));
+// WebGL, which jsdom lacks; the table view stands in for it.
+vi.mock('../../components/graph/GraphCanvas', () => ({ GraphCanvas: () => null }));
+
 import { TwoStepCard } from '../../components/security/TwoStepCard';
 import { VideoKnowledgeDrawer } from '../VideoKnowledgePage';
 import { AIModelsPage } from '../AIModelsPage';
 import { AuthorPage } from '../AuthorPage';
 import PalettePanel from '../../components/palette/PalettePanel';
 import { ReportPeekModal } from '../../components/jobs/ReportPeekModal';
+import { EchoPage } from '../EchoPage';
+import { GraphExplorer } from '../../components/graph/GraphExplorer';
+import { DEFAULT_EXPLORER_STATE } from '../../components/graph/GraphControls';
 
 // ---------------------------------------------------------------------------
 // Harness
@@ -191,6 +218,7 @@ beforeEach(() => {
   root = createRoot(host);
   routes.clear();
   author.estimate.mockReset();
+  echo.status.mockReset();
   for (const name of Object.keys(features)) delete features[name];
   clearToasts();
 });
@@ -462,5 +490,74 @@ describe('the report peek', () => {
     await refresh(client, ['reportDocument', 'job-1']);
     expectToastAlone('noWords', FALLBACK);
     expect(host.querySelector('iframe')).not.toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The Echo page's readiness: its line shows only in place of a first read ('load')
+// ---------------------------------------------------------------------------
+
+describe("the Echo page's readiness", () => {
+  const FALLBACK = "Couldn't read Echo's status.";
+  const STATUS = {
+    ready: false,
+    total_rows: 40,
+    distinct_sources: 1,
+    has_personality_trait: false,
+    threshold_total: 100,
+    threshold_sources: 3,
+  };
+
+  it.each(FAILURE_KINDS)('says a failed first read once, in place of readiness (%s)', async (kind) => {
+    echo.status.mockImplementation(() => Promise.reject(failures[kind]()));
+    await mount(<EchoPage />, '/echo');
+    await settle();
+    expectSaidOnce(kind, FALLBACK);
+  });
+
+  it('keeps the toast for a refresh that fails behind readiness on screen', async () => {
+    echo.status.mockResolvedValue(STATUS);
+    const client = createQueryClient();
+    await mount(<EchoPage />, '/echo', client);
+    await settle();
+    expect(text()).toContain("You're on the way.");
+    echo.status.mockImplementation(() => Promise.reject(failures.noWords()));
+    await refresh(client, ['echo', 'status']);
+    expectToastAlone('noWords', FALLBACK);
+    expect(text()).toContain("You're on the way.");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The library map: its line shows only in place of a first load ('load')
+// ---------------------------------------------------------------------------
+
+describe('the library map', () => {
+  const FALLBACK = 'Try again in a moment.';
+  // The table view: jsdom has no width to pick a view by.
+  const STATE = { ...DEFAULT_EXPLORER_STATE, view: 'table' as const };
+  const counts = { documents: 0, channels: 0, topics: 0, exchanges: 0 };
+  const EMPTY = { nodes: [], edges: [], truncated: false, total: counts, shown: counts, summary: 'An empty library, mapped.', focus: null };
+  const map = <GraphExplorer state={STATE} onChange={() => undefined} />;
+
+  it.each(FAILURE_KINDS)('says a failed first load once, in place of the map (%s)', async (kind) => {
+    routes.set('GET /library/graph', fail(kind));
+    await mount(map);
+    await settle();
+    expectSaidOnce(kind, FALLBACK);
+    if (kind !== 'sessionEnded') expect(count(text(), 'The map did not load')).toBe(1);
+  });
+
+  it('keeps the toast for a refresh that fails behind the map on screen', async () => {
+    routes.set('GET /library/graph', ok(EMPTY));
+    const client = createQueryClient();
+    await mount(map, '/', client);
+    await settle();
+    expect(text()).toContain('An empty library, mapped.');
+    routes.set('GET /library/graph', fail('noWords'));
+    await refresh(client, ['libraryGraph']);
+    expectToastAlone('noWords', FALLBACK);
+    expect(text()).toContain('An empty library, mapped.');
+    expect(text()).not.toContain('The map did not load');
   });
 });

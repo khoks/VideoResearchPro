@@ -830,8 +830,13 @@ describe('the third guard', () => {
 //   is no line, and neither is a call that keeps no result (`useX().data`).
 // A hook whose readers differ takes `inlineErrors` (`queryErrorsMeta`); a
 // caller stands aside when it passes that option as anything but `false`. A
-// condition there (`tab === 'videos'`) is the caller's to get right: the page
-// tests check it, not this guard.
+// reader that stands aside only at times, by a condition (`tab === 'videos'`)
+// or only in place of a first load (`'load'`, `LOAD_ERRORS_SHOWN_HERE`), is
+// one this guard cannot judge: whether its line shows exactly when it stands
+// aside is for a page test to check, both ways round. So every file with such
+// a reader is listed in `CONDITIONAL_READERS` with the test that does, and the
+// guard fails on a file missing from the list (a new condition nothing checks)
+// or listed with none.
 //
 // Mutation checks, run on 2026-11-10: taking `meta` off `useNotesList`,
 // `useSavedSearches`, `useDraftStatus` or the system page's polls, or
@@ -840,11 +845,26 @@ describe('the third guard', () => {
 // caller of `useShelves`, `useOnboarding` or `useEchoStatus` fails it too,
 // naming the sidebar, the gate or the Echo panel, where nothing says the
 // failure; dropping the prop reading fails "reads the query a section is
-// handed" and names the system page.
+// handed" and names the system page; taking the library page or the report
+// peek out of `CONDITIONAL_READERS` fails "names the page test", as do a
+// listed test that does not exist, `LOAD_ERRORS_SHOWN_HERE` read as standing
+// aside always, and `inlineErrors: true` counted as a condition.
 
 interface QueryHookMeta {
   when: 'always' | 'option' | 'never';
   option?: string;
+  /** Set when the hook stands aside only while its query has no data
+   * (`LOAD_ERRORS_SHOWN_HERE`). */
+  load?: true;
+}
+
+/** Whether a `meta` written as `text` stands aside only at times: in place of
+ * a first load, or by a condition worked out where it is written. */
+function metaAtTimes(text: string): boolean {
+  const t = text.trim();
+  if (t === 'LOAD_ERRORS_SHOWN_HERE') return true;
+  const arg = /^queryErrorsMeta\(([\s\S]*)\)$/.exec(t)?.[1].trim();
+  return arg !== undefined && arg !== 'true';
 }
 
 /** `src` with its comments blanked out, newlines kept, so a hook named in a
@@ -905,11 +925,13 @@ function findQueryCall(src: string, from = 0): { at: number; end: number; option
 /** How a `useQuery` options object sets `meta`: from a name passed to
  * `queryErrorsMeta` (in a hook, its option; in a component, what it works out),
  * always, or never. */
-function queryMetaOf(options: string): { when: 'always' | 'option' | 'never'; option?: string } {
+function queryMetaOf(options: string): QueryHookMeta & { text?: string } {
   const meta = /\bmeta\s*:\s*([^,\n}]+)/.exec(options);
   if (!meta) return { when: 'never' };
-  const option = /^queryErrorsMeta\(\s*([A-Za-z_$][\w$]*)\s*\)$/.exec(meta[1].trim());
-  return option ? { when: 'option', option: option[1] } : { when: 'always' };
+  const text = meta[1].trim();
+  const option = /^queryErrorsMeta\(\s*([A-Za-z_$][\w$]*)\s*\)$/.exec(text);
+  if (option) return { when: 'option', option: option[1], text };
+  return text === 'LOAD_ERRORS_SHOWN_HERE' ? { when: 'always', load: true, text } : { when: 'always', text };
 }
 
 /** Every exported hook that wraps a `useQuery`, and how it sets `meta`. */
@@ -920,7 +942,11 @@ function queryHooks(sources: Record<string, string>): Map<string, QueryHookMeta>
     starts.forEach((m, k) => {
       const body = src.slice(m.index!, starts[k + 1]?.index ?? src.length);
       const call = findQueryCall(body);
-      if (call) hooks.set(m[1], queryMetaOf(call.options));
+      if (call) {
+        const meta = queryMetaOf(call.options);
+        delete meta.text;
+        hooks.set(m[1], meta);
+      }
     });
   }
   return hooks;
@@ -1027,6 +1053,9 @@ interface QueryReader {
   standsAside: boolean;
   /** Whether this reader builds a line from the query's failure. */
   showsLine: boolean;
+  /** Whether it stands aside only at times: by a condition, or only in place
+   * of a first load. */
+  atTimes: boolean;
 }
 
 /** Every reader of a query in `code` (comments already blanked): each call of
@@ -1063,17 +1092,25 @@ function queryReaders(code: string, hooks: Map<string, QueryHookMeta>, props: Ma
       const end = closing(code, open);
       const args = code.slice(open + 1, end - 1);
       const optionOn = !!meta.option && new RegExp(String.raw`\b${meta.option}\s*:\s*(?!false\b)\S`).test(args);
+      const optionValue = meta.option ? new RegExp(String.raw`\b${meta.option}\s*:\s*([^,}]+)`).exec(args)?.[1].trim() : undefined;
       readers.push({
         index: m.index!,
         standsAside: meta.when === 'always' || (meta.when === 'option' && optionOn),
         showsLine: showsLine(holder(m.index!, end), m.index!),
+        atTimes: (meta.when === 'always' && !!meta.load) || (meta.when === 'option' && optionOn && optionValue !== 'true'),
       });
     }
   }
   for (let call = findQueryCall(code); call; call = findQueryCall(code, call.at + 1)) {
     const held = holder(call.at, call.end);
     if (!held) continue; // a hook's own `return useQuery(…)`
-    readers.push({ index: call.at, standsAside: queryMetaOf(call.options).when !== 'never', showsLine: showsLine(held, call.at) });
+    const meta = queryMetaOf(call.options);
+    readers.push({
+      index: call.at,
+      standsAside: meta.when !== 'never',
+      showsLine: showsLine(held, call.at),
+      atTimes: meta.text !== undefined && metaAtTimes(meta.text),
+    });
   }
   return readers;
 }
@@ -1093,13 +1130,39 @@ function queryLineProblems(src: string, hooks: Map<string, QueryHookMeta>, props
  * yet changed. The guard fails when one of these is fixed. */
 const QUERY_NOT_YET: Record<string, string> = {};
 
-/** Stand-ins for query hooks: one with no `meta`, one that always sets it, and
- * one that takes `inlineErrors`. */
+/** Every file with a reader that stands aside only at times, and the test that
+ * checks it both ways round: the line shows and the toast stands aside when the
+ * condition holds (or before data), the toast speaks and no line does when it
+ * does not (or behind data on screen). */
+const CONDITIONAL_READERS: Record<string, string> = {
+  'src/components/echo/EchoDataCard.tsx': 'src/pages/__tests__/loadFailuresOneMessage.test.tsx',
+  'src/components/graph/GraphExplorer.tsx': 'src/pages/__tests__/loadFailuresConditions.test.tsx',
+  'src/components/jobs/ReportPeekModal.tsx': 'src/pages/__tests__/loadFailuresConditions.test.tsx',
+  'src/components/palette/PalettePanel.tsx': 'src/pages/__tests__/loadFailuresConditions.test.tsx',
+  'src/components/security/TwoStepCard.tsx': 'src/pages/__tests__/loadFailuresConditions.test.tsx',
+  'src/pages/AIModelsPage.tsx': 'src/pages/__tests__/loadFailuresConditions.test.tsx',
+  'src/pages/AuthorPage.tsx': 'src/pages/__tests__/loadFailuresConditions.test.tsx',
+  'src/pages/EchoPage.tsx': 'src/pages/__tests__/loadFailuresConditions.test.tsx',
+  'src/pages/JobDetailPage.tsx': 'src/pages/__tests__/jobDetailLoadFailure.test.tsx',
+  'src/pages/LibraryPage.tsx': 'src/pages/__tests__/loadFailuresOneMessage.test.tsx',
+  'src/pages/VideoKnowledgePage.tsx': 'src/pages/__tests__/loadFailuresConditions.test.tsx',
+};
+
+/** Stand-ins for query hooks: one with no `meta`, one that always sets it, one
+ * that sets it only in place of a first load, and one that takes
+ * `inlineErrors`. */
 const QUERY_HOOKS = new Map<string, QueryHookMeta>([
   ['useLoaded', { when: 'never' }],
   ['useShown', { when: 'always' }],
+  ['useFirstLoad', { when: 'always', load: true }],
   ['useMaybe', { when: 'option', option: 'inlineErrors' }],
 ]);
+
+/** The lines of the readers in `src` that stand aside only at times. */
+function atTimesReaders(src: string, hooks: Map<string, QueryHookMeta>): number[] {
+  const code = withoutComments(src);
+  return queryReaders(code, hooks, new Map()).filter((r) => r.atTimes).map((r) => lineOf(code, r.index));
+}
 
 describe('the fourth guard: a query’s failure line stands alone', () => {
   const sources = import.meta.glob(['../../**/*.{ts,tsx}', '!**/__tests__/**', '!**/*.test.{ts,tsx}'], {
@@ -1111,7 +1174,10 @@ describe('the fourth guard: a query’s failure line stands alone', () => {
   const props = queryFailureProps(sources);
 
   it('knows how each query hook sets `meta`', () => {
-    for (const name of ['useNotesList', 'useSavedSearches', 'useSavedSearchRuns', 'useDraftStatus', 'useVoiceSignals', 'useVoiceTest', 'useShares', 'useEchoFootprint', 'useLibraryGraph', 'useReportBody', 'useReportDocument', 'useLLMSettings', 'useShelf', 'useQAHistoryChatHistory', 'useUsageSummary', 'useSessions', 'useAccountActivity', 'useChannelIntelligence', 'useKnowledgeSources', 'useAuthorOutputs', 'useAuthorOutput', 'useAuthorOutputContent', 'useAuthorOutputCitations']) {
+    for (const name of ['useEchoFootprint', 'useLibraryGraph', 'useReportDocument']) {
+      expect(hooks.get(name), name).toEqual({ when: 'always', load: true });
+    }
+    for (const name of ['useNotesList', 'useSavedSearches', 'useSavedSearchRuns', 'useDraftStatus', 'useVoiceSignals', 'useVoiceTest', 'useShares', 'useReportBody', 'useLLMSettings', 'useShelf', 'useQAHistoryChatHistory', 'useUsageSummary', 'useSessions', 'useAccountActivity', 'useChannelIntelligence', 'useKnowledgeSources', 'useAuthorOutputs', 'useAuthorOutput', 'useAuthorOutputContent', 'useAuthorOutputCitations']) {
       expect(hooks.get(name), name).toEqual({ when: 'always' });
     }
     for (const name of ['useEchoStatus', 'useEchoContext', 'useEchoConnectors', 'useShelves', 'useJobs', 'useJob', 'useJobTemplates', 'useOnboarding', 'useChannel', 'useChannels', 'useLibraryVideos', 'useKnowledge', 'useMfaStatus', 'useAuthorKinds', 'useOutputEstimate', 'useLLMEstimate']) {
@@ -1134,6 +1200,43 @@ describe('the fourth guard: a query’s failure line stands alone', () => {
       .map(([file, p]) => [file, `${p.repeats.length ? `repeats:${p.repeats.join(',')} ` : ''}${p.nowhere.length ? `nowhere:${p.nowhere.join(',')}` : ''}`.trim()] as const);
     expect(offenders.filter(([file]) => !(file in QUERY_NOT_YET))).toEqual([]);
     expect(offenders.map(([file]) => file).sort()).toEqual(Object.keys(QUERY_NOT_YET).sort());
+  });
+
+  it('names the page test that checks each reader standing aside only at times', () => {
+    const tests = new Set(
+      Object.keys(import.meta.glob('../../**/__tests__/*.test.{ts,tsx}')).map((file) => file.replace('../../', 'src/')),
+    );
+    const files = Object.entries(sources)
+      .filter(([, src]) => atTimesReaders(src, hooks).length > 0)
+      .map(([file]) => file.replace('../../', 'src/'))
+      .sort();
+    expect(files).toEqual(Object.keys(CONDITIONAL_READERS).sort());
+    for (const [file, test] of Object.entries(CONDITIONAL_READERS)) expect(tests.has(test), `${file}: ${test}`).toBe(true);
+  });
+
+  it.each([
+    ["const q = useMaybe({ inlineErrors: tab === 'a' });"],
+    ["const q = useMaybe({ inlineErrors: 'load' });"],
+    ["const q = useMaybe(id, { inlineErrors: open && !busy ? 'load' : false });"],
+    ['const q = useFirstLoad();'],
+    ['const q = useQuery({ queryKey: k, queryFn: f, meta: LOAD_ERRORS_SHOWN_HERE });'],
+    ['const q = useQuery({ queryKey: k, queryFn: f, meta: queryErrorsMeta(rows.length === 0) });'],
+    ['const q = useQuery({ queryKey: k, queryFn: f, meta: queryErrorsMeta(open) });'],
+  ])('knows a reader that stands aside only at times: %s', (src) => {
+    expect(atTimesReaders(src, QUERY_HOOKS)).toEqual([1]);
+  });
+
+  it.each([
+    ['const q = useMaybe({ inlineErrors: true });'],
+    ['const q = useMaybe({ inlineErrors: false });'],
+    ['const q = useMaybe();'],
+    ['const q = useShown();'],
+    ['const q = useLoaded();'],
+    ['const q = useQuery({ queryKey: k, queryFn: f, meta: ERRORS_SHOWN_HERE });'],
+    ['const q = useQuery({ queryKey: k, queryFn: f, meta: queryErrorsMeta(true) });'],
+    ['const q = useQuery({ queryKey: k, queryFn: f });'],
+  ])('knows a reader that stands aside always or never: %s', (src) => {
+    expect(atTimesReaders(src, QUERY_HOOKS)).toEqual([]);
   });
 
   it.each([

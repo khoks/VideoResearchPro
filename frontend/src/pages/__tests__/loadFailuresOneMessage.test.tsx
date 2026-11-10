@@ -28,7 +28,9 @@
  * enabled reader"; treating `'load'` as `true` fails the data card's failed
  * refresh and "stands aside only while there is no data"; and
  * `inlineErrors: true` in place of `tab === 'channels'` on the library fails
- * "the sources tab leaves a failed channels read to the toast".
+ * "the sources tab leaves a failed channels read to the toast", and in place of
+ * `tab === 'videos'` fails "the channels tab leaves a failed sources read to the
+ * toast".
  */
 import { act, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -122,6 +124,7 @@ const api = {
   shelves: vi.fn<() => Promise<Shelf[]>>(),
   channels: vi.fn<() => Promise<Channel[]>>(),
   suggestions: vi.fn<() => Promise<unknown>>(),
+  videos: vi.fn<() => Promise<unknown[]>>(),
 };
 
 vi.mock('../../services/notesApi', async (orig) => ({
@@ -148,7 +151,7 @@ vi.mock('../../services/shelvesApi', async (orig) => ({
 vi.mock('../../services/channelsApi', () => ({ channelsApi: { list: () => api.channels() } }));
 vi.mock('../../services/libraryApi', async (orig) => ({
   ...(await orig<typeof import('../../services/libraryApi')>()),
-  libraryApi: { listVideos: async () => [] },
+  libraryApi: { listVideos: () => api.videos() },
 }));
 vi.mock('../../services/suggestionsApi', () => ({ suggestionsApi: { get: () => api.suggestions() } }));
 vi.mock('../../components/library/PdfUploadZone', () => ({ PdfUploadZone: () => null }));
@@ -244,6 +247,7 @@ beforeEach(() => {
   api.shelves.mockResolvedValue([SHELF]);
   api.channels.mockResolvedValue([CHANNEL]);
   api.suggestions.mockResolvedValue({ suggestions: [] });
+  api.videos.mockResolvedValue([]);
   clearToasts();
 });
 
@@ -303,6 +307,13 @@ const PAGES: Array<{
     title: "Couldn't load channels.",
     fallback: 'Something blocked the channels fetch.',
   },
+  {
+    name: "the library's sources tab",
+    fail: (e) => api.videos.mockRejectedValue(e),
+    open: () => mount(<LibraryPage />, '/library?tab=videos'),
+    title: "Couldn't load your sources.",
+    fallback: 'Something blocked the library fetch.',
+  },
 ];
 
 describe.each(PAGES)('$name', (page) => {
@@ -357,6 +368,14 @@ describe('a failure said nowhere else keeps its toast', () => {
     await settle();
     expect(toastMessages()).toEqual(['Request failed with status code 500']);
     expect(text()).not.toContain("Couldn't load channels.");
+  });
+
+  it('the channels tab leaves a failed sources read to the toast, since only the sources tab says it', async () => {
+    api.videos.mockRejectedValue(failures.noWords());
+    await mount(<LibraryPage />, '/library?tab=channels');
+    await settle();
+    expect(toastMessages()).toEqual(['Request failed with status code 500']);
+    expect(text()).not.toContain("Couldn't load your sources.");
   });
 });
 

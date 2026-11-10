@@ -1,7 +1,7 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { jobsApi } from '../services/jobsApi';
 import { ERRORS_SHOWN_HERE, queryErrorsMeta, type QueryLineOptions } from '../services/queryClient';
-import type { JobCreate, JobProvenance, VideoApproval } from '../types/job';
+import type { Job, JobCreate, JobProvenance, VideoApproval } from '../types/job';
 
 /** In flight, these hold the first-run wizard's Back, steps and Skip, which would
  * otherwise close the line that says their failure (T-3.4.1.22). */
@@ -57,13 +57,26 @@ export function useCreateJob({ inlineErrors = false }: { inlineErrors?: boolean 
   });
 }
 
+/**
+ * Store the server's answer for a run this tab just changed. A fetch of the run
+ * already in flight read the row before the change, and would land after the
+ * answer and show the run as it was until the next poll (T-5.2.33): it is
+ * cancelled first. When the socket's event comes first, its own refetch has
+ * already cancelled it; when the answer comes first, the event finds the run
+ * ended and is dropped, so only this cancels it.
+ */
+function storeAnswer(queryClient: QueryClient, id: string, updatedJob: Job) {
+  void queryClient.cancelQueries({ queryKey: ['job', id] });
+  queryClient.setQueryData(['job', id], updatedJob);
+}
+
 export function useApproveJob() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationKey: approveJobKey,
     mutationFn: ({ id, data }: { id: string; data: VideoApproval }) => jobsApi.approve(id, data),
     onSuccess: (updatedJob, { id }) => {
-      queryClient.setQueryData(['job', id], updatedJob);
+      storeAnswer(queryClient, id, updatedJob);
       queryClient.invalidateQueries({ queryKey: ['jobs'] });
     },
     // Both callers say a failure where the approval was pressed: the run's
@@ -83,7 +96,7 @@ export function useCancelJob() {
   return useMutation({
     mutationFn: (id: string) => jobsApi.cancel(id),
     onSuccess: (updatedJob, id) => {
-      queryClient.setQueryData(['job', id], updatedJob);
+      storeAnswer(queryClient, id, updatedJob);
       queryClient.invalidateQueries({ queryKey: ['jobs'] });
     },
     onError: (_error, id) => {

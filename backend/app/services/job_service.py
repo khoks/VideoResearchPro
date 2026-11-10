@@ -1,4 +1,5 @@
 import json
+from typing import NamedTuple
 
 from sqlalchemy.orm import Session
 
@@ -138,6 +139,14 @@ def get_jobs(
     return query.order_by(Job.created_at.desc()).offset(offset).limit(limit).all()
 
 
+class StatusWrite(NamedTuple):
+    """What ``write_job_status`` did: the row as it stands after the write
+    (``None`` when there is no such job), and whether this call's write took."""
+
+    job: Job | None
+    written: bool
+
+
 def update_job_status(db: Session, job_id: str, status: str, progress_pct: int | None = None,
                       progress_message: str | None = None, error_message: str | None = None,
                       *, only_from: str | None = None, unless_ended: bool = False) -> Job | None:
@@ -150,11 +159,30 @@ def update_job_status(db: Session, job_id: str, status: str, progress_pct: int |
     conditional on the row not having ended (``ENDED_STATUSES``), the same
     way (T-5.2.22): a cancel never writes over a run that completed or failed
     after the route read it. The row is returned as it is either way, so the
-    caller reads its status to learn whether the write took.
+    caller reads its status to learn where the row stands. A caller that must
+    know whether its own write took, as against another writer's, calls
+    ``write_job_status``.
+    """
+    return write_job_status(
+        db, job_id, status, progress_pct, progress_message, error_message,
+        only_from=only_from, unless_ended=unless_ended,
+    ).job
+
+
+def write_job_status(db: Session, job_id: str, status: str, progress_pct: int | None = None,
+                     progress_message: str | None = None, error_message: str | None = None,
+                     *, only_from: str | None = None, unless_ended: bool = False) -> StatusWrite:
+    """``update_job_status``, telling the caller whether its write took.
+
+    A conditional write reports the row count of its ``UPDATE``, so a status
+    the row already holds tells the two apart: a cancel whose write found the
+    row cancelled by another cancel reads ``cancelled`` and ``written=False``
+    (T-5.2.32). Every write bumps ``updated_at``: the conditional ``UPDATE``
+    runs the column's ``onupdate`` as the ORM's flush does.
     """
     job = get_job(db, job_id)
     if not job:
-        return None
+        return StatusWrite(None, False)
     values: dict = {"status": status}
     if progress_pct is not None:
         values["progress_pct"] = progress_pct
@@ -162,6 +190,7 @@ def update_job_status(db: Session, job_id: str, status: str, progress_pct: int |
         values["progress_message"] = progress_message
     if error_message is not None:
         values["error_message"] = error_message
+    written = True
     if only_from is not None or unless_ended:
         db.flush()
         query = db.query(Job).filter(Job.id == job_id)
@@ -169,13 +198,13 @@ def update_job_status(db: Session, job_id: str, status: str, progress_pct: int |
             query = query.filter(Job.status == only_from)
         if unless_ended:
             query = query.filter(Job.status.notin_(ENDED_STATUSES))
-        query.update(values, synchronize_session=False)
+        written = query.update(values, synchronize_session=False) == 1
     else:
         for key, value in values.items():
             setattr(job, key, value)
     db.commit()
     db.refresh(job)
-    return job
+    return StatusWrite(job, written)
 
 
 def delete_job(db: Session, job_id: str) -> bool:

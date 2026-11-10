@@ -1,6 +1,7 @@
-import { defineConfig } from 'vite'
+import { createLogger, defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { fileURLToPath } from 'node:url'
+import { noteFailedRequestMethod, withoutProxyPaths } from './viteProxyLog'
 
 // Where the dev proxy sends /api and /ws. Override when the backend runs on
 // another port (a worktree's live check beside the main checkout on 8000):
@@ -18,6 +19,11 @@ const htmlDomParserClient = fileURLToPath(
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
+  // The proxy's failed-request line keeps its method and stack and leaves the
+  // path out, which can hold a search's words or a fact's key (T-4.11.4.10).
+  // Vite skips its own logLevel and clearScreen handling for a custom logger,
+  // so a level would go to createLogger here; nothing passes one today.
+  customLogger: withoutProxyPaths(createLogger()),
   resolve: {
     alias: [
       // html-react-parser's entry is CommonJS and requires html-dom-parser,
@@ -35,6 +41,7 @@ export default defineConfig({
       '/api': {
         target: proxyTarget,
         changeOrigin: true,
+        configure: noteFailedRequestMethod,
       },
       '/ws': {
         target: wsTarget,

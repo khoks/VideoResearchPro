@@ -1,6 +1,7 @@
 import type { CSSProperties } from 'react';
 import { useColors } from '../../hooks/useTheme';
 import { useUsageSummary } from '../../hooks/useUsageSummary';
+import { inlineErrorMessage } from '../../utils/apiError';
 import { usageLines, type UsageAmounts } from '../../services/usageApi';
 import { fonts, fontSize, fontWeight, lineHeight, radius, space } from '../../theme';
 
@@ -13,7 +14,9 @@ import { fonts, fontSize, fontWeight, lineHeight, radius, space } from '../../th
  */
 export function UsageSummaryPanel() {
   const c = useColors();
-  const { data, isLoading, isError } = useUsageSummary();
+  const { data, isLoading, isError, error } = useUsageSummary();
+  // Said here alone: the hook sets `meta` (T-3.4.1.26). Nothing for a 401.
+  const loadError = isError ? inlineErrorMessage(error, 'Could not load your usage. Try again later.') : null;
 
   const muted: CSSProperties = {
     margin: 0,
@@ -87,9 +90,11 @@ export function UsageSummaryPanel() {
       {isLoading ? (
         <p style={muted}>Loading usage…</p>
       ) : isError || !data ? (
-        <p role="alert" style={muted}>
-          Could not load your usage. Try again later.
-        </p>
+        loadError && (
+          <p role="alert" style={muted}>
+            {loadError}
+          </p>
+        )
       ) : data.features.length === 0 ? (
         <p data-usage-empty style={muted}>
           Nothing recorded in the last 30 days. Usage appears here after you ask a question, run a job, or

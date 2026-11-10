@@ -38,7 +38,8 @@ export function ChannelPage() {
   const queryClient = useQueryClient();
   const c = useColors();
 
-  const channelQuery = useChannel(channelId ?? null);
+  // A failed load is said on this page alone (T-3.4.1.26).
+  const channelQuery = useChannel(channelId ?? null, { inlineErrors: true });
   const subscribeMut = useSubscribeChannel();
   const unsubscribeMut = useUnsubscribeChannel();
   const syncMut = useSyncChannel();
@@ -66,6 +67,10 @@ export function ChannelPage() {
     channelQuery.isError &&
     isAxiosError(channelQuery.error) &&
     channelQuery.error.response?.status === 404;
+  // The server's words, else the page's sentence, and nothing for a 401.
+  const loadError = channelQuery.isError
+    ? inlineErrorMessage(channelQuery.error, 'Something blocked the fetch. Try again in a moment.')
+    : null;
 
   const watchSync = (resp: SubscribeResponse) => {
     setSyncNote(resp.sync_note);
@@ -127,15 +132,17 @@ export function ChannelPage() {
           }
         />
       ) : channelQuery.isError || !channel ? (
-        <EmptyState
-          title="Couldn't load this channel."
-          description="Something blocked the fetch. Try again in a moment."
-          action={
-            <Button variant="secondary" onClick={() => void channelQuery.refetch()}>
-              Retry
-            </Button>
-          }
-        />
+        loadError && (
+          <EmptyState
+            title="Couldn't load this channel."
+            description={loadError}
+            action={
+              <Button variant="secondary" onClick={() => void channelQuery.refetch()}>
+                Retry
+              </Button>
+            }
+          />
+        )
       ) : (
         <>
           <ChannelHeader

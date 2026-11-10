@@ -3,13 +3,15 @@ import type { AxiosError } from 'axios';
 import { jobsApi } from '../services/jobsApi';
 import type { ReportBody } from '../types/report';
 import { reportDocumentBlob } from '../utils/reportDocument';
+import { ERRORS_SHOWN_HERE, LOAD_ERRORS_SHOWN_HERE } from '../services/queryClient';
 
 /**
  * The report body for the native reader (S-8.8.1). Fetched with the bearer
  * header like every other API call — no `?token=` anywhere.
  *
  * A 404 means "no report for this run" and is final; everything else retries
- * once.
+ * once. Its one caller, the reading room, says a failed read in place of the
+ * report (T-3.4.1.26).
  */
 export function useReportBody(jobId: string | null) {
   return useQuery<ReportBody, AxiosError<{ detail?: string }>>({
@@ -18,6 +20,7 @@ export function useReportBody(jobId: string | null) {
     enabled: !!jobId,
     staleTime: 5 * 60 * 1000,
     retry: (count, err) => err.response?.status !== 404 && count < 1,
+    meta: ERRORS_SHOWN_HERE,
   });
 }
 
@@ -25,7 +28,9 @@ export function useReportBody(jobId: string | null) {
  * The stored HTML report for the quick peek (T-8.8.1.5): fetched with the
  * bearer header, scripts blocked (`utils/reportDocument`), as a Blob the
  * modal frames through a blob: URL. Until then the iframe's `src` carried
- * the JWT as `?token=`.
+ * the JWT as `?token=`. Its one caller, the peek, says a failed read in place
+ * of the frame, and keeps a report already framed when a refresh fails
+ * (T-3.4.1.26).
  */
 export function useReportDocument(jobId: string | null) {
   return useQuery<Blob, AxiosError<{ detail?: string }>>({
@@ -34,5 +39,6 @@ export function useReportDocument(jobId: string | null) {
     enabled: !!jobId,
     staleTime: 5 * 60 * 1000,
     retry: (count, err) => err.response?.status !== 404 && count < 1,
+    meta: LOAD_ERRORS_SHOWN_HERE,
   });
 }

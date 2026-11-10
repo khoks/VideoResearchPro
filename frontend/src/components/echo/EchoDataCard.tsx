@@ -6,6 +6,7 @@ import { Button, Card, Input, Modal, Skeleton } from '../primitives';
 import { useColors } from '../../hooks/useTheme';
 import { fonts, fontSize, fontWeight, lineHeight, space } from '../../theme';
 import { footprintTotal, isFootprintEmpty } from '../../utils/echoShares';
+import { inlineErrorMessage } from '../../utils/apiError';
 
 const TYPE_TO_CONFIRM = 'DELETE';
 
@@ -51,6 +52,9 @@ export function EchoDataCard() {
     });
 
   const fp = footprint.data;
+  // Said in place of the counts, and only there: the hook sets `meta`, and a
+  // failed refresh behind counts still on screen keeps the toast (T-3.4.1.26).
+  const footprintError = footprint.isError ? inlineErrorMessage(footprint.error, "Couldn't read what Echo holds.") : null;
   const empty = fp ? isFootprintEmpty(fp) : false;
   const text: React.CSSProperties = { margin: 0, fontFamily: fonts.body, fontSize: fontSize.sm, color: c.textSecondary, lineHeight: lineHeight.normal };
 
@@ -70,7 +74,11 @@ export function EchoDataCard() {
         ) : fp ? (
           <FootprintLine fp={fp} />
         ) : (
-          <p style={{ ...text, color: c.textMuted }}>Couldn't read what Echo holds.</p>
+          footprintError && (
+            <p role="alert" style={{ ...text, color: c.textMuted }}>
+              {footprintError}
+            </p>
+          )
         )}
       </div>
 

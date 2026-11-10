@@ -3,7 +3,7 @@ import { Badge, Button, Card, Skeleton } from '../primitives';
 import { SESSIONS_KEY, useRefreshSecurity, useSessions } from '../../hooks/useAccountSecurity';
 import { accountSecurityApi, isLiveSession, type SessionInfo } from '../../services/accountSecurityApi';
 import { useColors } from '../../hooks/useTheme';
-import { apiErrorMessage } from '../../utils/apiError';
+import { apiErrorMessage, inlineErrorMessage } from '../../utils/apiError';
 import { describeUserAgent, formatWhen, lastActiveLabel } from '../../utils/accountSecurity';
 import { fonts, fontSize, fontWeight, lineHeight, space } from '../../theme';
 import { SectionTitle } from './SectionTitle';
@@ -20,6 +20,8 @@ export function SessionsCard() {
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
 
+  // Said here alone: the hook sets `meta` (T-3.4.1.26). Nothing for a 401.
+  const loadError = sessions.isError ? inlineErrorMessage(sessions.error, 'Could not load your sessions.') : null;
   const live = (sessions.data ?? []).filter(isLiveSession);
   // This device first, then the most recently used.
   live.sort((a, b) => Number(b.is_current) - Number(a.is_current) || b.last_used_at.localeCompare(a.last_used_at));
@@ -66,9 +68,11 @@ export function SessionsCard() {
       {sessions.isLoading ? (
         <Skeleton variant="row" />
       ) : sessions.isError ? (
-        <p role="alert" style={{ ...muted, color: c.error, margin: 0 }}>
-          Could not load your sessions.
-        </p>
+        loadError && (
+          <p role="alert" style={{ ...muted, color: c.error, margin: 0 }}>
+            {loadError}
+          </p>
+        )
       ) : live.length === 0 ? (
         <p style={{ ...muted, margin: 0 }}>No active sessions.</p>
       ) : (

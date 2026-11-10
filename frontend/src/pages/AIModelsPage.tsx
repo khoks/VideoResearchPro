@@ -17,6 +17,7 @@ import { Badge, Button, Card, EmptyState, Select, Skeleton, Spinner } from '../c
 import { ByokKeysPanel } from '../components/account/ByokKeysPanel';
 import { DepthPreferenceCard } from '../components/account/DepthPreferenceCard';
 import { fonts, fontSize, fontWeight, lineHeight, radius, space } from '../theme';
+import { inlineErrorMessage } from '../utils/apiError';
 
 /**
  * AI models — per-user LLM routing overrides.
@@ -40,7 +41,16 @@ import { fonts, fontSize, fontWeight, lineHeight, radius, space } from '../theme
 export function AIModelsPage() {
   const c = useColors();
   const settings = useLLMSettings();
-  const estimate = useLLMEstimate();
+  // The cost panel shows only beside the settings, so it says a failed
+  // estimate only then; otherwise the toast does (T-3.4.1.26).
+  const panelShown = settings.isSuccess && (settings.data?.use_cases.length ?? 0) > 0;
+  const estimate = useLLMEstimate(true, { inlineErrors: panelShown });
+  const settingsError = settings.isError
+    ? inlineErrorMessage(settings.error, 'We could not reach the settings service. Your saved overrides are untouched — try again in a moment.')
+    : null;
+  const estimateError = estimate.isError
+    ? inlineErrorMessage(estimate.error, 'The estimate service is unreachable right now. Model changes still save — only this preview is affected.')
+    : null;
   const setOverride = useSetLLMOverride();
   const resetOverride = useResetLLMOverride();
 
@@ -137,19 +147,21 @@ export function AIModelsPage() {
         {header}
         {depthCard}
         {keysPanel}
-        <EmptyState
-          title="Model settings unavailable"
-          description={
-            settings.isError
-              ? 'We could not reach the settings service. Your saved overrides are untouched — try again in a moment.'
-              : 'No configurable model use cases were returned. Once the backend registry is reachable, every LLM function will be listed here.'
-          }
-          action={
-            <Button variant="secondary" onClick={() => void settings.refetch()}>
-              Try again
-            </Button>
-          }
-        />
+        {(!settings.isError || settingsError) && (
+          <EmptyState
+            title="Model settings unavailable"
+            description={
+              settings.isError
+                ? settingsError
+                : 'No configurable model use cases were returned. Once the backend registry is reachable, every LLM function will be listed here.'
+            }
+            action={
+              <Button variant="secondary" onClick={() => void settings.refetch()}>
+                Try again
+              </Button>
+            }
+          />
+        )}
       </div>
     );
   }
@@ -209,6 +221,7 @@ export function AIModelsPage() {
             isLoading={estimate.isLoading}
             isFetching={estimate.isFetching}
             isError={estimate.isError}
+            loadError={estimateError}
             onRetry={() => void estimate.refetch()}
           />
         </div>
@@ -721,10 +734,12 @@ interface CostPanelProps {
   isLoading: boolean;
   isFetching: boolean;
   isError: boolean;
+  /** What a failed estimate says: the server's words, else the panel's; null for a 401. */
+  loadError: string | null;
   onRetry: () => void;
 }
 
-function CostPanel({ estimate, isLoading, isFetching, isError, onRetry }: CostPanelProps) {
+function CostPanel({ estimate, isLoading, isFetching, isError, loadError, onRetry }: CostPanelProps) {
   const c = useColors();
 
   const rows = useMemo(() => {
@@ -776,9 +791,10 @@ function CostPanel({ estimate, isLoading, isFetching, isError, onRetry }: CostPa
         </div>
       )}
 
-      {isError && !isLoading && (
+      {loadError && !isLoading && (
         <div style={{ marginTop: space['4'] }}>
           <p
+            role="alert"
             style={{
               margin: `0 0 ${space['3']}`,
               fontFamily: fonts.ui,
@@ -787,8 +803,7 @@ function CostPanel({ estimate, isLoading, isFetching, isError, onRetry }: CostPa
               lineHeight: lineHeight.normal,
             }}
           >
-            The estimate service is unreachable right now. Model changes still save —
-            only this preview is affected.
+            {loadError}
           </p>
           <Button variant="secondary" size="sm" onClick={onRetry}>
             Retry estimate

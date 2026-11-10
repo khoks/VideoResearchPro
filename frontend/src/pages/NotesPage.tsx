@@ -76,6 +76,9 @@ export function NotesPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
 
   const list = useNotesList({ q: q || undefined, include_deleted: showWithdrawn, limit: PAGE_LIMIT });
+  // The one place a failed load is said: the hook sets `meta`, so the toast
+  // stands aside. Nothing for a 401 (T-3.4.1.26).
+  const loadError = list.isError ? inlineErrorMessage(list.error, 'Could not load your notes.') : null;
   const updateNote = useUpdateNote();
   const deleteNote = useDeleteNote();
 
@@ -216,10 +219,10 @@ export function NotesPage() {
         </div>
       )}
 
-      {list.isError && (
+      {loadError && (
         <Card>
           <p role="alert" style={{ margin: 0, fontFamily: fonts.ui, fontSize: fontSize.sm, color: c.error }}>
-            Could not load your notes.{' '}
+            {loadError}{' '}
             <Button size="sm" variant="tertiary" onClick={() => list.refetch()}>
               Retry
             </Button>

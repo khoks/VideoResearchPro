@@ -25,6 +25,7 @@ import type { OutputCitation } from '../../services/authorApi';
 import { followableHref, groupCitations } from './citedSources';
 import { formatDuration } from '../../utils/formatters';
 import { citedFileFailed } from '../citation/citedFile';
+import { inlineErrorMessage } from '../../utils/apiError';
 import { fonts, fontSize, fontWeight, lineHeight, measure, radius, space } from '../../theme';
 
 function placeLabel(c: OutputCitation): string {
@@ -36,11 +37,14 @@ export function OutputSources({
   citations,
   kind,
   isError = false,
+  error,
 }: {
   citations: OutputCitation[] | undefined;
   /** The output's kind: `book`, `deck`, `site` or `newsletter`. */
   kind: string;
   isError?: boolean;
+  /** The failed read, whose words the line says (T-3.4.1.26). */
+  error?: unknown;
 }) {
   const c = useColors();
   const groups = useMemo(() => groupCitations(citations ?? []), [citations]);
@@ -59,10 +63,14 @@ export function OutputSources({
   } as const;
 
   if (isError) {
+    // The one place the failure is said: the hook sets `meta`. Nothing for a 401.
+    const failure = inlineErrorMessage(error, 'The list of sources could not be loaded.');
+    if (!failure) return null;
     return (
       <section className="reader-no-print" aria-label="Sources" style={frame}>
-        <p style={{ margin: 0 }}>
-          The list of sources could not be loaded.{hasEndnotes && ' The endnotes in the text still name them.'}
+        <p role="alert" style={{ margin: 0 }}>
+          {failure}
+          {hasEndnotes && ' The endnotes in the text still name them.'}
         </p>
       </section>
     );

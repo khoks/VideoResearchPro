@@ -20,6 +20,8 @@ export function useSavedSearches() {
     // A queued "Run now" lands in a few seconds; poll gently while any row
     // has never run so its first result appears without a reload.
     refetchInterval: (q) => (q.state.data?.items.some((s) => s.enabled && !s.last_run_at) ? 10_000 : false),
+    // Its one caller says a failed load on the page (T-3.4.1.26).
+    meta: ERRORS_SHOWN_HERE,
   });
 }
 
@@ -66,6 +68,7 @@ export function useSavedSearchRuns(id: string, enabled: boolean) {
     queryFn: () => savedSearchesApi.runs(id),
     enabled,
     staleTime: 15_000,
+    meta: ERRORS_SHOWN_HERE,
   });
 }
 

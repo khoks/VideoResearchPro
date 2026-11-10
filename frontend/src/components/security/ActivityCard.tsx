@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Button, Card, Skeleton } from '../primitives';
 import { useAccountActivity } from '../../hooks/useAccountSecurity';
+import { inlineErrorMessage } from '../../utils/apiError';
 import { useColors } from '../../hooks/useTheme';
 import { describeAuditEvent, describeUserAgent, formatWhen, isWarningEvent } from '../../utils/accountSecurity';
 import { fonts, fontSize, fontWeight, lineHeight, space } from '../../theme';
@@ -16,6 +17,8 @@ export function ActivityCard() {
   const [page, setPage] = useState(0);
   const activity = useAccountActivity(page);
   const items = activity.data?.items ?? [];
+  // Said here alone: the hook sets `meta` (T-3.4.1.26). Nothing for a 401.
+  const loadError = activity.isError ? inlineErrorMessage(activity.error, 'Could not load your account activity.') : null;
   const muted: React.CSSProperties = { fontFamily: fonts.ui, fontSize: fontSize.sm, color: c.textMuted };
 
   return (
@@ -27,9 +30,11 @@ export function ActivityCard() {
       {activity.isLoading ? (
         <Skeleton variant="row" />
       ) : activity.isError ? (
-        <p role="alert" style={{ ...muted, color: c.error, margin: 0 }}>
-          Could not load your account activity.
-        </p>
+        loadError && (
+          <p role="alert" style={{ ...muted, color: c.error, margin: 0 }}>
+            {loadError}
+          </p>
+        )
       ) : items.length === 0 ? (
         <p style={{ ...muted, margin: 0 }}>{page === 0 ? 'Nothing recorded yet.' : 'No older activity.'}</p>
       ) : (

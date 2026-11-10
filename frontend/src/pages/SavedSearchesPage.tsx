@@ -41,6 +41,8 @@ export function SavedSearchesPage() {
   const navigate = useNavigate();
   const { has, isLoading: tierLoading } = useTierCapabilities();
   const list = useSavedSearches();
+  // A failed load is said here alone: the hook sets `meta` (T-3.4.1.26).
+  const loadError = list.isError ? inlineErrorMessage(list.error, 'Something blocked the request.') : null;
   // A notification lands here as ?search=<id>&run=<id> (S-8.3.3).
   const [params] = useSearchParams();
   const focusSearch = params.get('search');
@@ -95,16 +97,18 @@ export function SavedSearchesPage() {
           <Skeleton variant="card" height={140} />
         </div>
       ) : list.isError ? (
-        <EmptyState
-          size="sm"
-          title="Couldn't load your saved searches."
-          description="Something blocked the request."
-          action={
-            <Button variant="secondary" onClick={() => void list.refetch()}>
-              Retry
-            </Button>
-          }
-        />
+        loadError && (
+          <EmptyState
+            size="sm"
+            title="Couldn't load your saved searches."
+            description={loadError}
+            action={
+              <Button variant="secondary" onClick={() => void list.refetch()}>
+                Retry
+              </Button>
+            }
+          />
+        )
       ) : items.length === 0 ? (
         <EmptyState
           title="Nothing pinned yet."
@@ -319,11 +323,13 @@ function RunHistory({ searchId, focusRun }: { searchId: string; focusRun: string
 
   if (runs.isLoading) return <Skeleton variant="card" height={80} style={{ marginTop: space['3'] }} />;
   if (runs.isError) {
-    return (
+    // The one place a failed load is said: the hook sets `meta` (T-3.4.1.26).
+    const failure = inlineErrorMessage(runs.error, "Couldn't load the history.");
+    return failure ? (
       <p role="alert" style={{ ...meta, color: c.error, marginTop: space['3'] }}>
-        Couldn't load the history.
+        {failure}
       </p>
-    );
+    ) : null;
   }
   const items = runs.data ?? [];
   if (items.length === 0) return <p style={{ ...meta, marginTop: space['3'] }}>No runs yet.</p>;

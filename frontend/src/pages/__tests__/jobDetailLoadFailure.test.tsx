@@ -9,6 +9,14 @@
  * aside for that first read (`{ inlineErrors: 'load' }`). A poll that fails
  * behind a run already on screen shows no line, so it keeps its toast.
  *
+ * T-3.4.1.27: that toast comes once per run of failing polls. A poll failing
+ * every five seconds behind the run says so once; a progress message written
+ * into the run over the socket is no fetch and does not start the run again;
+ * a failure after a poll that read the run again is said again.
+ *
+ * Mutation check, run on 2026-11-10: the query client without its streak check
+ * fails "says a run of failing polls once" with a toast per poll.
+ *
  * Mutation checks, run on 2026-11-10: dropping `{ inlineErrors: 'load' }` fails
  * every row with a line (a toast beside it); `{ inlineErrors: true }` fails "a
  * poll that fails behind the run"; "We can't find that job." for every failure
@@ -29,6 +37,7 @@ import {
   clearToasts,
   failures,
   flush,
+  recordToasts,
   toastMessages,
 } from '../../services/__tests__/failures';
 
@@ -202,5 +211,35 @@ describe('the run page, when a poll fails behind the run on screen', () => {
     expect(text()).toContain('Tidal energy storage');
     expect(text()).not.toContain(FAILED);
     expect(text()).not.toContain(FALLBACK);
+  });
+
+  it('says a run of failing polls once, until a poll reads the run again', async () => {
+    getJob.mockResolvedValue(JOB);
+    const client = createQueryClient();
+    await mount(client);
+    await advance(0);
+    const toasts = recordToasts();
+    getJob.mockRejectedValue(failures.noWords());
+    // TanStack counts a poll's five seconds from the last fetch, so a failing
+    // poll and its retry a second later fit in six and a half.
+    await advance(6500);
+    expect(toasts.messages).toEqual(['Request failed with status code 500']);
+    // A progress message over the socket writes the run into the cache. It is
+    // no fetch, so the run of failures goes on.
+    act(() => {
+      client.setQueryData<Job>(['job', 'job-1'], (old) => (old ? { ...old, progress_message: 'Still done' } : old));
+    });
+    await advance(6500);
+    await advance(6500);
+    expect(getJob.mock.calls.length).toBe(7); // the first read, then three polls tried twice
+    expect(toasts.messages).toHaveLength(1);
+    getJob.mockResolvedValue(JOB);
+    await advance(6500);
+    getJob.mockRejectedValue(failures.noWords());
+    await advance(6500);
+    expect(toasts.messages).toEqual(['Request failed with status code 500', 'Request failed with status code 500']);
+    expect(text()).toContain('Tidal energy storage');
+    expect(text()).not.toContain(FAILED);
+    toasts.stop();
   });
 });

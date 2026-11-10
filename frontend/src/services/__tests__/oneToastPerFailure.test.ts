@@ -25,9 +25,13 @@
  * Since T-3.4.1.22 both also follow a line through a dialog's or picker's
  * callback prop and through a mutation's `isError`.
  *
- * A fourth guard, at the end, holds the same two sides for queries
- * (T-3.4.1.26): a reader that says a load's failure on the page stands aside
- * from the query toast, and a reader that stands aside says it.
+ * A fourth guard holds the same two sides for queries (T-3.4.1.26): a reader
+ * that says a load's failure on the page stands aside from the query toast, and
+ * a reader that stands aside says it.
+ *
+ * A fifth, at the end, holds polls (T-3.4.1.27): the query client says a run of
+ * a poll's failures once, so every `refetchInterval` is listed beside the test
+ * that checks it, and nothing polls by a timer the client cannot see.
  */
 import { AxiosError, AxiosHeaders } from 'axios';
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -1285,5 +1289,200 @@ describe('the fourth guard: a query’s failure line stands alone', () => {
   it('leaves alone a line reached through a prop, when the reader stands aside', () => {
     const src = 'function Box({ query }: P) {\n  return query.isError ? <p>No.</p> : null;\n}\nfunction Page() {\n  const q = useShown();\n  return <Box query={q} />;\n}';
     expect(queryLineProblems(src, QUERY_HOOKS, queryFailureProps({ src }))).toEqual({ repeats: [], nowhere: [] });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The fifth guard: a poll says a run of failures once (T-3.4.1.27)
+// ---------------------------------------------------------------------------
+//
+// The query client holds a poll to one toast per run of failures, and knows a
+// poll by its readers' `refetchInterval` (`queryIsPolling`). So:
+// - every `refetchInterval` in the app is listed in `POLLS`, by the function
+//   that sets it, beside the tests that check that poll under the app's client
+//   (each must exist and name the function); the guard fails on a poll not
+//   listed, so a new one comes with its test. A `refetchInterval` is set as an
+//   object key, written out (`refetchInterval: 5000`) or in short
+//   (`{ queryKey, refetchInterval }`), in the options or in an object spread
+//   into them, or assigned (`options.refetchInterval = 5000`); one taken out
+//   of an object (`const { refetchInterval } = observer.options`, a
+//   parameter) sets nothing;
+// - nothing polls by a timer of its own: a `setInterval` whose callback asks a
+//   query again (`refetch`, `refetchQueries`, `invalidateQueries` or
+//   `fetchQuery`), written in place or a function it names, or a `setTimeout`
+//   that does and sets itself again (a loop). The client could not tell such a
+//   timer from a reader asking again, and it would toast every time. A
+//   `setTimeout` that asks once (a debounce) is no poll.
+//
+// Mutation checks, run on 2026-11-10: taking `useImports` out of `POLLS`, or
+// naming a test for the system page that does not exist, fails "lists every
+// poll"; a hook with `setInterval(() => void q.refetch(), 5000)` in
+// `useVideoFrames.ts` fails "finds no poll by a timer of its own". Matching
+// only `refetchInterval:` fails the short-form and assignment rows of "reads
+// where a poll is set", and reading the key without its pattern check fails
+// the destructuring rows and "lists every poll" (`queryIsPolling` in the query
+// client); reading only the callback written in place fails the named-callback
+// rows of "knows a timer that polls", and reading only `setInterval` fails the
+// loop rows.
+
+/** The `{` that holds `index` in `code`, or -1. */
+function openingBrace(code: string, index: number): number {
+  let depth = 0;
+  for (let i = index - 1; i >= 0; i -= 1) {
+    if (code[i] === '}') depth += 1;
+    else if (code[i] === '{' && depth-- === 0) return i;
+  }
+  return -1;
+}
+
+/** Whether the object around `index` is a pattern that takes values out
+ * (`const { refetchInterval } = …`, a parameter), not one that sets them. */
+function inPattern(code: string, index: number): boolean {
+  const open = openingBrace(code, index);
+  if (open === -1) return false;
+  if (/\b(?:const|let|var)\s*$/.test(code.slice(Math.max(0, open - 12), open))) return true;
+  const after = code.slice(closing(code, open));
+  // Assigned from (`} = options`), or a parameter (`}) =>`, `}: Props) {`).
+  return /^\s*(?::[^=;\n]*)?=(?![=>])/.test(after) || /^\s*(?::[^)\n]*)?\)\s*(?::[^=\n{]*)?(?:=>|\{)/.test(after);
+}
+
+/** Each function in `src` that sets a `refetchInterval`, by name. */
+function pollSites(src: string): string[] {
+  const code = withoutComments(src);
+  const fns = functionsIn(code);
+  const sets = /(?<![.\w$])refetchInterval(?=\s*[:,}])|\.refetchInterval\s*=(?![=>])/g;
+  const names = [...code.matchAll(sets)]
+    .filter((m) => m[0].startsWith('.') || !inPattern(code, m.index!))
+    .map((m) => {
+      const [from] = scopeOf(code, m.index!);
+      return fns.find((f) => f.body[0] === from)?.name ?? '(module)';
+    });
+  return [...new Set(names)];
+}
+
+const ASKS_AGAIN = /\b(?:refetch|refetchQueries|invalidateQueries|fetchQuery)\b/;
+const DEFINES = /\b(?:const|let)\s+([A-Za-z_$][\w$]*)\s*=|\bfunction\s+([A-Za-z_$][\w$]*)\s*\(/g;
+
+/** The first argument of the call whose `(` is at `open`. */
+function firstArgument(code: string, open: number): string {
+  const end = closing(code, open) - 1;
+  let i = open + 1;
+  while (i < end && code[i] !== ',') i = '({['.includes(code[i]) ? closing(code, i) : i + 1;
+  return code.slice(open + 1, i).trim();
+}
+
+/** Where `src` polls by a timer of its own: a `setInterval` whose callback asks
+ * a query again, or a `setTimeout` whose callback does and sets a timer again.
+ * A callback that is a name is read where that function is defined. */
+function timerPolls(src: string): number[] {
+  const code = withoutComments(src);
+  const defined = [...code.matchAll(DEFINES)].flatMap((m) => {
+    const name = m[1] ?? m[2];
+    const span = localFunction(code, name);
+    return span && span[0] === m.index ? [{ name, span }] : [];
+  });
+  return [...code.matchAll(/\bset(Interval|Timeout)\s*\(/g)]
+    .filter((m) => {
+      const at = m.index!;
+      const arg = firstArgument(code, at + m[0].length - 1);
+      const named = /^[A-Za-z_$][\w$]*$/.test(arg) ? defined.find((d) => d.name === arg) : undefined;
+      const callback = named ? code.slice(...named.span) : arg;
+      if (!ASKS_AGAIN.test(callback)) return false;
+      if (m[1] === 'Interval') return true;
+      // A loop: the callback sets a timer again, or calls (or is) a function
+      // this `setTimeout` is written in.
+      return (
+        /\bset(?:Timeout|Interval)\s*\(/.test(callback) ||
+        defined.some(
+          (d) =>
+            at > d.span[0] &&
+            at < d.span[1] &&
+            (arg === d.name || new RegExp(String.raw`\b${d.name.replace('$', '\\$')}\s*\(`).test(arg)),
+        )
+      );
+    })
+    .map((m) => lineOf(code, m.index!));
+}
+
+const POLL_HOOKS_TEST = 'src/hooks/__tests__/pollHooks.test.tsx';
+
+/** Every poll in the app (`file: function`), and the tests that check it says
+ * a run of failures once, or stands aside for a line that says each one. */
+const POLLS: Record<string, string[]> = {
+  'src/hooks/useEcho.ts: useImports': [POLL_HOOKS_TEST],
+  'src/hooks/useEcho.ts: useVoiceTestPoll': [POLL_HOOKS_TEST],
+  'src/hooks/useJobs.ts: useJob': [POLL_HOOKS_TEST, 'src/pages/__tests__/jobDetailLoadFailure.test.tsx'],
+  'src/hooks/useJobs.ts: useJobs': [POLL_HOOKS_TEST],
+  'src/hooks/useNotifications.ts: useNotifications': [POLL_HOOKS_TEST],
+  'src/hooks/useSavedSearches.ts: useSavedSearches': [POLL_HOOKS_TEST],
+  'src/hooks/useSystemStatus.ts: useSystemStatus': [POLL_HOOKS_TEST, 'src/layouts/__tests__/healthPoll.test.tsx'],
+  'src/hooks/useVideoFrames.ts: useVideoFrames': [POLL_HOOKS_TEST],
+  'src/pages/SystemStatusPage.tsx: SystemStatusPage': ['src/pages/__tests__/systemStatusPage.test.tsx'],
+};
+
+describe('the fifth guard: a poll says a run of failures once', () => {
+  const sources = import.meta.glob(['../../**/*.{ts,tsx}', '!**/__tests__/**', '!**/*.test.{ts,tsx}'], {
+    query: '?raw',
+    import: 'default',
+    eager: true,
+  }) as Record<string, string>;
+  const tests = import.meta.glob('../../**/__tests__/*.test.{ts,tsx}', {
+    query: '?raw',
+    import: 'default',
+    eager: true,
+  }) as Record<string, string>;
+
+  it('lists every poll beside the tests that check it', () => {
+    const found = Object.entries(sources)
+      .flatMap(([file, src]) => pollSites(src).map((name) => `${file.replace('../../', 'src/')}: ${name}`))
+      .sort();
+    expect(found).toEqual(Object.keys(POLLS).sort());
+    for (const [site, files] of Object.entries(POLLS)) {
+      const name = site.split(': ')[1];
+      for (const file of files) {
+        const test = tests[file.replace('src/', '../../')];
+        expect(test, `${site}: ${file}`).toBeDefined();
+        expect(test.includes(name), `${file} names ${name}`).toBe(true);
+      }
+    }
+  });
+
+  it('finds no poll by a timer of its own', () => {
+    const offenders = Object.entries(sources)
+      .map(([file, src]) => [file.replace('../../', 'src/'), timerPolls(src)] as const)
+      .filter(([, lines]) => lines.length > 0);
+    expect(offenders).toEqual([]);
+  });
+
+  it.each([
+    ['export function useThing() {\n  return useQuery({ queryKey: k, queryFn: f, refetchInterval: 5000 });\n}', ['useThing']],
+    ['function Page() {\n  const q = useQuery({ queryKey: k, queryFn: f, refetchInterval: (q) => (q.state.data ? 3000 : false) });\n}', ['Page']],
+    ['// refetchInterval: 5000 in a comment\nexport function useThing() {\n  return useQuery({ queryKey: k, queryFn: f });\n}', []],
+    ['export function useThing(busy: boolean) {\n  const refetchInterval = busy ? 4000 : false;\n  return useQuery({ queryKey: k, queryFn: f, refetchInterval });\n}', ['useThing']],
+    ['function Page() {\n  return useQuery({ queryKey: k, queryFn: f, refetchInterval\n  });\n}', ['Page']],
+    ['function Page() {\n  const opts = { queryKey: k, queryFn: f, refetchInterval: 5000 };\n  return useQuery({ ...opts });\n}', ['Page']],
+    ['function Page() {\n  const opts: Options = { queryKey: k, queryFn: f };\n  opts.refetchInterval = 5000;\n  return useQuery(opts);\n}', ['Page']],
+    ['export function isPolling(o: Options) {\n  const { enabled, refetchInterval } = o;\n  return enabled && refetchInterval;\n}', []],
+    ['export function isPolling(o: Options) {\n  const { refetchInterval: every }: Options = o;\n  return every === o.refetchInterval;\n}', []],
+    ['function Poller({ refetchInterval }: Props) {\n  return null;\n}', []],
+    ['const pick = ({ queryKey, refetchInterval }) => queryKey;', []],
+  ])('reads where a poll is set: %s', (src, names) => {
+    expect(pollSites(src)).toEqual(names);
+  });
+
+  it.each([
+    ['function Page() {\n  useEffect(() => {\n    const id = setInterval(() => void q.refetch(), 5000);\n  }, []);\n}', [3]],
+    ['const id = window.setInterval(() => qc.invalidateQueries({ queryKey: k }), 4000);', [1]],
+    ['const id = window.setInterval(() => WSClient.send(socket, "ping"), 30000);', []],
+    ['const t = setTimeout(() => void qc.invalidateQueries({ queryKey: k }), 500);', []],
+    ['function Page() {\n  const tick = () => void q.refetch();\n  useEffect(() => {\n    const id = setInterval(tick, 5000);\n  }, []);\n}', [4]],
+    ['function tick() {\n  void qc.invalidateQueries({ queryKey: k });\n}\nconst id = setInterval(tick, 5000);', [4]],
+    ['const id = setInterval(q.refetch, 5000);', [1]],
+    ['function Page() {\n  useEffect(() => {\n    const tick = () => {\n      void q.refetch();\n      id = setTimeout(tick, 5000);\n    };\n    let id = setTimeout(tick, 5000);\n  }, []);\n}', [5, 7]],
+    ['function Page() {\n  const schedule = () => {\n    id = setTimeout(() => {\n      void qc.invalidateQueries({ queryKey: k });\n      schedule();\n    }, 5000);\n  };\n}', [3]],
+    ['function Page() {\n  const later = () => void qc.invalidateQueries({ queryKey: k });\n  const t = setTimeout(later, 500);\n}', []],
+    ['function Page() {\n  const tick = () => WSClient.send(socket, "ping");\n  const id = setInterval(tick, 30000);\n}', []],
+  ])('knows a timer that polls from one that does not: %s', (src, lines) => {
+    expect(timerPolls(src)).toEqual(lines);
   });
 });

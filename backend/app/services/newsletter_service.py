@@ -47,6 +47,7 @@ from app.services import (
     tier_service,
 )
 from app.services.outputters.newsletter import DEFAULT_SECTIONS, sections_from
+from app.utils.shared_url_log import traceback_without_text
 
 logger = logging.getLogger(__name__)
 
@@ -261,9 +262,13 @@ def deliver(db: Session, subscription_id: str, *, slot: datetime | None = None, 
             db, user.id, kind=notification_service.KIND_NEWSLETTER_ISSUE,
             title=f"Your digest is ready: {output.title}", body=None, href=f"/author/outputs/{output.id}",
         )
-    except Exception:  # pragma: no cover - never fail a delivered issue
-        logger.exception("newsletter %s: notification not stored", sub.id)
+    except Exception as e:  # never fail a delivered issue
+        # Rolled back before anything reads a row: a failed flush expires
+        # every object, and reading one then raises PendingRollbackError.
         db.rollback()
+        # T-4.11.4.7: by its frames. The row's title is the issue's, which
+        # carries the title the reader typed, and a database error quotes it.
+        logger.error("newsletter %s: notification not stored: %s", subscription_id, traceback_without_text(e))
     _finish(db, send, "sent" if sent else "email_failed", output_id=output.id,
             detail=None if sent else "The email could not be sent; the issue is in your outputs.")
     return {"status": "sent" if sent else "email_failed", "period_key": key, "output_id": output.id}

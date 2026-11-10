@@ -197,21 +197,35 @@ def run_import(db: Session, user: Any, fileobj: IO[bytes], filename: str, *,
         options_json=json.dumps(opts, ensure_ascii=False),
         summary_json=json.dumps(pv.summary, ensure_ascii=False, default=str),
     )
-    db.add(record)
-    db.commit()
+    try:
+        db.add(record)
+        db.commit()
+    except Exception as e:
+        # T-4.11.4.6: the run's own row holds the file's name and its options,
+        # a WhatsApp `self_name` being a participant's name, and a database
+        # error ("database is locked") quotes them. So by its frames and
+        # answered by the route, as the rest of a run's failures are, never
+        # left to the server's own line for an exception no route handles.
+        db.rollback()
+        logger.error(
+            "echo: a %s import of %s could not start: %s",
+            module.name, loggable_filename(filename), traceback_without_text(e),
+        )
+        raise ImportStopped(f"Import could not start: {type(e).__name__}") from e
 
     counts = {"shares": 0, "own_words": 0, "context_only": 0}
     events: list[EventIn] = []
     stats: dict[str, int] = {}
     batch: list[dict[str, Any]] = []
     checked: set[str] = set()
-    # T-3.2.4.4: facts the user deleted from an earlier import of this kind
-    # stay deleted when the same export is imported again.
     from app.services import echo_fact_tombstones
 
-    deleted_facts = echo_fact_tombstones.blocked_keys(db, user.id, module.name)
     surface = echo_intake_service._validate_surface("file_import")
     try:
+        # T-3.2.4.4: facts the user deleted from an earlier import of this
+        # kind stay deleted when the same export is imported again. Read
+        # inside the `try`, so a failed read ends the run as any failure does.
+        deleted_facts = echo_fact_tombstones.blocked_keys(db, user.id, module.name)
         for item in _parse(module, source, opts, stats, tenant_id=user.id):
             if isinstance(item, EventIn):
                 events.append(item)

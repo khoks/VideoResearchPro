@@ -41,7 +41,11 @@ videoresearchpro_global beside a partly re-embedded pratidhvani_global,
 stops the dry run and --write alike, --empty-store-ok or not: point
 CHROMA_GLOBAL_COLLECTION_NAME at the collection that holds the library, or
 migrate the chunks into one collection (docs/migration-code-identifiers.md,
-section A).
+section A). The message says which fix fits: a pre-global per-job
+collection (job_<id>) is merged by
+chroma_service.migrate_legacy_per_job_collections(), never pinned; a copy
+whose every chunk of this database is also in the configured collection is
+deleted once Q&A answers from the configured one.
 
 Usage (from backend/):
     ./venv/Scripts/python scripts/check_embedded_flags.py
@@ -108,6 +112,7 @@ def _print_other_collections(data: dict) -> None:
         )
         if entry["documents"]:
             line += (
+                f", {entry['chunks_only_here']} of them not in {data['collection']} by id"
                 f", naming {entry['documents']} document(s): {entry['documents_only_here']} "
                 f"named by no chunk in {data['collection']}, {entry['documents_to_clear']} "
                 "of those a write would clear"

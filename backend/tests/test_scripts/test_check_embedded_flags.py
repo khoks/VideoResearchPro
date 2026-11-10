@@ -26,6 +26,13 @@ collection holds no row shaped as a chunk. Mutation checks: a check that
 reads the configured collection alone clears flags that are right; without
 the shape test a notes collection under an old name blocks every write;
 without the names the check reads Echo's private collections.
+
+The stop says what resolves it: a pre-global ``job_<id>`` collection is
+merged by ``migrate_legacy_per_job_collections``, never pinned; a copy left
+after a rollback, every chunk of which the configured collection also holds,
+is deleted; anything else is re-pinned or migrated. Mutation checks: without
+the per-job rule a job collection gets the re-pin advice; without the chunk
+ids a copy holding a chunk of its own reads as a leftover.
 """
 from __future__ import annotations
 
@@ -605,6 +612,142 @@ def test_mutation_without_the_names_the_check_reads_echos_private_collections(
     _run(tmp_path)
 
     assert {"shares_global", "personal_context_global", "notes_global"} <= set(opened)
+
+
+# ---------------------------------------------------------------- what resolves the stop (T-5.2.26)
+
+PER_JOB = "job_6b1c0e7a"
+RUNBOOK = Path(__file__).resolve().parents[3] / "docs" / "migration-code-identifiers.md"
+REPIN = "point CHROMA_GLOBAL_COLLECTION_NAME at the collection that holds the library"
+LEFTOVER = "deleting it lifts this stop"
+
+
+def _per_job_collection(db, library: dict, *names: str) -> None:
+    """A collection from before the global library: one job's chunks, with
+    ids of their own and the ``video_id`` and ``chunk_index`` metadata
+    ``migrate_legacy_per_job_collections`` reads."""
+    ids, metadatas = [], []
+    for name in names:
+        doc = db.get(Document, library[name])
+        for i in range(3):
+            ids.append(f"{doc.video_id}-chunk-{i}")
+            metadatas.append({"video_id": doc.video_id, "chunk_index": i, "title": doc.title})
+    _rows(PER_JOB, ids, metadatas)
+
+
+def _copy(source: str, target: str, *, leave_out: str = "") -> None:
+    """Every row of ``source`` into ``target``, embeddings included, as the
+    runbook's migration copies them; ``leave_out`` drops one chunk id."""
+    client = chroma_service.get_chroma_client()
+    rows = client.get_collection(source, embedding_function=None).get(
+        include=["embeddings", "metadatas", "documents"])
+    keep = [i for i, chunk_id in enumerate(rows["ids"]) if chunk_id != leave_out]
+    client.get_or_create_collection(target, embedding_function=None).add(
+        ids=[rows["ids"][i] for i in keep], embeddings=[rows["embeddings"][i] for i in keep],
+        metadatas=[rows["metadatas"][i] for i in keep], documents=[rows["documents"][i] for i in keep],
+    )
+
+
+def test_a_per_job_collection_is_merged_never_pinned(library, db, tmp_path):
+    """A pre-global ``job_<id>`` collection holds one job's sources: pinning
+    it would narrow every question to that job, and section A's rename does
+    not cover it. The stop says to merge it, and the merge lifts the stop."""
+    _per_job_collection(db, library, "video", "ok")
+    before = _flags(db)
+
+    code, report = _run(tmp_path, "--write")
+
+    assert code == 1 and report["cleared"] == 0 and _flags(db) == before
+    stopped = report["stopped"]
+    assert (f"{PER_JOB} holds chunks of 2 document(s) of this database, 1 of them named by no chunk "
+            "in pratidhvani_global") in stopped
+    assert f"{PER_JOB}: per-job collection(s) from before the global library" in stopped
+    assert "Never point CHROMA_GLOBAL_COLLECTION_NAME at one" in stopped
+    assert "chroma_service.migrate_legacy_per_job_collections()" in stopped
+    assert REPIN not in stopped, "re-pinning to it would narrow every question to one job"
+    assert "migrate_legacy_per_job_collections" in RUNBOOK.read_text(encoding="utf-8"), (
+        "the runbook the stop names says how")
+
+    chroma_service.migrate_legacy_per_job_collections()
+
+    assert PER_JOB not in [c.name for c in chroma_service.get_chroma_client().list_collections()]
+    code, after = _run(tmp_path, "--write")
+    assert code == 0 and not after["stopped"] and after["cleared"] == 4, "merged: the video has chunks"
+    assert _flags(db)[library["video"]] is True
+
+
+def test_after_a_rollback_the_leftover_copy_is_named_as_one(library, db, tmp_path, monkeypatch):
+    """Section A migrated, then rolled back: the pin names the legacy
+    collection again and pratidhvani_global is a full copy. The pin is right
+    already, so re-pinning is no advice; deleting the copy once verified
+    lifts the stop, as the runbook's Rollback says."""
+    _copy("pratidhvani_global", LEGACY)
+    monkeypatch.setattr(embedded_flag_service.settings, "CHROMA_GLOBAL_COLLECTION_NAME", LEGACY)
+    before = _flags(db)
+
+    code, report = _run(tmp_path, "--write")
+
+    assert code == 1 and report["cleared"] == 0 and _flags(db) == before
+    copy = _other(report, "pratidhvani_global")
+    assert (copy["documents"], copy["documents_only_here"], copy["chunks_only_here"]) == (4, 0, 0)
+    stopped = report["stopped"]
+    assert f"pratidhvani_global: every chunk of this database there is also in {LEGACY}, by id" in stopped
+    assert LEFTOVER in stopped and "section A, Rollback" in stopped
+    assert REPIN not in stopped, "the pin already names the library"
+    rollback = RUNBOOK.read_text(encoding="utf-8").split("### Rollback", 1)[1].split("\n### ", 1)[0]
+    assert "check_embedded_flags.py" in rollback and "lifts the stop" in rollback
+
+    chroma_service.get_chroma_client().delete_collection("pratidhvani_global")
+    code, after = _run(tmp_path, "--write")
+    assert code == 0 and after["cleared"] == 5, "the copy deleted: the check writes again"
+
+
+def _a_copy_missing_one_chunk(library, monkeypatch) -> str:
+    ok_chunks = sorted(chroma_service.get_global_collection().get(
+        where={"document_id": library["ok"]}, include=[])["ids"])
+    assert len(ok_chunks) > 1
+    _copy("pratidhvani_global", LEGACY, leave_out=ok_chunks[1])
+    monkeypatch.setattr(embedded_flag_service.settings, "CHROMA_GLOBAL_COLLECTION_NAME", LEGACY)
+    return ok_chunks[1]
+
+
+def test_a_copy_holding_a_chunk_the_configured_collection_lacks_is_no_leftover(
+    library, db, tmp_path, monkeypatch
+):
+    """Every document there has chunks in the configured collection too, but
+    one chunk is only there: deleting it would lose that chunk, so the stop
+    gives the split-library advice."""
+    _a_copy_missing_one_chunk(library, monkeypatch)
+
+    code, report = _run(tmp_path, "--write")
+
+    assert code == 1 and report["cleared"] == 0
+    copy = _other(report, "pratidhvani_global")
+    assert (copy["documents_only_here"], copy["chunks_only_here"]) == (0, 1)
+    assert LEFTOVER not in report["stopped"] and REPIN in report["stopped"]
+
+
+def test_mutation_without_the_per_job_rule_a_job_collection_gets_the_repin_advice(
+    library, db, tmp_path, monkeypatch
+):
+    _per_job_collection(db, library, "video")
+    monkeypatch.setattr(embedded_flag_service.OtherCollection, "per_job", lambda self: False)
+
+    _, report = _run(tmp_path, "--write")
+
+    assert REPIN in report["stopped"] and "migrate_legacy_per_job_collections" not in report["stopped"]
+
+
+def test_mutation_without_the_chunk_ids_a_partial_copy_reads_as_a_leftover(
+    library, db, tmp_path, monkeypatch
+):
+    _a_copy_missing_one_chunk(library, monkeypatch)
+    monkeypatch.setattr(embedded_flag_service.OtherCollection, "leftover_copy",
+                        lambda self: not (self.per_job() or self.documents_only_here))
+
+    _, report = _run(tmp_path, "--write")
+
+    assert LEFTOVER in report["stopped"], "and the owner would delete the chunk it alone holds"
 
 
 # ---------------------------------------------------------------- the next job embeds what --write cleared

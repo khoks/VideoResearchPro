@@ -144,7 +144,17 @@ Run:
 If anything looks wrong post-migration (Q&A returns nothing, chunk count mismatch, etc.):
 1. Set `CHROMA_GLOBAL_COLLECTION_NAME=videoresearchpro_global` in `.env`.
 2. Restart.
-3. The system uses the legacy collection again; the new collection sits unused (delete it later if you don't want it).
+3. The system uses the legacy collection again; the new collection sits unused (delete it later if you don't want it). Until you delete it, `scripts/check_embedded_flags.py` stops, its dry run included, because a second collection holds chunks of this database; when every one of them is also in the legacy collection, its message calls the new one a leftover copy. Deleting the copy once the rollback is verified (Q&A answers from the legacy collection) lifts the stop.
+
+### Per-job collections (`job_<id>`)
+
+An install from before the global library may still hold one collection per job, named `job_<id>`. Never point `CHROMA_GLOBAL_COLLECTION_NAME` at one: it holds one job's sources, so every question would see that job alone. `scripts/check_embedded_flags.py` stops while one holds chunks of this database and says so. Merge them once, with every writer stopped as in the pre-migration checklist, from the backend dir:
+
+```bash
+./venv/Scripts/python -c "from app.services import chroma_service; chroma_service.migrate_legacy_per_job_collections()"
+```
+
+It upserts every `job_*` collection's chunks into the configured collection, embedding them again with the local model (no provider call), and deletes each collection it merged. A row with no `video_id` or `chunk_index` metadata is skipped, and its collection is deleted all the same, so take a `data/chroma/` backup first.
 
 ---
 

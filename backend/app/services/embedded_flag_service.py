@@ -85,6 +85,15 @@ section A). Two tests tell a chunk collection from the app's others:
   personal-context row has neither, so a renamed setting's old collection
   does not stop the check.
 
+What resolves the stop depends on the collection, and the message says
+which. A pre-global per-job collection (``job_<id>``) holds one job's
+sources, so pointing the pin at it would narrow every question to that job:
+``chroma_service.migrate_legacy_per_job_collections()`` merges it and deletes
+it. A collection every one of whose chunks of this database is also in the
+configured collection, by id, is a copy left by a migration or a rollback:
+deleting it once Q&A answers from the configured one lifts the stop. Any
+other is a split library: re-pin, or migrate.
+
 The CLI is ``scripts/check_embedded_flags.py``; ``--write`` is the owner's
 step.
 """
@@ -131,6 +140,15 @@ class OtherCollection:
     documents_only_here: int = 0
     # ...and the flagged ones a write would have cleared.
     documents_to_clear: int = 0
+    # Its chunks of this database whose id the configured collection lacks:
+    # none, with none of its documents only here, reads as a leftover copy.
+    chunks_only_here: int = 0
+
+    def per_job(self) -> bool:
+        return chroma_service.is_legacy_per_job_collection(self.name)
+
+    def leftover_copy(self) -> bool:
+        return not (self.per_job() or self.documents_only_here or self.chunks_only_here)
 
 
 @dataclass
@@ -234,11 +252,12 @@ def _chunk_owner(chunk_id: str, meta: dict, index: _DocumentIndex) -> str:
 
 def _scan_other_collections(
     report: FlagCheckReport, index: _DocumentIndex, page_size: int
-) -> tuple[dict[str, set[str]], str]:
+) -> tuple[dict[str, tuple[set[str], set[str]]], str]:
     """Read every collection in the store besides the configured one and
     the app's collections of other kinds, metadata only: never created, no
-    embedding model loaded. Returns ``({name: documents its chunks name},
-    "")``, or why the pass stopped: one unread collection is a doubt."""
+    embedding model loaded. Returns ``({name: (documents its chunks name,
+    those chunks' ids)}, "")``, or why the pass stopped: one unread
+    collection is a doubt."""
     client = chroma_service.get_chroma_client()
     try:
         listed = client.list_collections()
@@ -246,7 +265,7 @@ def _scan_other_collections(
         logger.exception("check_embedded_flags: could not list the store's collections")
         return {}, f"could not list the store's collections ({type(exc).__name__}); nothing written"
     other_kinds = _other_kind_names()
-    named_by: dict[str, set[str]] = {}
+    named_by: dict[str, tuple[set[str], set[str]]] = {}
     for name in sorted({c if isinstance(c, str) else c.name for c in listed}):
         if name == report.collection:
             continue
@@ -261,37 +280,74 @@ def _scan_other_collections(
             logger.exception("check_embedded_flags: could not open another collection")
             return named_by, f"could not open the collection {name} ({type(exc).__name__}); nothing written"
         documents: set[str] = set()
+        chunk_ids: set[str] = set()
 
         def visit(chunk_id: str, meta: dict, entry: OtherCollection = entry,
-                  documents: set[str] = documents) -> None:
+                  documents: set[str] = documents, chunk_ids: set[str] = chunk_ids) -> None:
             entry.rows_scanned += 1
             owner = _chunk_owner(chunk_id, meta, index)
             if owner:
                 entry.chunks_of_this_database += 1
                 documents.add(owner)
+                chunk_ids.add(chunk_id)
 
         stopped = _scan_chunks(collection, page_size, visit, "check_embedded_flags")
         if stopped:
             return named_by, f"reading {name}: {stopped}"
         entry.documents = len(documents)
-        named_by[name] = documents
+        named_by[name] = (documents, chunk_ids)
     return named_by, ""
 
 
+_RUNBOOK = "docs/migration-code-identifiers.md, section A"
+
+
+def _names(entries: list[OtherCollection]) -> str:
+    return ", ".join(entry.name for entry in entries)
+
+
 def _held_elsewhere(report: FlagCheckReport) -> str:
-    """Why a write stops while other collections hold chunks of this database."""
+    """Why a write stops while other collections hold chunks of this
+    database, and what resolves it, which depends on what each one is: a
+    pre-global per-job collection is merged, never pinned; a leftover copy is
+    deleted once verified; a split library is re-pinned or migrated."""
+    holding = report.holding_this_database()
+    configured = report.collection
     listed = "; ".join(
         f"{entry.name} holds chunks of {entry.documents} document(s) of this database, "
-        f"{entry.documents_only_here} of them named by no chunk in {report.collection}"
-        for entry in report.holding_this_database()
+        f"{entry.documents_only_here} of them named by no chunk in {configured}"
+        for entry in holding
     )
-    return (
-        f"{listed}. Flags are checked against {report.collection} alone, so a document whose "
-        "chunks sit only elsewhere would look chunkless. Point CHROMA_GLOBAL_COLLECTION_NAME "
-        "at the collection that holds the library, or migrate the chunks into one collection "
-        "and delete the other once Q&A answers from it (docs/migration-code-identifiers.md, "
-        "section A). Nothing written"
-    )
+    parts = [
+        f"{listed}. Flags are checked against {configured} alone, so a document whose "
+        "chunks sit only elsewhere would look chunkless."
+    ]
+    per_job = [entry for entry in holding if entry.per_job()]
+    copies = [entry for entry in holding if entry.leftover_copy()]
+    split = [entry for entry in holding if not (entry.per_job() or entry.leftover_copy())]
+    if per_job:
+        parts.append(
+            f"{_names(per_job)}: per-job collection(s) from before the global library, each "
+            "holding one job's sources. Never point CHROMA_GLOBAL_COLLECTION_NAME at one: "
+            "every question would see that job alone. Run "
+            "chroma_service.migrate_legacy_per_job_collections() once, from backend/ with no "
+            f"job running: it adds their chunks to {configured}, embedding them again with the "
+            f"local model, and deletes each one it merged ({_RUNBOOK})."
+        )
+    if copies:
+        parts.append(
+            f"{_names(copies)}: every chunk of this database there is also in {configured}, "
+            "by id, as in a copy a migration or a rollback leaves. Once Q&A answers from "
+            f"{configured}, deleting it lifts this stop ({_RUNBOOK}, Rollback)."
+        )
+    if split:
+        parts.append(
+            f"{_names(split)}: point CHROMA_GLOBAL_COLLECTION_NAME at the collection that "
+            "holds the library, or migrate the chunks into one collection and delete the other "
+            f"once Q&A answers from it ({_RUNBOOK})."
+        )
+    parts.append("Nothing written")
+    return " ".join(parts)
 
 
 def _text_state(segments_json: str | None) -> str:
@@ -386,6 +442,7 @@ def check_embedded_flags(
         _, unread = _scan_other_collections(report, index, page_size)
         for entry in report.other_collections:
             entry.documents_only_here = entry.documents
+            entry.chunks_only_here = entry.chunks_of_this_database
         if unread:
             report.stopped += f". Also {unread}"
         elif report.holding_this_database():
@@ -393,9 +450,11 @@ def check_embedded_flags(
         return report
 
     named: set[str] = set()
+    configured_ids: set[str] = set()
 
     def visit(chunk_id: str, meta: dict) -> None:
         report.chunks_scanned += 1
+        configured_ids.add(chunk_id)
         owners = {index.resolve(meta), _owner_of_chunk_id(chunk_id, index)} - {""}
         named.update(owners)
         if not owners & index.known:
@@ -438,9 +497,10 @@ def check_embedded_flags(
     report.to_clear = sum(len(report.found[b]) for b in CLEARED_BUCKETS)
     to_clear_ids = {row["document_id"] for b in CLEARED_BUCKETS for row in report.found[b]}
     for entry in report.other_collections:
-        documents = named_elsewhere.get(entry.name, set())
+        documents, chunk_ids = named_elsewhere.get(entry.name, (set(), set()))
         entry.documents_only_here = len(documents - named)
         entry.documents_to_clear = len(documents & to_clear_ids)
+        entry.chunks_only_here = len(chunk_ids - configured_ids)
 
     if unread:
         report.stopped = unread

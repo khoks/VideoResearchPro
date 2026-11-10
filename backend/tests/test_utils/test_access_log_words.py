@@ -44,15 +44,14 @@ from urllib.parse import quote
 
 import httpx
 import pytest
-from fastapi.routing import APIRoute, APIWebSocketRoute
 from uvicorn.config import LOGGING_CONFIG
 from uvicorn.logging import AccessFormatter
 from uvicorn.protocols.utils import get_path_with_query_string
 
-from app.main import app
 from app.utils import log_redaction
 from app.utils.json_logging import JsonFormatter
 from app.utils.log_redaction import WORDS_QUERY_NAMES, install_log_redaction, redact_query_words
+from tests.test_routers.test_url_tokens import _query_param_names, _served_routes
 from tests.test_utils.test_log_redaction import _env, _log_of, _uvicorn
 
 WORDS = "Zanzibar quokka fermentation & tariffs #2"
@@ -169,20 +168,15 @@ WORDS_ROUTES = {
 
 
 def _query_params() -> dict[str, set[str]]:
-    """Every query parameter each route reads, its dependencies' included."""
+    """Every query parameter each route reads, its dependencies' included,
+    by full path. Through ``test_url_tokens._served_routes``, which reads the
+    route table both as FastAPI 0.135 keeps it and as 0.162 does."""
     found: dict[str, set[str]] = {}
-
-    def walk(dependant, names: set[str]) -> None:
-        names.update(param.alias for param in dependant.query_params)
-        for sub in dependant.dependencies:
-            walk(sub, names)
-
-    for route in app.routes:
-        if isinstance(route, (APIRoute, APIWebSocketRoute)):
-            names: set[str] = set()
-            walk(route.dependant, names)
-            if names:
-                found.setdefault(route.path, set()).update(names)
+    for path, _route, dependant in _served_routes():
+        names = _query_param_names(dependant)
+        if names:
+            found.setdefault(path, set()).update(names)
+    assert found, "no route's parameters were found, so nothing was checked"
     return found
 
 

@@ -10,6 +10,17 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Changed: a cancel reaches every open tab, and a page ignores late events from a run that ended (T-5.2.28, T-5.2.30, 2026-11-10)
+
+PR [#453](https://github.com/khoks/VideoResearchPro/pull/453). [D-169](docs/decisions.md#d-169--a-cancel-that-takes-is-announced-after-its-commit-a-page-takes-no-more-events-for-a-run-it-holds-as-ended-the-runs-videos-follow-its-cached-status-and-every-cached-jobs-list-takes-a-runs-events-2026-11-10).
+
+- Cancelling a run now tells every tab open on it at once. The cancel is published on the run's channel after it is saved and before the task is revoked. A cancel that comes too late, because the run had already ended, publishes nothing.
+- A page that holds a run as completed, failed or cancelled ignores any later progress for it, so a progress line sent just before a cancel no longer flips the page back from Cancelled. A refetch still updates the page either way.
+- **Fixed:** the jobs page never took a run's live updates, because both progress hooks wrote to a list key no list uses. It showed a cancel or a finished run only at its 10-second refetch. Every cached jobs list now takes each update, and a run that ends refetches the lists.
+- A run's videos refresh whenever its status moves to awaiting approval or to an end, whatever moved it, so a missed or ignored update no longer leaves the transcript statuses from before the end.
+- A failed publish never fails the cancel, and it is logged by its error's type, without the error's text. The other run-event publishers log the same way.
+- `docs/api-reference.md` now gives the three event shapes the server really sends. No migration and no new setting. Restart the API and reload the page. Still open: T-5.2.32 to T-5.2.35.
+
 ### Changed: a search's words out of the access log, the worker's last error lines, and an import's first write (T-4.11.4.5, T-4.11.4.7, T-4.11.4.6, 2026-11-10)
 
 PR [#454](https://github.com/khoks/VideoResearchPro/pull/454). [D-168](docs/decisions.md#d-168--the-access-log-writes-a-users-words-by-their-length-chosen-by-parameter-name-in-one-filter-a-fail-soft-handler-rolls-back-before-it-reads-and-an-imports-own-row-fails-as-importstopped-2026-11-10).

@@ -95,7 +95,7 @@ npm run dev                    # http://localhost:5173
 ### 2.4. Tests, lint, type-check
 
 ```bash
-# Backend tests (5,800+)
+# Backend tests (6,000+)
 cd backend && ./venv/Scripts/python -m pytest tests/ -v
 
 # Backend lint

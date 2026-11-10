@@ -5468,6 +5468,8 @@ For reference: run 9's outcome (1–0–2, 8.67 vs 8.67) passes the amended rule
 
 **Linked initiatives / PRs.** E-5.2 (T-5.2.21 to T-5.2.23, T-5.2.28 to T-5.2.30); PR [#449](https://github.com/khoks/VideoResearchPro/pull/449); [D-158](#d-158--a-job-task-returns-at-once-on-a-failed-row-a-job-dates-an-undated-row-and-its-stored-chunks-whisper-text-without-segments-is-a-transcription-and-a-manual-dispatchs-503-promises-nothing-2026-11-09), [D-161](#d-161--a-job-tasks-status-writes-are-one-conditional-update-the-first-stops-words-win-a-progress-callback-may-end-the-search-and-embedded_in_chroma-follows-the-chunks-2026-11-09).
 
+**Status-changed 2026-11-10:** two consequences are closed. A cancel that takes is announced on the run's channel after its commit and before its revoke, so every open tab shows it at once, and a page takes no more events for a run it holds as ended, so a progress line published after a cancel's commit no longer flips it back ([D-169](#d-169--a-cancel-that-takes-is-announced-after-its-commit-a-page-takes-no-more-events-for-a-run-it-holds-as-ended-the-runs-videos-follow-its-cached-status-and-every-cached-jobs-list-takes-a-runs-events-2026-11-10), T-5.2.28, T-5.2.30, PR [#453](https://github.com/khoks/VideoResearchPro/pull/453)). Point 2's lost race announces nothing. T-5.2.29 is unchanged.
+
 ## D-164 — The API's warnings and errors carry no user's words: an operator by place and mask, Echo's model failures by type and status, a chosen file name by its extension and length, and a failure logged by its frames is never re-raised bare (2026-11-09)
 
 **Status:** accepted (2026-11-09). Made while building T-4.11.4.4 (PR [#447](https://github.com/khoks/VideoResearchPro/pull/447)) and its review fixes, not ruled by the owner. It carries [D-160](#d-160--a-users-words-leave-the-workers-log-at-the-call-site-an-exception-that-can-quote-a-request-is-logged-by-its-frames-and-a-connectors-search-counts-as-a-shared-link-2026-11-09) from the worker's lines to the API's warnings, errors and exceptions. The PR proposed it as an addendum to D-160 or a new entry; it is recorded as a new entry. Hiding a database error's bound values stays the owner's call (OQ-45, [S-4.11.4](initiatives.md#s-4114--the-apis-own-log-lines)).
@@ -5635,3 +5637,41 @@ For reference: run 9's outcome (1–0–2, 8.67 vs 8.67) passes the amended rule
 - No migration and no new setting. Owner step: restart the API and the worker; `.uvicorn.out.log` holds the words written before until then.
 
 **Linked initiatives / PRs.** E-4.11 ([S-4.11.4](initiatives.md#s-4114--the-apis-own-log-lines): T-4.11.4.5 to T-4.11.4.9, OQ-45); PR [#454](https://github.com/khoks/VideoResearchPro/pull/454); [D-151](#d-151--the-sockets-token-is-a-subprotocol-provider-errors-are-scrubbed-as-each-log-record-is-made-and-json-logs-hold-their-format-from-the-first-line-2026-11-09), [D-160](#d-160--a-users-words-leave-the-workers-log-at-the-call-site-an-exception-that-can-quote-a-request-is-logged-by-its-frames-and-a-connectors-search-counts-as-a-shared-link-2026-11-09), [D-164](#d-164--the-apis-warnings-and-errors-carry-no-users-words-an-operator-by-place-and-mask-echos-model-failures-by-type-and-status-a-chosen-file-name-by-its-extension-and-length-and-a-failure-logged-by-its-frames-is-never-re-raised-bare-2026-11-09).
+
+## D-169 — A cancel that takes is announced after its commit, a page takes no more events for a run it holds as ended, the run's videos follow its cached status, and every cached jobs list takes a run's events (2026-11-10)
+
+**Status:** accepted (2026-11-10). Made while building T-5.2.28 and T-5.2.30 (PR [#453](https://github.com/khoks/VideoResearchPro/pull/453)) and its review fixes, not ruled by the owner. It closes two consequences [D-163](#d-163--a-progress-line-is-written-before-it-is-published-a-cancel-that-loses-the-race-answers-with-the-runs-end-and-revokes-nothing-and-completed-is-a-stopped-status-2026-11-09) left: another tab learned of a cancel only at its next refetch, and a progress line committed just before a cancel could flip the page back from Cancelled.
+
+**Context.**
+- `POST /jobs/{id}/cancel` wrote `cancelled` and revoked the task but published nothing. A run's own transitions publish a `job_status_change` on `job_progress:{job_id}`, which `useJobProgress` applies, so another open tab saw a cancel only at its 5-second refetch.
+- A worker commits a progress write and then publishes it (D-163 point 1). A cancel that commits in between is followed by one progress event, which flipped the page back from Cancelled until the next refetch.
+- An ended status reaches the frontend's cache only on the server's word: the `useJob` and `useJobs` fetches, `useCancelJob`'s and `useApproveJob`'s `onSuccess`, which store the server's answer, and socket events. Every socket event that names an end goes out after the write that ends the row, and only when that write took. No `job_progress` stage is an ended status, and the zustand store holds no job status.
+- The three run-event publishers in `progress_service` catch Redis errors themselves, and logged the error's text.
+- Both progress hooks wrote events to `['jobs', undefined]`, a key no list has: `useJobs` keys on `['jobs', status, limit, offset]`, so the jobs page's first page is `['jobs', null, 20, 0]`. The jobs page learned of every change only at its 10-second refetch.
+- The `jobVideos` query has no poll of its own. Its end-of-run refetch rode on the status event, so dropping that event would drop the refetch too (the review's finding).
+
+**Decision.**
+1. **A cancel that takes is announced** as a `job_status_change` to `cancelled` on `job_progress:{job_id}`, the event a run's own transitions send. It goes out after the conditional write's commit, so no page reads `cancelled` before the row says it, and before the revoke, which can wait on a broker that is down.
+2. **A lost race or an already-ended run announces nothing.** A cancel that loses to the run's end (the 400 since D-163) and a cancel of a run that had already ended publish nothing: the end is not the cancel's to announce.
+3. **A failed announce never fails the cancel.** `_announce_cancelled` catches anything the publisher raises and logs it by exception type, as a refused revoke is, and the route still answers 200. The three run-event publishers log a refused publish by type too, so the rule holds on the real Redis-down path.
+4. **A page drops progress, status and error events for a run it holds as ended** (`completed`, `failed` or `cancelled`), in the run's own query and in each row of each cached jobs list, and a dropped event refetches nothing. A refetch is not an event, so it still sets the cache in both directions. This is safe only while the page never writes an ended status itself (no optimistic cancel) and every event that ends a run goes out after the write that ends it. CLAUDE.md's convention says so.
+5. **The run's videos follow its cached status, not its events.** `useJobProgress` watches the `['job', id]` query and refetches `['jobVideos', id]` when the status moves to `awaiting_approval` or to an end, whatever moved it: an event, the poll or this tab's cancel answer. The first status the cache receives is not a move, so a page that opens on an ended run fetches its videos once.
+6. **Every cached jobs list takes a run's events.** Neither progress hook ever updated a jobs list, because of the wrong key. Both now fold each event into every cached list with `setQueriesData({ queryKey: ['jobs'] })`, row by row and guarded as in point 4. A status change to `cancelled` refetches the run and the lists, as `completed` and `failed` already did, and `useAllJobsProgress` refetches the lists when an event ends a row, to pick up its report and finish time.
+
+**Alternatives considered.**
+- *Announcing before the write.* A page could read `cancelled` for a run that then completed, and a cancel that lost the race would still publish.
+- *Telling a second, racing cancel apart so it does not publish again.* It needs `update_job_status` to return its row count, which changes its contract for every caller. The duplicate is true, and a tab that holds the run as cancelled drops it (T-5.2.32).
+- *Comparing the fetched row's `updated_at` with the event's,* so a refetch in flight when a cancel commits cannot show the run active again. A bigger change, and the next refetch corrects it (T-5.2.33).
+- *Special-casing the end-of-run event so a dropped one still refetches the videos.* Following the cached status also covers an event the socket lost, and the approval list.
+- *Writing each list by its exact key.* `useJobs` keys every filter and page apart, so no one key reaches them all.
+
+**Consequences.**
+- Every tab open on a run shows a cancel at once, and the jobs page shows it without waiting for its refetch.
+- A progress line published after a cancel's commit no longer flips the page back from Cancelled.
+- A refetch already in flight when a cancel commits can still show the run active for about 5 seconds (T-5.2.33), and a second cancel that raced the first publishes the same event again (T-5.2.32).
+- Author outputs keep the same commit-then-publish gap in `useOutputsProgress` (T-5.2.34). A `job_error` event refetches the run's videos but neither the run nor the lists (T-5.2.35).
+- Nothing else uses the `['jobs', ...]` prefix: `['jobs', 'create']` and `['jobs', 'approve']` are mutation keys.
+- `docs/api-reference.md` gives the three event shapes the server sends (`job_progress`, `job_status_change`, `job_error`), in place of ones it never sent.
+- No migration, no new setting and no route change. Owner step: restart the API and reload the frontend.
+
+**Linked initiatives / PRs.** E-5.2 (T-5.2.28, T-5.2.30, T-5.2.32 to T-5.2.35); PR [#453](https://github.com/khoks/VideoResearchPro/pull/453); [D-163](#d-163--a-progress-line-is-written-before-it-is-published-a-cancel-that-loses-the-race-answers-with-the-runs-end-and-revokes-nothing-and-completed-is-a-stopped-status-2026-11-09).

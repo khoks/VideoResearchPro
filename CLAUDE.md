@@ -61,7 +61,7 @@ npm run build        # Production build + type check
 
 ### Tests
 ```bash
-# All backend tests (5,800+; `pytest tests/ --collect-only -q` prints the count)
+# All backend tests (6,000+; `pytest tests/ --collect-only -q` prints the count)
 cd backend && ./venv/Scripts/python -m pytest tests/ -v
 
 # Single test file

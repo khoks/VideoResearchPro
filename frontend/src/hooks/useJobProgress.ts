@@ -1,8 +1,66 @@
 import { useEffect } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { wsClient } from '../services/wsClient';
 import type { Job } from '../types/job';
 import type { WSProgressMessage } from '../types/ws';
+
+/** A run in one of these has ended, and the server never moves it on: no task
+ * writes over a stopped row (T-5.2.20, T-5.2.23), and no route restarts one. */
+const ENDED_STATUSES: ReadonlySet<string> = new Set(['completed', 'failed', 'cancelled']);
+
+export function isRunEnded(status: string | null | undefined): boolean {
+  return status != null && ENDED_STATUSES.has(status);
+}
+
+type RunFields = Pick<Job, 'status' | 'progress_pct' | 'progress_message' | 'error_message'>;
+
+/**
+ * Fold one socket event into a cached run, or `undefined` when the cache holds
+ * the run as ended, which React Query reads as "leave it" (T-5.2.28).
+ *
+ * A worker writes a progress line to the row, commits, then publishes it, so a
+ * cancel that commits in between is followed by one event that shows the run
+ * going again. Dropping events for an ended run closes that gap, and hides
+ * nothing: an ended status reaches the cache only on the server's word, from a
+ * fetch, the cancel's answer, or an event published once the write that ended
+ * the row has committed (each end a run writes, and the cancel route's, T-5.2.30).
+ * The page writes no status of its own. A refetch is not an event: it replaces
+ * the cache whatever the cache held, in either direction.
+ */
+export function applyRunEvent<T extends RunFields>(run: T, msg: WSProgressMessage): T | undefined {
+  if (isRunEnded(run.status)) return undefined;
+  return {
+    ...run,
+    status: (msg.new_status ?? msg.status ?? run.status) as T['status'],
+    progress_pct: msg.progress_pct ?? run.progress_pct,
+    progress_message: msg.message ?? run.progress_message,
+    error_message: msg.error ?? run.error_message,
+  };
+}
+
+/**
+ * The event in every cached jobs list (each filter and page is its own query),
+ * row by row. Until T-5.2.30 this wrote to `['jobs', undefined]`, a key no list
+ * has (`useJobs` keys on status, limit and offset), so a list learned of every
+ * change only at its 10-second refetch. Returns whether a row ended.
+ */
+function applyToLists(queryClient: QueryClient, jobId: string, msg: WSProgressMessage): boolean {
+  let ended = false;
+  queryClient.setQueriesData<Job[]>({ queryKey: ['jobs'] }, (old) => {
+    if (!Array.isArray(old)) return undefined;
+    let changed = false;
+    const next = old.map((row) => {
+      if (row.id !== jobId) return row;
+      const applied = applyRunEvent(row, msg);
+      if (!applied) return row;
+      changed = true;
+      ended ||= isRunEnded(applied.status);
+      return applied;
+    });
+    return changed ? next : undefined;
+  });
+  return ended;
+}
 
 export function useJobProgress(jobId: string | null) {
   const queryClient = useQueryClient();
@@ -11,32 +69,13 @@ export function useJobProgress(jobId: string | null) {
     if (!jobId) return;
 
     const unsubscribe = wsClient.subscribe(jobId, (msg: WSProgressMessage) => {
-      // Update the specific job in cache
-      queryClient.setQueryData(['job', jobId], (old: Job | undefined) => {
-        if (!old) return old;
-        return {
-          ...old,
-          status: msg.new_status ?? msg.status ?? old.status,
-          progress_pct: msg.progress_pct ?? old.progress_pct,
-          progress_message: msg.message ?? old.progress_message,
-          error_message: msg.error ?? old.error_message,
-        };
-      });
+      // Read before the event is applied: a late event for a run this page
+      // already holds as ended changes nothing and refreshes nothing.
+      const heldEnded = isRunEnded(queryClient.getQueryData<Job>(['job', jobId])?.status);
 
-      // Also update job in the list
-      queryClient.setQueryData(['jobs', undefined], (old: Job[] | undefined) => {
-        if (!old) return old;
-        return old.map((j) =>
-          j.id === jobId
-            ? {
-                ...j,
-                status: msg.new_status ?? msg.status ?? j.status,
-                progress_pct: msg.progress_pct ?? j.progress_pct,
-                progress_message: msg.message ?? j.progress_message,
-              }
-            : j
-        );
-      });
+      queryClient.setQueryData<Job>(['job', jobId], (old) => (old ? applyRunEvent(old, msg) : undefined));
+      applyToLists(queryClient, jobId, msg);
+      if (heldEnded) return;
 
       // Refresh on key status changes
       if (msg.type === 'job_status_change') {
@@ -44,7 +83,7 @@ export function useJobProgress(jobId: string | null) {
           // Videos were just saved — refetch them for the approval list
           queryClient.invalidateQueries({ queryKey: ['jobVideos', jobId] });
         }
-        if (msg.new_status === 'completed' || msg.new_status === 'failed') {
+        if (isRunEnded(msg.new_status)) {
           queryClient.invalidateQueries({ queryKey: ['jobs'] });
           queryClient.invalidateQueries({ queryKey: ['job', jobId] });
           queryClient.invalidateQueries({ queryKey: ['jobVideos', jobId] });
@@ -62,19 +101,11 @@ export function useAllJobsProgress(jobIds: string[]) {
   useEffect(() => {
     const unsubs = jobIds.map((jobId) =>
       wsClient.subscribe(jobId, (msg: WSProgressMessage) => {
-        queryClient.setQueryData(['jobs', undefined], (old: Job[] | undefined) => {
-          if (!old) return old;
-          return old.map((j) =>
-            j.id === jobId
-              ? {
-                  ...j,
-                  status: msg.new_status ?? msg.status ?? j.status,
-                  progress_pct: msg.progress_pct ?? j.progress_pct,
-                  progress_message: msg.message ?? j.progress_message,
-                }
-              : j
-          );
-        });
+        // A run that ends here is refetched, for what its end changes beside
+        // the status (its report, its finish time).
+        if (applyToLists(queryClient, jobId, msg)) {
+          queryClient.invalidateQueries({ queryKey: ['jobs'] });
+        }
       })
     );
     return () => unsubs.forEach((u) => u());

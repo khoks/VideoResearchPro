@@ -24,13 +24,11 @@
  * page's readiness. Dropping each option fails that reader's rows where its line
  * shows.
  *
- * T-3.4.1.27: the Echo page's readiness stands aside by a rule of its own
- * (`statusShownOnPage`): in place of a first read, and for a 403, which the page
- * says with its upgrade card whatever readiness it still shows. Mutation checks,
- * run on 2026-11-10: `{ inlineErrors: 'load' }` back on that reader fails "a
- * 403 on a refresh behind readiness" (the card and a toast); the rule without
- * its 403 clause fails the same row; the rule without its first-read clause
- * fails every "says a failed first read once" row but the 401's.
+ * T-3.4.1.27: a 403 on the Echo page's readiness is the upgrade card's,
+ * whatever readiness it still shows: the page takes every Echo 403 while it is
+ * open (`useEchoPlanRefusal`; `echoPlanRefusal.test.tsx` has the rest).
+ * Mutation check, run on 2026-11-10: the page without that hook fails "a 403 on
+ * a refresh behind readiness" (the card and a toast).
  *
  * The guard lists every file with such a reader (`CONDITIONAL_READERS`) and the
  * test that checks it, this file for most.

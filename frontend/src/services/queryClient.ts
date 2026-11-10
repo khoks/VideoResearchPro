@@ -96,12 +96,14 @@ class PollFailureStreaks {
  * there: see `queryFailureShownOnPage`.
  *
  * A poll says a run of failures once (T-3.4.1.27): see `PollFailureStreaks`.
+ * A page may also say a failure whose reader it has taken off the screen: see
+ * `sayFailuresOnPage`.
  */
 export function createQueryClient(): QueryClient {
   const streaks = new PollFailureStreaks();
-  const queryCache = new QueryCache({
+  const queryCache: QueryCache = new QueryCache({
     onError: (error, query) => {
-      if (queryFailureShownOnPage(query, error)) return;
+      if (queryFailureShownOnPage(query) || pageSaysFailure(queryCache, query, error)) return;
       // Null for a 401 (the session ends in one place, T-5.4.22) and for the
       // refusals their pages say where they were started.
       const message = globalErrorToastMessage(error);
@@ -130,26 +132,53 @@ export function createQueryClient(): QueryClient {
 /**
  * Whether a reader of `query` that is mounted now says its failure on the page,
  * so the toast stands aside: an enabled reader whose `meta` is
- * `ERRORS_SHOWN_HERE`, `LOAD_ERRORS_SHOWN_HERE` while the query has no data
- * to keep on screen, or a `ShownOnPage` that says so of this failure. Each
- * reader (a `useQuery` call) carries its own `meta`, read here when the failure
- * lands, so a key read by a page with a line and by a component without one
- * still toasts wherever the silent one is mounted alone, and a reader that has
- * unmounted says nothing. `query.meta` would not do: it is whichever reader
- * rendered last. `error` is the failure landing; TanStack has already written it
- * to `query.state.error` when the cache's `onError` runs.
+ * `ERRORS_SHOWN_HERE`, or `LOAD_ERRORS_SHOWN_HERE` while the query has no data
+ * to keep on screen. Each reader (a `useQuery` call) carries its own `meta`,
+ * read here when the failure lands, so a key read by a page with a line and by a
+ * component without one still toasts wherever the silent one is mounted alone,
+ * and a reader that has unmounted says nothing. `query.meta` would not do: it is
+ * whichever reader rendered last.
  */
-export function queryFailureShownOnPage<TError>(
-  query: Query<unknown, TError, unknown, readonly unknown[]>,
-  error: unknown = query.state.error,
-): boolean {
+export function queryFailureShownOnPage<TError>(query: Query<unknown, TError, unknown, readonly unknown[]>): boolean {
   return query.observers.some((observer) => {
     const { enabled, meta } = observer.options;
     if ((typeof enabled === 'function' ? enabled(query) : enabled) === false) return false;
     const shown = meta?.errorsShownHere;
-    if (typeof shown === 'function') return (shown as ShownOnPage)(error, query.state.data !== undefined);
     return shown === true || (shown === 'load' && query.state.data === undefined);
   });
+}
+
+/**
+ * A page's say over a failure that no mounted reader says (T-3.4.1.27): a
+ * failure that lands after the page has taken off the screen the readers that
+ * would have said it. The Echo page's upgrade card takes the place of every
+ * section whose read a change of plan refuses. So when the plan changes in
+ * another tab, a window focus refreshes every Echo read at once, and each
+ * section's 403 can land with no reader left to stand aside: each would toast
+ * beside the card. The page's rule gives them to the card
+ * (`useEchoPlanRefusal`).
+ *
+ * Asked after the readers, with the failure as it lands, which TanStack has
+ * already written to `query.state`. A page that takes a failure this way must
+ * show it: the rule and what the page shows are worked out from the same thing,
+ * not from what has rendered so far, or the order the answers come in decides.
+ */
+export type PageSaysFailure = (query: AnyQuery, error: unknown) => boolean;
+
+const pageRules = new WeakMap<QueryCache, Set<PageSaysFailure>>();
+
+/** Gives `rule` its say over the failures of `cache`'s queries until the
+ * returned function is called: from a page's mount to its unmount. */
+export function sayFailuresOnPage(cache: QueryCache, rule: PageSaysFailure): () => void {
+  const rules = pageRules.get(cache) ?? new Set<PageSaysFailure>();
+  pageRules.set(cache, rules.add(rule));
+  return () => {
+    rules.delete(rule);
+  };
+}
+
+function pageSaysFailure(cache: QueryCache, query: AnyQuery, error: unknown): boolean {
+  return [...(pageRules.get(cache) ?? [])].some((rule) => rule(query, error));
 }
 
 /**
@@ -177,19 +206,10 @@ export const ERRORS_SHOWN_HERE = { errorsShownHere: true } as const;
 export const LOAD_ERRORS_SHOWN_HERE = { errorsShownHere: 'load' } as const;
 
 /**
- * A reader that works out, for each failure as it lands, whether its page says
- * it: handed the failure and whether the query still has data on screen. The
- * Echo page's readiness says a first load's failure on its line and a 403 on
- * the upgrade card, whatever readiness it still shows (T-3.4.1.27).
- */
-export type ShownOnPage = (error: unknown, hasData: boolean) => boolean;
-
-/**
  * How a reader says a query's failure on the page: always (`true`), only while
- * the query has no data (`'load'`), by a rule of its own (`ShownOnPage`), or
- * not at all.
+ * the query has no data (`'load'`), or not at all.
  */
-export type InlineErrors = boolean | 'load' | ShownOnPage;
+export type InlineErrors = boolean | 'load';
 
 /** The option a query hook takes when its callers say its failure differently. */
 export interface QueryLineOptions {
@@ -202,9 +222,8 @@ export interface QueryLineOptions {
  * on one tab or one step) takes the option, as the ask hooks do for mutations
  * (D-153 point 2); a hook every caller answers the same way sets its `meta`.
  */
-export function queryErrorsMeta(inlineErrors: InlineErrors | undefined): { errorsShownHere: true | 'load' | ShownOnPage } | undefined {
+export function queryErrorsMeta(inlineErrors: InlineErrors | undefined) {
   if (inlineErrors === 'load') return LOAD_ERRORS_SHOWN_HERE;
-  if (typeof inlineErrors === 'function') return { errorsShownHere: inlineErrors };
   return inlineErrors ? ERRORS_SHOWN_HERE : undefined;
 }
 

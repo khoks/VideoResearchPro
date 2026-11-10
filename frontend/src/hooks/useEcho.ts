@@ -1,3 +1,4 @@
+import { useLayoutEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   echoApi,
@@ -20,11 +21,13 @@ import {
   ERRORS_SHOWN_HERE,
   LOAD_ERRORS_SHOWN_HERE,
   queryErrorsMeta,
+  sayFailuresOnPage,
   toastMutationError,
   type QueryLineOptions,
 } from '../services/queryClient';
 import { useJobStore } from '../stores/jobStore';
 import { isSessionEnded } from '../utils/apiError';
+import type { HttpErrorLike } from '../utils/ingestResults';
 import { draftErrorOf, isDraftStop } from '../utils/echoDrafts';
 
 // A mutation below that names `toastMutationError` answers its own failures, in
@@ -47,6 +50,49 @@ export function useEchoStatus(enabled = true, { inlineErrors }: QueryLineOptions
     enabled,
     meta: queryErrorsMeta(inlineErrors),
   });
+}
+
+function isPlanRefusal(error: unknown): boolean {
+  return (error as HttpErrorLike | null)?.response?.status === 403;
+}
+
+const isStatusKey = (key: readonly unknown[]) => key.length === 2 && key[0] === 'echo' && key[1] === 'status';
+
+/**
+ * Whether the Echo page shows its upgrade card for a refusal by the plan, and,
+ * while the page is open, that card's say over each such refusal (T-3.4.1.27).
+ *
+ * Every Echo route's one 403 is the Studio gate, so a 403 on any Echo read means
+ * the plan has gone. The card takes the place of the page's sections, so a
+ * refusal that lands after it (every Echo read refreshed at once on a window
+ * focus, once the plan has changed in another tab) has no reader left to stand
+ * aside, and would toast beside the card, once per section. So while the page
+ * is open each Echo 403 is the card's (`sayFailuresOnPage`), and this returns
+ * true from the first one on, which the page shows the card for. Both are read
+ * from the failure itself, which TanStack hands the cache's listeners before its
+ * `onError`, so the card and the toast agree whatever order the answers come in.
+ * A status read that succeeds again (the plan is back) takes the card away.
+ */
+export function useEchoPlanRefusal(): boolean {
+  const qc = useQueryClient();
+  const [refused, setRefused] = useState(false);
+  // A layout effect, so the rule is in place before the page's reads start: a
+  // reader starts its fetch once it subscribes, in a passive effect.
+  useLayoutEffect(() => {
+    const cache = qc.getQueryCache();
+    const stopSaying = sayFailuresOnPage(cache, (query, error) => query.queryKey[0] === 'echo' && isPlanRefusal(error));
+    const stopListening = cache.subscribe((event) => {
+      if (event.type !== 'updated' || event.query.queryKey[0] !== 'echo') return;
+      const { action } = event;
+      if (action.type === 'error' && isPlanRefusal(action.error)) setRefused(true);
+      else if (action.type === 'success' && !action.manual && isStatusKey(event.query.queryKey)) setRefused(false);
+    });
+    return () => {
+      stopSaying();
+      stopListening();
+    };
+  }, [qc]);
+  return refused;
 }
 
 export function useEchoContext(params?: ListContextParams, enabled = true, { inlineErrors }: QueryLineOptions = {}) {

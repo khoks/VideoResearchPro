@@ -12,6 +12,7 @@ import {
   useDeleteContext,
   useEchoConnectors,
   useEchoContext,
+  useEchoPlanRefusal,
   useEchoStatus,
   useRecordContext,
   useRevokeSource,
@@ -51,19 +52,10 @@ import {
 } from '../utils/echoReadiness';
 import type { HttpErrorLike } from '../utils/ingestResults';
 import { inlineErrorMessage } from '../utils/apiError';
-import type { ShownOnPage } from '../services/queryClient';
 
 function isForbidden(err: unknown): boolean {
   return (err as HttpErrorLike | null)?.response?.status === 403;
 }
-
-/**
- * Where the page says a failed status read: its line, in place of a first read,
- * and the upgrade card for a 403, whatever readiness it still shows. So the
- * toast stands aside for those and says a refresh that fails otherwise behind
- * readiness on screen (T-3.4.1.26, T-3.4.1.27).
- */
-const statusShownOnPage: ShownOnPage = (error, hasData) => !hasData || isForbidden(error);
 
 interface FormState {
   mode: 'create' | 'edit';
@@ -98,9 +90,10 @@ export function EchoPage() {
 
   // Each read's failure is said on this page alone (T-3.4.1.26). Readiness keeps
   // what it last read on screen and shows its line only in place of a first
-  // read, so a failed refresh behind it keeps the toast, but a 403 is the
-  // upgrade card's (`statusShownOnPage`).
-  const status = useEchoStatus(allowed, { inlineErrors: statusShownOnPage });
+  // read, so a failed refresh behind it keeps the toast ('load'). A 403 on any
+  // Echo read, this one included, is the upgrade card's (`useEchoPlanRefusal`).
+  const status = useEchoStatus(allowed, { inlineErrors: 'load' });
+  const refusedByPlan = useEchoPlanRefusal();
   const connectors = useEchoConnectors(allowed, { inlineErrors: true });
   const [searchParams] = useSearchParams();
   // Back from a provider through /echo/connectors/:name/callback.
@@ -111,7 +104,7 @@ export function EchoPage() {
   const revoke = useRevokeSource();
   const revokeScope = useRevokeScope(revoking?.source ?? null);
 
-  const forbidden = isForbidden(status.error) || isForbidden(context.error);
+  const forbidden = refusedByPlan || isForbidden(status.error) || isForbidden(context.error);
   // The server's words, else the page's sentence, and nothing for a 401.
   const statusError = status.isError ? inlineErrorMessage(status.error, "Couldn't read Echo's status.") : null;
   const connectorsError = connectors.isError ? inlineErrorMessage(connectors.error, "Couldn't list connectors.") : null;
